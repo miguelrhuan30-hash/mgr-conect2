@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { UserProfile, CollectionName } from '../types';
 
@@ -8,7 +8,7 @@ interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  loginAsDemo: () => void; // New function for testing
+  loginAsDemo: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,7 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // If we are in demo mode (currentUser set manually), ignore null updates from firebase init
+      // Demo Mode Check
       if (!user && currentUser?.email === 'demo@mgr.com') {
           setLoading(false);
           return;
@@ -36,18 +36,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentUser(user);
       
       if (user) {
+        // --- SUPER ADMIN OVERRIDE (Blindagem) ---
+        // Garante acesso total imediato para o e-mail mestre, independente do banco de dados.
+        if (user.email?.toLowerCase() === 'gestor@mgr.com') {
+           setUserProfile({
+              uid: user.uid,
+              email: user.email,
+              displayName: 'Gestor Mestre',
+              role: 'admin', // Força permissão máxima
+              xp: 9999,
+              level: 99,
+              createdAt: Timestamp.now(),
+              // Garante que não haja restrições de horário ou local
+              workSchedule: { startTime: '00:00', endTime: '23:59', lunchDuration: 0 },
+              allowedLocationIds: [] 
+           });
+           setLoading(false);
+           return; 
+        }
+
         try {
           const docRef = doc(db, CollectionName.USERS, user.uid);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             setUserProfile(docSnap.data() as UserProfile);
           } else {
-            // Fallback profile if doc doesn't exist yet
+            // Fallback profile
             setUserProfile({
               uid: user.uid,
               email: user.email || '',
               displayName: user.displayName || 'Usuário',
-              role: 'pending', // Default to pending for security
+              role: 'pending', 
               xp: 0,
               level: 1,
               createdAt: null as any
@@ -92,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       uid: 'demo-admin-123',
       email: 'demo@mgr.com',
       displayName: 'Admin de Teste',
-      role: 'admin', // Full access
+      role: 'admin',
       xp: 5000,
       level: 10,
       createdAt: null as any

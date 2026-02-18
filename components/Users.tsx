@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, UserProfile, UserRole, WorkLocation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { compressImage } from '../utils/compressor';
 import { Users as UsersIcon, ShieldCheck, Loader2, UserPlus, Check, Camera, MapPin, Clock } from 'lucide-react';
 
 const Users: React.FC = () => {
@@ -18,34 +19,43 @@ const Users: React.FC = () => {
   const [editLocations, setEditLocations] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Security check
-  if (userProfile?.role !== 'admin') {
-    return (
-      <div className="text-center py-12">
-        <h2 className="text-2xl font-bold text-gray-900">Acesso Negado</h2>
-        <p className="text-gray-500">Apenas administradores podem gerenciar usuários.</p>
-      </div>
-    );
-  }
+  const isAdmin = userProfile?.role === 'admin';
 
   useEffect(() => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
+
     // Fetch Users
     const q = query(collection(db, CollectionName.USERS), orderBy('displayName', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const usersData = snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id })) as UserProfile[];
       setUsers(usersData);
       setLoading(false);
+    }, (error) => {
+      console.error("Error fetching users:", error);
+      setLoading(false);
     });
 
     // Fetch Locations for Dropdown
     const fetchLocs = async () => {
-      const snap = await getDocs(collection(db, CollectionName.WORK_LOCATIONS));
-      setLocations(snap.docs.map(d => ({id: d.id, ...d.data()} as WorkLocation)));
+      try {
+        const snap = await getDocs(collection(db, CollectionName.WORK_LOCATIONS));
+        setLocations(snap.docs.map(d => ({id: d.id, ...d.data()} as WorkLocation)));
+      } catch (error) {
+        console.error("Error fetching locations:", error);
+      }
     };
     fetchLocs();
 
     return () => unsubscribe();
-  }, []);
+  }, [isAdmin]);
+
+  // Optimization: Memoize sorted list
+  const userList = useMemo(() => {
+    return users; 
+  }, [users]);
 
   const handleRoleChange = async (uid: string, newRole: UserRole) => {
     await updateDoc(doc(db, CollectionName.USERS, uid), { role: newRole });
@@ -84,8 +94,11 @@ const Users: React.FC = () => {
   const handlePhotoUpload = async (uid: string, file: File) => {
     if (!file) return;
     try {
+      // Compress Image before upload
+      const compressedFile = await compressImage(file, 600, 0.8);
+
       const storageRef = ref(storage, `users/${uid}/profile_${Date.now()}.jpg`);
-      await uploadBytes(storageRef, file);
+      await uploadBytes(storageRef, compressedFile);
       const url = await getDownloadURL(storageRef);
       await updateDoc(doc(db, CollectionName.USERS, uid), { photoURL: url });
       alert("Foto atualizada!");
@@ -102,6 +115,15 @@ const Users: React.FC = () => {
       setEditLocations([...editLocations, locId]);
     }
   };
+
+  if (!isAdmin) {
+    return (
+      <div className="text-center py-12">
+        <h2 className="text-2xl font-bold text-gray-900">Acesso Negado</h2>
+        <p className="text-gray-500">Apenas administradores podem gerenciar usuários.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -127,7 +149,7 @@ const Users: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {users.map((user) => (
+                {userList.map((user) => (
                   <tr key={user.uid} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center">
@@ -201,7 +223,7 @@ const Users: React.FC = () => {
                         value={user.role}
                         onChange={(e) => handleRoleChange(user.uid, e.target.value as UserRole)}
                         className="text-xs font-semibold px-2 py-1 rounded-full border cursor-pointer bg-gray-50"
-                        disabled={user.email === 'mgrgestor@mgr.com'}
+                        disabled={user.email === 'gestor@mgr.com'}
                       >
                         <option value="pending">Pendente</option>
                         <option value="employee">Colaborador</option>

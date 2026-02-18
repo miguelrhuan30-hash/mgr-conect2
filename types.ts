@@ -88,12 +88,20 @@ export interface TimeEntry {
   type: 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
   timestamp: Timestamp;
   locationId?: string; // Where they clocked in
-  location: {
+  location?: {
     lat: number;
     lng: number;
   };
-  photoEvidenceUrl: string; // Selfie URL
-  isOnTime?: boolean; // Calculated based on schedule
+  photoEvidenceUrl?: string; // Optional if manual
+  isOnTime?: boolean;
+  userAgent?: string;
+  
+  // Audit & Manual Adjustment Fields
+  isManual?: boolean;        // True if added by manager
+  forcedClose?: boolean;     // True if system/manager closed a forgotten shift
+  editedBy?: string;         // UID of the manager who edited
+  editReason?: string;       // "Esquecimento", "Doença", etc.
+  editTimestamp?: Timestamp; // When the edit happened
 }
 
 // --- TASKS & SERVICE ORDERS (O.S.) ---

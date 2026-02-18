@@ -72,6 +72,7 @@ const Login: React.FC = () => {
           userCredential = await createUserWithEmailAndPassword(auth, email, password);
         }
       } catch (initialError: any) {
+        // Auto-switch to login if user tries to register existing email
         if (!isLogin && initialError.code === 'auth/email-already-in-use') {
            try {
              userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -86,9 +87,10 @@ const Login: React.FC = () => {
 
       if (userCredential && userCredential.user) {
         const user = userCredential.user;
-        const isMaster = user.email?.toLowerCase() === 'mgrgestor@mgr.com';
+        const isMaster = user.email?.toLowerCase() === 'gestor@mgr.com';
 
         if (isMaster) {
+            // FORÇA BRUTA: Garante que o usuário Mestre seja Admin no Banco de Dados
             await setDoc(doc(db, CollectionName.USERS, user.uid), {
               uid: user.uid,
               email: user.email,
@@ -96,10 +98,17 @@ const Login: React.FC = () => {
               role: 'admin',
               xp: 9999,
               level: 99,
+              // Define jornada livre para o mestre
+              workSchedule: {
+                 startTime: '00:00',
+                 endTime: '23:59',
+                 lunchDuration: 0
+              },
+              allowedLocationIds: [] // Acesso irrestrito
           }, { merge: true });
         } 
         else if (!effectiveIsLogin) {
-          // NEW USERS START AS PENDING
+          // New normal users start as pending
           await setDoc(doc(db, CollectionName.USERS, user.uid), {
               uid: user.uid,
               email: user.email,

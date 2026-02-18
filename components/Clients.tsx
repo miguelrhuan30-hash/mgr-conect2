@@ -22,11 +22,18 @@ const Clients: React.FC = () => {
 
   useEffect(() => {
     const q = query(collection(db, CollectionName.CLIENTS), orderBy('name', 'asc'));
+    
+    // Added error handling to onSnapshot
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Client[];
       setClients(data);
       setLoading(false);
+    }, (error) => {
+      console.error("Error fetching clients:", error);
+      // Handle permission errors gracefully
+      setLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 

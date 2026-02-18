@@ -94,15 +94,14 @@ const LandingPage: React.FC = () => {
   useEffect(() => {
     const docRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page');
     
+    // Improved error handling to suppress logs for public visitors
     const unsub = onSnapshot(docRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as any;
         
         // --- DATA MIGRATION LOGIC ---
-        // Handle legacy string array structure for clients
         let partners = data.clients?.partners || [];
-        if (data.clients?.logos && Array.isArray(data.clients.logos)) {
-          // Convert legacy logos array to partners array
+        if (data.clients?.logos && Array.isArray(data.clients.logos) && partners.length === 0) {
           partners = data.clients.logos.map((name: string, index: number) => ({
              id: `legacy-${index}`,
              name: name,
@@ -122,18 +121,30 @@ const LandingPage: React.FC = () => {
 
         setContent(safeData);
       } else {
-        // AUTO-SETUP
-        try {
-          await setDoc(docRef, MGR_REAL_DATA);
-          setContent(MGR_REAL_DATA);
-        } catch (error) {
-          console.error("Error initializing default data:", error);
+        // Only try to set defaults if user is authorized (admin/developer), 
+        // otherwise just use static data to avoid permission errors on write.
+        if (currentUser) {
+            try {
+               await setDoc(docRef, MGR_REAL_DATA);
+            } catch (e) {
+               // Ignore write errors for non-admins
+            }
         }
+        setContent(MGR_REAL_DATA);
       }
       setLoading(false);
+    }, (error: any) => {
+      // Suppress permission-denied errors for public users as this is expected behavior
+      if (error?.code !== 'permission-denied') {
+          console.error("Error fetching landing page settings:", error);
+      }
+      // Fallback to static data
+      setContent(MGR_REAL_DATA);
+      setLoading(false);
     });
+
     return () => unsub();
-  }, []);
+  }, [currentUser]);
 
   const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,8 +183,6 @@ const LandingPage: React.FC = () => {
 
   if (loading) return <div className="min-h-screen bg-white" />;
 
-  // Prepare infinite loop data
-  // We duplicate the list 3 times to ensure it fills wide screens before looping
   const basePartners = content.clients?.partners || [];
   const loopPartners = basePartners.length > 0 
     ? [...basePartners, ...basePartners, ...basePartners] 
@@ -182,7 +191,6 @@ const LandingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900">
       
-      {/* CSS Keyframes for Marquee */}
       <style>{`
         @keyframes marquee {
           from { transform: translateX(0); }
@@ -196,7 +204,6 @@ const LandingPage: React.FC = () => {
         }
       `}</style>
 
-      {/* Floating WhatsApp Button */}
       {content.features.whatsappFloat && (
         <a
           href={`https://wa.me/${content.contact.whatsapp}`}
@@ -209,7 +216,6 @@ const LandingPage: React.FC = () => {
         </a>
       )}
 
-      {/* Floating Edit Button (For Admins) */}
       {canEdit && (
         <button 
           onClick={() => navigate('/editor-site')}
@@ -219,7 +225,6 @@ const LandingPage: React.FC = () => {
         </button>
       )}
 
-      {/* Navigation */}
       <nav className="fixed w-full bg-white/95 backdrop-blur-sm z-40 border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
@@ -249,7 +254,6 @@ const LandingPage: React.FC = () => {
         </div>
       </nav>
 
-      {/* Hero Section */}
       <section id="home" className="relative pt-20 pb-16 md:pt-32 md:pb-32 overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
@@ -290,7 +294,6 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Stats Section */}
       <section className="bg-brand-900 text-white py-12 relative z-20 -mt-10 md:-mt-16 mx-4 md:mx-auto max-w-6xl rounded-2xl shadow-2xl">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-8">
           {content.stats?.map((stat, idx) => (
@@ -302,7 +305,6 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Services Section */}
       <section id="services" className="py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
@@ -343,7 +345,6 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Partners/Clients Section (Infinite Horizontal Marquee) */}
       <section id="clients" className="py-16 bg-white border-t border-gray-100 overflow-hidden">
         <div className="w-full">
           <div className="text-center mb-12 px-4">
@@ -352,13 +353,10 @@ const LandingPage: React.FC = () => {
           </div>
           
           <div className="relative w-full overflow-hidden group">
-             {/* Fade Effects */}
              <div className="absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-white to-transparent z-20 pointer-events-none"></div>
              <div className="absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-white to-transparent z-20 pointer-events-none"></div>
 
-             {/* Marquee Container */}
              <div className="flex gap-12 w-max hover:paused group-hover:paused">
-                {/* 1st Loop Set */}
                 <div className="flex gap-12 items-center animate-marquee shrink-0 min-w-full justify-around">
                    {loopPartners.length === 0 && (
                       <p className="text-gray-400 italic">Nenhum parceiro cadastrado.</p>
@@ -385,7 +383,6 @@ const LandingPage: React.FC = () => {
                    ))}
                 </div>
 
-                {/* 2nd Loop Set (Exact Clone for Seamless Loop) */}
                 <div className="flex gap-12 items-center animate-marquee shrink-0 min-w-full justify-around" aria-hidden="true">
                    {loopPartners.map((partner, idx) => (
                       <div key={`${partner.id}-2-${idx}`} className="flex flex-col items-center gap-3 w-32 shrink-0 group/item cursor-pointer">
@@ -413,7 +410,6 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* About Section */}
       <section id="about" className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -463,12 +459,10 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Contact Section & Footer */}
       <footer id="contact" className="bg-gray-900 text-white pt-20 pb-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-16">
             
-            {/* Contact Info */}
             <div className="space-y-8">
               <div>
                 <div className="flex items-center gap-2 mb-6">
@@ -506,7 +500,6 @@ const LandingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Contact Form */}
             {content.features.contactForm && (
               <div className="bg-white rounded-2xl p-8 text-gray-900 shadow-xl">
                 <h3 className="text-xl font-bold mb-4">Fale Conosco</h3>

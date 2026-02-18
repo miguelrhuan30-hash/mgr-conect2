@@ -5,6 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, LandingPageContent, Partner } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { compressImage } from '../utils/compressor';
 import { 
   ArrowLeft, Save, Loader2, Monitor, Globe, Image as ImageIcon, Settings, 
   MessageSquare, Plus, Trash2, BarChart2, Users, LayoutDashboard, X, Edit, UploadCloud 
@@ -38,6 +39,11 @@ const LandingPageEditor: React.FC = () => {
 
   // Load Content
   useEffect(() => {
+    // Authorization Check: Only allow if role is admin or developer
+    if (!userProfile || (userProfile.role !== 'developer' && userProfile.role !== 'admin')) {
+        return;
+    }
+
     const fetchContent = async () => {
       try {
         const docRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page');
@@ -67,14 +73,16 @@ const LandingPageEditor: React.FC = () => {
           alert("Nenhum conteúdo encontrado. Visite a página inicial primeiro para gerar os dados padrão.");
           navigate('/');
         }
-      } catch (err) {
-        console.error("Error loading CMS content", err);
+      } catch (err: any) {
+        if (err?.code !== 'permission-denied') {
+             console.error("Error loading CMS content", err);
+        }
       } finally {
         setLoading(false);
       }
     };
     fetchContent();
-  }, []);
+  }, [userProfile, navigate]);
 
   const handleSave = async () => {
     if (!content) return;
@@ -153,8 +161,11 @@ const LandingPageEditor: React.FC = () => {
 
       // Upload if new file
       if (partnerLogoFile) {
-        const storageRef = ref(storage, `landing/partners/${Date.now()}_${partnerLogoFile.name}`);
-        await uploadBytes(storageRef, partnerLogoFile);
+        // Compress Image
+        const compressedFile = await compressImage(partnerLogoFile, 400, 0.8);
+
+        const storageRef = ref(storage, `landing/partners/${Date.now()}_${compressedFile.name}`);
+        await uploadBytes(storageRef, compressedFile);
         logoUrl = await getDownloadURL(storageRef);
       }
 

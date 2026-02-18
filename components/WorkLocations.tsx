@@ -17,11 +17,21 @@ const WorkLocations: React.FC = () => {
 
   useEffect(() => {
     const q = query(collection(db, CollectionName.WORK_LOCATIONS), orderBy('name', 'asc'));
+    
+    // Added error handling to onSnapshot
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as WorkLocation[];
       setLocations(data);
       setLoading(false);
+    }, (error: any) => {
+      // Suppress permission-denied errors as they are expected for unauthorized users
+      if (error?.code !== 'permission-denied') {
+        console.error("Error fetching locations:", error);
+      }
+      // Handle permission errors gracefully
+      setLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 

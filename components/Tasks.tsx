@@ -31,6 +31,7 @@ const Tasks: React.FC = () => {
       setLoading(false);
     }, (error) => {
       console.error("Error fetching tasks:", error);
+      // Gracefully handle permission errors by stopping loading state
       setLoading(false);
     });
 
