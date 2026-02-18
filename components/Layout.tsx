@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { PermissionSet } from '../types';
 import { 
   LayoutDashboard, 
   Clock, 
@@ -17,7 +18,9 @@ import {
   Globe,
   Edit,
   MapPin,
-  CalendarCheck
+  CalendarCheck,
+  Shield,
+  Settings
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -33,31 +36,40 @@ const Layout: React.FC = () => {
     }
   };
 
+  // Helper to check granular permissions
+  const can = (key: keyof PermissionSet) => {
+    if (!userProfile) return false;
+    // Admins and Developers have master access
+    if (userProfile.role === 'admin' || userProfile.role === 'developer') return true;
+    // Check specific permission flag
+    return !!userProfile.permissions?.[key];
+  };
+
+  // Dynamic Navigation Building
   const navItems = [
-    { to: '/app', icon: LayoutDashboard, label: 'Início', end: true },
-    { to: '/app/tarefas', icon: CheckSquare, label: 'Tarefas' },
-    { to: '/app/clientes', icon: Building, label: 'Clientes' },
-    { to: '/app/projetos', icon: Briefcase, label: 'Projetos' },
-    { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto' },
-    { to: '/app/estoque', icon: Package, label: 'Estoque' },
+    { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
+    { to: '/app/tarefas', icon: CheckSquare, label: 'Tarefas', visible: can('canViewTasks') },
+    { to: '/app/clientes', icon: Building, label: 'Clientes', visible: can('canManageClients') },
+    { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
+    { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
+    { to: '/app/estoque', icon: Package, label: 'Estoque', visible: can('canViewInventory') },
+    
+    // Management Section
+    { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') }, // Using Settings perm as proxy for templates
+    { to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto', visible: can('canViewAttendanceReports') },
+    
+    // Admin Section
+    { to: '/app/usuarios', icon: Users, label: 'Equipe & RH', visible: can('canManageUsers') },
+    { to: '/app/setores', icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
+    { to: '/app/locais', icon: MapPin, label: 'Locais de Trabalho', visible: can('canManageUsers') },
   ];
 
-  // Add "Modelos" for Admins/Managers
-  if (['admin', 'manager', 'developer'].includes(userProfile?.role || '')) {
-     navItems.push({ to: '/app/modelos', icon: FileText, label: 'Modelos' });
+  // Add "Editar Site" only for Developers/Admins (Special Role Check)
+  if (['admin', 'developer'].includes(userProfile?.role || '')) {
+    navItems.push({ to: '/editor-site', icon: Edit, label: 'Editar Site', visible: true, end: false });
   }
 
-  // Add "Equipe" only for Admins/Developers
-  if (['admin', 'developer'].includes(userProfile?.role || '')) {
-    navItems.push({ to: '/app/usuarios', icon: Users, label: 'Equipe & RH' });
-    navItems.push({ to: '/app/locais', icon: MapPin, label: 'Locais de Trabalho' });
-    navItems.push({ to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto' });
-  }
-
-  // Add "Editar Site" only for Developers/Admins
-  if (['admin', 'developer'].includes(userProfile?.role || '')) {
-    navItems.push({ to: '/editor-site', icon: Edit, label: 'Editar Site' });
-  }
+  const visibleItems = navItems.filter(item => item.visible);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
@@ -94,7 +106,7 @@ const Layout: React.FC = () => {
 
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-            {navItems.map((item) => (
+            {visibleItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -133,7 +145,7 @@ const Layout: React.FC = () => {
                   {userProfile?.displayName || 'Usuário'}
                 </p>
                 <p className="text-xs text-gray-500 truncate capitalize">
-                  {userProfile?.role || 'Colaborador'}
+                  {userProfile?.sectorName || userProfile?.role || 'Colaborador'}
                 </p>
               </div>
             </div>
@@ -157,7 +169,7 @@ const Layout: React.FC = () => {
 
       {/* MOBILE BOTTOM NAVIGATION (Footer) */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex items-center overflow-x-auto no-scrollbar pb-safe">
-        {navItems.map((item) => (
+        {visibleItems.slice(0, 5).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -175,6 +187,7 @@ const Layout: React.FC = () => {
             </span>
           </NavLink>
         ))}
+        {/* Mobile menu truncation handler could go here if more than 5 items */}
       </nav>
     </div>
   );

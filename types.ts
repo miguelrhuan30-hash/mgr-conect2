@@ -1,18 +1,61 @@
 import { Timestamp } from 'firebase/firestore';
 
-// --- ACCESS CONTROL ---
+// --- ACCESS CONTROL & PERMISSIONS ---
 export type UserRole = 'admin' | 'manager' | 'employee' | 'technician' | 'pending' | 'developer';
+
+export interface PermissionSet {
+  // Administrative
+  canManageUsers: boolean;      // Create, edit, delete users, change sectors
+  canManageSettings: boolean;   // CMS, Landing Page, System Configs
+  canManageSectors: boolean;    // Create/Edit Sectors (Roles)
+
+  // Operational (Tasks/OS)
+  canViewTasks: boolean;
+  canCreateTasks: boolean;
+  canEditTasks: boolean;
+  canDeleteTasks: boolean;
+
+  // Commercial
+  canManageClients: boolean;
+  canManageProjects: boolean;
+
+  // Inventory
+  canViewInventory: boolean;
+  canManageInventory: boolean;
+
+  // HR & Time Tracking
+  canRegisterAttendance: boolean;       // Clock in/out
+  canViewAttendanceReports: boolean;    // View team reports
+  canManageAttendance: boolean;         // Edit entries, close shifts manually
+
+  // Financial (Future Proofing)
+  canViewFinancial: boolean;
+  canManageFinancial: boolean;
+}
+
+export interface Sector {
+  id: string;
+  name: string; // e.g., "Administrativo", "Técnico de Campo"
+  description?: string;
+  defaultPermissions: PermissionSet;
+  createdAt?: Timestamp;
+}
 
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
-  role: UserRole;
+  role: UserRole; // Legacy role for backward compatibility
   xp: number;
   level: number;
   photoURL?: string; // Facial Biometrics Base
   createdAt: Timestamp;
   
+  // New Access Control Fields
+  sectorId?: string;
+  sectorName?: string; // Denormalized for easier display
+  permissions?: Partial<PermissionSet>; // Individual overrides (takes precedence over sector defaults)
+
   // New HR Fields
   workSchedule?: {
     startTime: string; // "08:00"
@@ -175,6 +218,7 @@ export interface TaskTemplate {
 export enum CollectionName {
   TASKS = 'tasks',
   USERS = 'users',
+  SECTORS = 'sectors', // New collection for Role Templates
   TIME_ENTRIES = 'time_entries',
   PROJECTS = 'projects',
   CLIENTS = 'clients',

@@ -3,6 +3,7 @@ import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout'; // Mantido estático como estrutura base
 import LoadingScreen from './components/LoadingScreen';
+import { PermissionSet } from './types';
 
 // Lazy Load Components
 const Login = lazy(() => import('./components/Login'));
@@ -13,6 +14,7 @@ const TaskTemplates = lazy(() => import('./components/TaskTemplates'));
 const Projects = lazy(() => import('./components/Projects'));
 const Inventory = lazy(() => import('./components/Inventory'));
 const Users = lazy(() => import('./components/Users'));
+const SectorManagement = lazy(() => import('./components/SectorManagement')); // New Component
 const Clients = lazy(() => import('./components/Clients'));
 const WorkLocations = lazy(() => import('./components/WorkLocations'));
 const AttendanceReports = lazy(() => import('./components/AttendanceReports'));
@@ -22,6 +24,15 @@ const LandingPageEditor = lazy(() => import('./components/LandingPageEditor'));
 
 const AppContent: React.FC = () => {
   const { currentUser, userProfile, loading } = useAuth();
+
+  // Helper to check permissions safely
+  const hasPermission = (key: keyof PermissionSet) => {
+    if (!userProfile) return false;
+    // Admins and Developers have full access bypass
+    if (userProfile.role === 'admin' || userProfile.role === 'developer') return true;
+    // Check specific granular permission
+    return !!userProfile.permissions?.[key];
+  };
 
   if (loading) {
     return <LoadingScreen />;
@@ -56,35 +67,47 @@ const AppContent: React.FC = () => {
             )
           }>
             <Route index element={<Dashboard />} />
-            <Route path="ponto" element={<Ponto />} />
-            <Route path="projetos" element={<Projects />} />
-            <Route path="tarefas" element={<Tasks />} />
-            <Route path="clientes" element={<Clients />} />
-            <Route path="estoque" element={<Inventory />} />
+            
+            {/* Operational Routes */}
+            <Route path="ponto" element={
+              hasPermission('canRegisterAttendance') ? <Ponto /> : <Navigate to="/app" />
+            } />
+            
+            <Route path="projetos" element={
+              hasPermission('canManageProjects') ? <Projects /> : <Navigate to="/app" />
+            } />
+            
+            <Route path="tarefas" element={
+              hasPermission('canViewTasks') ? <Tasks /> : <Navigate to="/app" />
+            } />
+            
+            <Route path="clientes" element={
+              hasPermission('canManageClients') ? <Clients /> : <Navigate to="/app" />
+            } />
+            
+            <Route path="estoque" element={
+              hasPermission('canViewInventory') ? <Inventory /> : <Navigate to="/app" />
+            } />
 
-            {/* RESTRICTED ROUTES (Guarded against unauthorized access) */}
+            {/* Management & Admin Routes */}
             <Route path="modelos" element={
-              ['admin', 'manager', 'developer'].includes(userProfile?.role || '') 
-              ? <TaskTemplates /> 
-              : <Navigate to="/app" />
+              hasPermission('canManageSettings') ? <TaskTemplates /> : <Navigate to="/app" />
             } />
             
             <Route path="usuarios" element={
-              ['admin', 'developer'].includes(userProfile?.role || '') 
-              ? <Users /> 
-              : <Navigate to="/app" />
+              hasPermission('canManageUsers') ? <Users /> : <Navigate to="/app" />
+            } />
+            
+            <Route path="setores" element={
+              hasPermission('canManageSectors') ? <SectorManagement /> : <Navigate to="/app" />
             } />
             
             <Route path="locais" element={
-              ['admin', 'developer'].includes(userProfile?.role || '') 
-              ? <WorkLocations /> 
-              : <Navigate to="/app" />
+              hasPermission('canManageUsers') ? <WorkLocations /> : <Navigate to="/app" />
             } />
             
             <Route path="relatorios-ponto" element={
-              ['admin', 'developer', 'manager'].includes(userProfile?.role || '') 
-              ? <AttendanceReports /> 
-              : <Navigate to="/app" />
+              hasPermission('canViewAttendanceReports') ? <AttendanceReports /> : <Navigate to="/app" />
             } />
           </Route>
 
