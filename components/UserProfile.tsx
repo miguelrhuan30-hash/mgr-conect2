@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { updateDoc, doc } from 'firebase/firestore';
 import { ref, getDownloadURL, uploadString } from 'firebase/storage';
+import { useNavigate } from 'react-router-dom';
 import { db, storage } from '../firebase';
 import { CollectionName } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,6 +12,7 @@ import {
 
 const UserProfile: React.FC = () => {
   const { userProfile, currentUser } = useAuth();
+  const navigate = useNavigate();
   
   // States
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -111,16 +113,25 @@ const UserProfile: React.FC = () => {
       await uploadString(storageRef, capturedImage, 'data_url');
       const downloadURL = await getDownloadURL(storageRef);
 
+      // Atualiza o documento do usuário
+      // O AuthContext (com onSnapshot) detectará essa mudança automaticamente
       await updateDoc(doc(db, CollectionName.USERS, currentUser.uid), {
         avatar: downloadURL,
         photoURL: downloadURL
       });
-      alert("Foto de perfil atualizada!");
-      stopCamera();
+      
+      // Feedback visual antes do redirecionamento
+      setSaving(false);
+      
+      // Redirecionamento automático para a tela de ponto
+      // Dá um pequeno delay para garantir que o contexto propagou a mudança
+      setTimeout(() => {
+        navigate('/app/ponto');
+      }, 1000);
+
     } catch (error) {
       console.error("Save Error:", error);
       alert("Erro ao salvar foto.");
-    } finally {
       setSaving(false);
     }
   };

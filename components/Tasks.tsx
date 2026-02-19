@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import firebase from '../firebase';
 import { db } from '../firebase';
 import { CollectionName, Task } from '../types';
 import TaskList from './TaskList';
@@ -17,19 +17,16 @@ const Tasks: React.FC = () => {
 
   useEffect(() => {
     // Real-time listener for tasks
-    const q = query(
-      collection(db, CollectionName.TASKS),
-      orderBy('createdAt', 'desc')
-    );
+    const q = db.collection(CollectionName.TASKS).orderBy('createdAt', 'desc');
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
       const taskData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Task[];
       setTasks(taskData);
       setLoading(false);
-    }, (error) => {
+    }, (error: any) => {
       console.error("Error fetching tasks:", error);
       // Gracefully handle permission errors by stopping loading state
       setLoading(false);
@@ -99,7 +96,7 @@ const Tasks: React.FC = () => {
              placeholder="Buscar O.S. ou Cliente..." 
              value={searchTerm}
              onChange={(e) => setSearchTerm(e.target.value)}
-             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-brand-500 focus:border-brand-500"
+             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
            />
         </div>
       </div>

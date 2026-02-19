@@ -6,8 +6,8 @@ const Inventory: React.FC = () => {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Controle de Estoque</h1>
-          <p className="text-gray-500">Gestão de equipamentos e materiais.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Almoxarifado</h1>
+          <p className="text-gray-500">Gestão de materiais e equipamentos.</p>
         </div>
         <button className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium">
           Solicitar Material
@@ -21,10 +21,10 @@ const Inventory: React.FC = () => {
             <input 
               type="text" 
               placeholder="Buscar item..." 
-              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-brand-500 focus:border-brand-500"
+              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
             />
           </div>
-          <select className="border border-gray-300 rounded-lg text-sm px-4 py-2 bg-white">
+          <select className="border border-gray-300 rounded-lg text-sm px-4 py-2 bg-white text-gray-900">
             <option>Todas Categorias</option>
             <option>EPIs</option>
             <option>Ferramentas</option>

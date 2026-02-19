@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import firebase from '../firebase';
 import { db } from '../firebase';
 import { CollectionName } from '../types';
 import { PlusCircle, Loader2 } from 'lucide-react';
@@ -16,11 +16,11 @@ const TaskForm: React.FC = () => {
     setIsSubmitting(true);
     try {
       // Direct Firestore Operation - No local state management for the data itself
-      await addDoc(collection(db, CollectionName.TASKS), {
+      await db.collection(CollectionName.TASKS).add({
         title: title.trim(),
         description: description.trim(),
         status: 'pending',
-        createdAt: serverTimestamp() // Server-side timestamp for accuracy
+        createdAt: firebase.firestore.FieldValue.serverTimestamp() // Server-side timestamp for accuracy
       });
 
       // Reset form only
@@ -47,7 +47,7 @@ const TaskForm: React.FC = () => {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="What needs to be done?"
-            className="block w-full rounded-lg border-gray-300 bg-gray-50 border p-2.5 text-gray-900 focus:ring-brand-500 focus:border-brand-500 sm:text-sm transition-colors"
+            className="block w-full rounded-lg border-gray-300 bg-white border p-2.5 text-gray-900 focus:ring-brand-500 focus:border-brand-500 sm:text-sm transition-colors"
             required
           />
         </div>
@@ -62,7 +62,7 @@ const TaskForm: React.FC = () => {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Add details about this task..."
-            className="block w-full rounded-lg border-gray-300 bg-gray-50 border p-2.5 text-gray-900 focus:ring-brand-500 focus:border-brand-500 sm:text-sm transition-colors resize-none"
+            className="block w-full rounded-lg border-gray-300 bg-white border p-2.5 text-gray-900 focus:ring-brand-500 focus:border-brand-500 sm:text-sm transition-colors resize-none"
           />
         </div>
 

@@ -1,6 +1,5 @@
-import React from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
+import React, { useState } from 'react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { PermissionSet } from '../types';
@@ -20,16 +19,21 @@ import {
   MapPin,
   CalendarCheck,
   Shield,
-  Settings
+  Menu,
+  X
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
   const { userProfile, currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Mobile Menu State
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await auth.signOut();
       navigate('/login');
     } catch (error) {
       console.error("Logout failed", error);
@@ -52,10 +56,10 @@ const Layout: React.FC = () => {
     { to: '/app/clientes', icon: Building, label: 'Clientes', visible: can('canManageClients') },
     { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
-    { to: '/app/estoque', icon: Package, label: 'Estoque', visible: can('canViewInventory') },
+    { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') }, // Renomeado
     
     // Management Section
-    { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') }, // Using Settings perm as proxy for templates
+    { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') },
     { to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto', visible: can('canViewAttendanceReports') },
     
     // Admin Section
@@ -64,7 +68,7 @@ const Layout: React.FC = () => {
     { to: '/app/locais', icon: MapPin, label: 'Locais de Trabalho', visible: can('canManageUsers') },
   ];
 
-  // Add "Editar Site" only for Developers/Admins (Special Role Check)
+  // Add "Editar Site" only for Developers/Admins
   if (['admin', 'developer'].includes(userProfile?.role || '')) {
     navItems.push({ to: '/editor-site', icon: Edit, label: 'Editar Site', visible: true, end: false });
   }
@@ -75,20 +79,44 @@ const Layout: React.FC = () => {
   const avatarUrl = userProfile?.avatar || userProfile?.photoURL;
   const initial = (userProfile?.displayName || currentUser?.email || 'U').charAt(0).toUpperCase();
 
+  // Helper to get Page Title for Mobile Header
+  const getCurrentPageTitle = () => {
+    // Exact match
+    const currentItem = visibleItems.find(item => item.to === location.pathname);
+    if (currentItem) return currentItem.label;
+    
+    // Fallbacks for sub-routes or specific paths
+    if (location.pathname.includes('/app/perfil')) return 'Meu Perfil';
+    
+    return 'MGR Conect';
+  };
+
+  // Close sidebar handler
+  const closeSidebar = () => setSidebarOpen(false);
+
+  // Navigation handler (closes drawer on mobile)
+  const handleNavClick = (path: string) => {
+    navigate(path);
+    closeSidebar();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
       
-      {/* MOBILE HEADER (Top Bar) */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-40 flex items-center justify-between px-4 shadow-sm">
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3">
-            <Hexagon size={20} fill="currentColor" />
-          </div>
-          <span className="text-xl font-bold text-gray-900">MGR Conect</span>
-        </div>
+      {/* MOBILE HEADER (Fixed Top) */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-12 bg-white border-b border-gray-200 z-30 flex items-center justify-between px-4 shadow-sm">
+        <button 
+          onClick={() => setSidebarOpen(true)}
+          className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+        >
+          <Menu size={24} />
+        </button>
         
-        <div className="flex items-center gap-3">
-           <button onClick={() => navigate('/app/perfil')} className="relative">
+        <span className="font-bold text-gray-900 truncate">
+          {getCurrentPageTitle()}
+        </span>
+        
+        <button onClick={() => navigate('/app/perfil')} className="relative">
              {avatarUrl ? (
                <img src={avatarUrl} alt="User" className="w-8 h-8 rounded-full border border-brand-200 object-cover" />
              ) : (
@@ -96,22 +124,40 @@ const Layout: React.FC = () => {
                   {initial}
                </div>
              )}
-           </button>
-           <button onClick={handleLogout} className="text-gray-500 hover:text-red-600">
-             <LogOut size={20} />
-           </button>
-        </div>
+        </button>
       </header>
 
-      {/* DESKTOP SIDEBAR (Left) */}
-      <aside className="hidden lg:flex fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 flex-col">
+      {/* MOBILE OVERLAY (Backdrop) */}
+      <div 
+        className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-200 lg:hidden ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={closeSidebar}
+      />
+
+      {/* SIDEBAR (Desktop Fixed / Mobile Drawer) */}
+      <aside 
+        className={`
+          fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col
+          transform transition-transform duration-300 ease-in-out
+          lg:translate-x-0 lg:static lg:inset-auto
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
+      >
         <div className="h-full flex flex-col">
           {/* Logo Area */}
-          <div className="h-16 flex items-center px-6 border-b border-gray-100">
-            <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3">
-              <Hexagon size={20} fill="currentColor" />
+          <div className="h-16 flex items-center justify-between px-6 border-b border-gray-100">
+            <div 
+              onClick={() => handleNavClick('/app')} 
+              className="flex items-center cursor-pointer group"
+            >
+              <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 group-hover:bg-brand-700 transition-colors">
+                <Hexagon size={20} fill="currentColor" />
+              </div>
+              <span className="text-xl font-bold text-gray-900 group-hover:text-brand-700 transition-colors">MGR Conect</span>
             </div>
-            <span className="text-xl font-bold text-gray-900">MGR Conect</span>
+            {/* Close Button (Mobile Only) */}
+            <button onClick={closeSidebar} className="lg:hidden text-gray-500">
+              <X size={24} />
+            </button>
           </div>
 
           {/* Navigation */}
@@ -121,6 +167,7 @@ const Layout: React.FC = () => {
                 key={item.to}
                 to={item.to}
                 end={item.end}
+                onClick={closeSidebar}
                 className={({ isActive }) => `
                   flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors
                   ${isActive 
@@ -136,6 +183,7 @@ const Layout: React.FC = () => {
             <div className="pt-4 mt-4 border-t border-gray-100">
               <NavLink
                 to="/"
+                onClick={closeSidebar}
                 className="flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 hover:text-gray-900"
               >
                 <Globe size={20} className="mr-3" />
@@ -147,7 +195,7 @@ const Layout: React.FC = () => {
           {/* User Profile & Logout */}
           <div className="p-4 border-t border-gray-100 bg-gray-50/50">
             <div 
-              onClick={() => navigate('/app/perfil')}
+              onClick={() => handleNavClick('/app/perfil')}
               className="flex items-center mb-4 cursor-pointer hover:bg-white p-2 rounded-lg transition-colors group"
             >
               {avatarUrl ? (
@@ -178,33 +226,11 @@ const Layout: React.FC = () => {
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden pt-16 lg:pt-0 pb-20 lg:pb-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden pt-12 lg:pt-0">
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <Outlet />
         </div>
       </main>
-
-      {/* MOBILE BOTTOM NAVIGATION (Footer) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex items-center overflow-x-auto no-scrollbar pb-safe w-full">
-        {visibleItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) => `
-              min-w-[5rem] flex-1 flex flex-col items-center justify-center py-2 px-1 transition-colors flex-shrink-0
-              ${isActive 
-                ? 'text-brand-600 border-t-2 border-brand-600' 
-                : 'text-gray-500 hover:text-gray-900 border-t-2 border-transparent'}
-            `}
-          >
-            <item.icon size={20} className="mb-1" />
-            <span className="text-[10px] font-medium truncate w-full text-center leading-none px-1">
-              {item.label}
-            </span>
-          </NavLink>
-        ))}
-      </nav>
     </div>
   );
 };

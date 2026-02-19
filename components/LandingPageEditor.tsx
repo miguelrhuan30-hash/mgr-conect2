@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import firebase from '../firebase';
 import { db, storage } from '../firebase';
 import { CollectionName, LandingPageContent, Partner } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,9 +45,9 @@ const LandingPageEditor: React.FC = () => {
 
     const fetchContent = async () => {
       try {
-        const docRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
+        const docRef = db.collection(CollectionName.SYSTEM_SETTINGS).doc('landing_page');
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
           const data = docSnap.data() as any;
           
           // Migration Logic for Editor
@@ -88,7 +87,7 @@ const LandingPageEditor: React.FC = () => {
     if (!content) return;
     setSaving(true);
     try {
-      await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), content, { merge: true });
+      await db.collection(CollectionName.SYSTEM_SETTINGS).doc('landing_page').set(content, { merge: true });
       alert("Alterações salvas com sucesso!");
     } catch (error) {
       console.error("Error saving content:", error);
@@ -164,9 +163,9 @@ const LandingPageEditor: React.FC = () => {
         // Compress Image
         const compressedFile = await compressImage(partnerLogoFile, 400, 0.8);
 
-        const storageRef = ref(storage, `landing/partners/${Date.now()}_${compressedFile.name}`);
-        await uploadBytes(storageRef, compressedFile);
-        logoUrl = await getDownloadURL(storageRef);
+        const storageRef = storage.ref(`landing/partners/${Date.now()}_${compressedFile.name}`);
+        await storageRef.put(compressedFile);
+        logoUrl = await storageRef.getDownloadURL();
       }
 
       const newPartner: Partner = {
@@ -267,7 +266,7 @@ const LandingPageEditor: React.FC = () => {
                 type="text" 
                 value={content.hero.title} 
                 onChange={e => updateField('hero', 'title', e.target.value)}
-                className="w-full rounded-lg border-gray-300"
+                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
               />
             </div>
             <div>
@@ -276,7 +275,7 @@ const LandingPageEditor: React.FC = () => {
                 rows={2}
                 value={content.hero.subtitle} 
                 onChange={e => updateField('hero', 'subtitle', e.target.value)}
-                className="w-full rounded-lg border-gray-300 resize-none"
+                className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
               />
             </div>
             <div>
@@ -288,7 +287,7 @@ const LandingPageEditor: React.FC = () => {
                     type="text" 
                     value={content.hero.backgroundImageUrl} 
                     onChange={e => updateField('hero', 'backgroundImageUrl', e.target.value)}
-                    className="w-full pl-9 rounded-lg border-gray-300 font-mono text-xs"
+                    className="w-full pl-9 rounded-lg border-gray-300 font-mono text-xs bg-white text-gray-900"
                   />
                 </div>
               </div>
@@ -300,7 +299,7 @@ const LandingPageEditor: React.FC = () => {
                   type="text" 
                   value={content.hero.ctaText} 
                   onChange={e => updateField('hero', 'ctaText', e.target.value)}
-                  className="w-full rounded-lg border-gray-300"
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                 />
               </div>
               <div>
@@ -309,7 +308,7 @@ const LandingPageEditor: React.FC = () => {
                   type="text" 
                   value={content.hero.ctaLink} 
                   onChange={e => updateField('hero', 'ctaLink', e.target.value)}
-                  className="w-full rounded-lg border-gray-300"
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                 />
               </div>
             </div>
@@ -324,7 +323,7 @@ const LandingPageEditor: React.FC = () => {
           <div className="p-6">
             <div className="space-y-3 mb-4">
               {(content.stats || []).map((stat, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-2 border border-gray-200 rounded-lg">
+                <div key={idx} className="flex items-center gap-3 p-2 border border-gray-200 rounded-lg bg-white">
                    <div className="flex-1 font-bold text-gray-900">{stat.value}</div>
                    <div className="flex-1 text-sm text-gray-500">{stat.label}</div>
                    <button onClick={() => removeStat(idx)} className="text-red-400 hover:text-red-600">
@@ -338,13 +337,13 @@ const LandingPageEditor: React.FC = () => {
                  placeholder="Valor (ex: +10)" 
                  value={newStatValue}
                  onChange={e => setNewStatValue(e.target.value)}
-                 className="flex-1 rounded border-gray-300 text-sm"
+                 className="flex-1 rounded border-gray-300 text-sm bg-white text-gray-900"
                />
                <input 
                  placeholder="Rótulo (ex: Anos)" 
                  value={newStatLabel}
                  onChange={e => setNewStatLabel(e.target.value)}
-                 className="flex-[2] rounded border-gray-300 text-sm"
+                 className="flex-[2] rounded border-gray-300 text-sm bg-white text-gray-900"
                />
                <button onClick={addStat} className="p-2 bg-brand-600 text-white rounded hover:bg-brand-700">
                  <Plus size={16} />
@@ -365,7 +364,7 @@ const LandingPageEditor: React.FC = () => {
                 type="text" 
                 value={content.clients?.title || ''} 
                 onChange={e => updateField('clients', 'title', e.target.value)}
-                className="w-full rounded-lg border-gray-300"
+                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
               />
             </div>
             <div>
@@ -374,7 +373,7 @@ const LandingPageEditor: React.FC = () => {
                 type="text" 
                 value={content.clients?.description || ''} 
                 onChange={e => updateField('clients', 'description', e.target.value)}
-                className="w-full rounded-lg border-gray-300"
+                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
               />
             </div>
             
@@ -425,7 +424,7 @@ const LandingPageEditor: React.FC = () => {
                 type="text" 
                 value={content.services.title} 
                 onChange={e => updateField('services', 'title', e.target.value)}
-                className="w-full rounded-lg border-gray-300"
+                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
               />
             </div>
             <div className="mt-4 pt-4 border-t border-gray-100">
@@ -448,7 +447,7 @@ const LandingPageEditor: React.FC = () => {
                 type="text" 
                 value={content.contact.address} 
                 onChange={e => updateField('contact', 'address', e.target.value)}
-                className="w-full rounded-lg border-gray-300"
+                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
               />
             </div>
             <div>
@@ -457,7 +456,7 @@ const LandingPageEditor: React.FC = () => {
                 type="text" 
                 value={content.contact.whatsapp} 
                 onChange={e => updateField('contact', 'whatsapp', e.target.value)}
-                className="w-full rounded-lg border-gray-300"
+                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
               />
             </div>
           </div>
@@ -475,7 +474,7 @@ const LandingPageEditor: React.FC = () => {
                   type="checkbox" 
                   checked={content.features.whatsappFloat}
                   onChange={e => updateField('features', 'whatsappFloat', e.target.checked)}
-                  className="h-5 w-5 text-brand-600 focus:ring-brand-500 border-gray-300 rounded"
+                  className="h-5 w-5 text-brand-600 focus:ring-brand-500 border-gray-300 rounded bg-white"
                 />
              </div>
              <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
@@ -484,7 +483,7 @@ const LandingPageEditor: React.FC = () => {
                   type="checkbox" 
                   checked={content.features.contactForm}
                   onChange={e => updateField('features', 'contactForm', e.target.checked)}
-                  className="h-5 w-5 text-brand-600 focus:ring-brand-500 border-gray-300 rounded"
+                  className="h-5 w-5 text-brand-600 focus:ring-brand-500 border-gray-300 rounded bg-white"
                 />
              </div>
           </div>
@@ -508,14 +507,14 @@ const LandingPageEditor: React.FC = () => {
                   type="text" 
                   value={partnerName}
                   onChange={(e) => setPartnerName(e.target.value)}
-                  className="w-full rounded-lg border-gray-300"
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                   placeholder="Ex: MGR Refrigeração"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Logotipo (Imagem)</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-gray-50 transition-colors cursor-pointer relative">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-gray-50 transition-colors cursor-pointer relative bg-white">
                    <input 
                      type="file" 
                      accept="image/*"

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import firebase from '../firebase';
 import { auth, db } from '../firebase';
 import { CollectionName } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -62,15 +61,15 @@ const Login: React.FC = () => {
       
       try {
         if (isLogin) {
-          userCredential = await signInWithEmailAndPassword(auth, email, password);
+          userCredential = await auth.signInWithEmailAndPassword(email, password);
         } else {
-          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          userCredential = await auth.createUserWithEmailAndPassword(email, password);
         }
       } catch (initialError: any) {
         // Auto-switch to login if user tries to register existing email
         if (!isLogin && initialError.code === 'auth/email-already-in-use') {
            try {
-             userCredential = await signInWithEmailAndPassword(auth, email, password);
+             userCredential = await auth.signInWithEmailAndPassword(email, password);
              effectiveIsLogin = true; 
            } catch (loginError: any) {
              throw loginError; 
@@ -86,13 +85,13 @@ const Login: React.FC = () => {
 
         if (isMaster) {
             // FORÇA BRUTA: Garante que o usuário Mestre seja Admin no Banco de Dados com todas as permissões
-            await setDoc(doc(db, CollectionName.USERS, user.uid), {
+            await db.collection(CollectionName.USERS).doc(user.uid).set({
               uid: user.uid,
               email: user.email,
               displayName: 'Gestor Mestre',
               role: 'admin',
-              xp: 9999,
-              level: 99,
+              xp: 0,
+              level: 1,
               // Define jornada livre para o mestre
               workSchedule: {
                  startTime: '00:00',
@@ -123,14 +122,14 @@ const Login: React.FC = () => {
         } 
         else if (!effectiveIsLogin) {
           // New normal users start as pending
-          await setDoc(doc(db, CollectionName.USERS, user.uid), {
+          await db.collection(CollectionName.USERS).doc(user.uid).set({
               uid: user.uid,
               email: user.email,
               displayName: user.displayName || email.split('@')[0],
               role: 'pending', 
               xp: 0,
               level: 1,
-              createdAt: serverTimestamp()
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
         }
         
@@ -178,7 +177,7 @@ const Login: React.FC = () => {
               <input
                 type="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm bg-white"
                 placeholder="Endereço de e-mail"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -189,7 +188,7 @@ const Login: React.FC = () => {
               <input
                 type="password"
                 required
-                className="appearance-none rounded-none relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm bg-white"
                 placeholder="Senha (mínimo 6 caracteres)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

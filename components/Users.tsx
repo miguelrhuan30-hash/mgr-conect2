@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import firebase from '../firebase';
 import { db, storage } from '../firebase';
 import { CollectionName, UserProfile, UserRole, WorkLocation, Sector, PermissionSet } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,7 +49,11 @@ const PERMISSION_GROUPS = [
     color: 'text-blue-600 bg-blue-100',
     perms: [
       { key: 'canRegisterAttendance', label: 'Registrar Ponto' },
-      { key: 'canViewAttendanceReports', label: 'Ver Relatórios de Equipe' },
+      { 
+        key: 'canViewAttendanceReports', 
+        label: 'Visualizar Relatórios de Ponto',
+        description: 'Permite acessar e gerar relatórios de frequência e ponto dos colaboradores'
+      },
       { key: 'canManageAttendance', label: 'Gerenciar/Corrigir Ponto' },
       { 
         key: 'requiresTimeClock', 
@@ -132,12 +135,12 @@ const Users: React.FC = () => {
     }
 
     // Fetch Users
-    const q = query(collection(db, CollectionName.USERS), orderBy('displayName', 'asc'));
-    const unsubscribeUsers = onSnapshot(q, (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id })) as UserProfile[];
+    const q = db.collection(CollectionName.USERS).orderBy('displayName', 'asc');
+    const unsubscribeUsers = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ ...(doc.data() as any), uid: doc.id })) as UserProfile[];
       setUsers(usersData);
       setLoading(false);
-    }, (error) => {
+    }, (error: any) => {
       console.error("Error fetching users:", error);
       setLoading(false);
     });
@@ -145,8 +148,8 @@ const Users: React.FC = () => {
     // Fetch Locations
     const fetchLocs = async () => {
       try {
-        const snap = await getDocs(collection(db, CollectionName.WORK_LOCATIONS));
-        setLocations(snap.docs.map(d => ({id: d.id, ...d.data()} as WorkLocation)));
+        const snap = await db.collection(CollectionName.WORK_LOCATIONS).get();
+        setLocations(snap.docs.map(d => ({id: d.id, ...(d.data() as any)} as WorkLocation)));
       } catch (error) {
         console.error("Error fetching locations:", error);
       }
@@ -155,8 +158,8 @@ const Users: React.FC = () => {
     // Fetch Sectors
     const fetchSectors = async () => {
       try {
-        const snap = await getDocs(query(collection(db, CollectionName.SECTORS), orderBy('name')));
-        setSectors(snap.docs.map(d => ({id: d.id, ...d.data()} as Sector)));
+        const snap = await db.collection(CollectionName.SECTORS).orderBy('name').get();
+        setSectors(snap.docs.map(d => ({id: d.id, ...(d.data() as any)} as Sector)));
       } catch (error) {
         console.error("Error fetching sectors:", error);
       }
@@ -182,7 +185,7 @@ const Users: React.FC = () => {
   const saveEdits = async (uid: string) => {
     setIsSaving(true);
     try {
-      await updateDoc(doc(db, CollectionName.USERS, uid), {
+      await db.collection(CollectionName.USERS).doc(uid).update({
         workSchedule: {
           startTime: editSchedule.start,
           lunchDuration: editSchedule.lunch,
@@ -247,7 +250,7 @@ const Users: React.FC = () => {
     try {
       const sectorName = sectors.find(s => s.id === selectedSectorId)?.name || '';
       
-      await updateDoc(doc(db, CollectionName.USERS, permEditingUser.uid), {
+      await db.collection(CollectionName.USERS).doc(permEditingUser.uid).update({
         sectorId: selectedSectorId,
         sectorName: sectorName,
         permissions: currentPermissions
@@ -265,17 +268,17 @@ const Users: React.FC = () => {
 
   // --- GENERAL ACTIONS ---
   const handleRoleChange = async (uid: string, newRole: UserRole) => {
-    await updateDoc(doc(db, CollectionName.USERS, uid), { role: newRole });
+    await db.collection(CollectionName.USERS).doc(uid).update({ role: newRole });
   };
 
   const handlePhotoUpload = async (uid: string, file: File) => {
     if (!file) return;
     try {
       const compressedFile = await compressImage(file, 600, 0.8);
-      const storageRef = ref(storage, `users/${uid}/profile_${Date.now()}.jpg`);
-      await uploadBytes(storageRef, compressedFile);
-      const url = await getDownloadURL(storageRef);
-      await updateDoc(doc(db, CollectionName.USERS, uid), { photoURL: url });
+      const storageRef = storage.ref(`users/${uid}/profile_${Date.now()}.jpg`);
+      await storageRef.put(compressedFile);
+      const url = await storageRef.getDownloadURL();
+      await db.collection(CollectionName.USERS).doc(uid).update({ photoURL: url });
       alert("Foto atualizada!");
     } catch (e) {
       console.error(e);
@@ -360,13 +363,13 @@ const Users: React.FC = () => {
                          <div className="space-y-2 bg-gray-50 p-3 rounded border border-gray-200 min-w-[200px]">
                            <div className="flex items-center gap-2">
                              <Clock size={14} className="text-gray-500"/>
-                             <input type="time" value={editSchedule.start} onChange={e => setEditSchedule({...editSchedule, start: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full" />
+                             <input type="time" value={editSchedule.start} onChange={e => setEditSchedule({...editSchedule, start: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
                              <span className="text-xs">às</span>
-                             <input type="time" value={editSchedule.end} onChange={e => setEditSchedule({...editSchedule, end: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full" />
+                             <input type="time" value={editSchedule.end} onChange={e => setEditSchedule({...editSchedule, end: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
                            </div>
                            <div className="flex items-center gap-2">
                              <span className="text-xs text-gray-500">Almoço (min):</span>
-                             <input type="number" value={editSchedule.lunch} onChange={e => setEditSchedule({...editSchedule, lunch: parseInt(e.target.value)})} className="text-xs border rounded w-16 px-1 py-0.5" />
+                             <input type="number" value={editSchedule.lunch} onChange={e => setEditSchedule({...editSchedule, lunch: parseInt(e.target.value)})} className="text-xs border rounded w-16 px-1 py-0.5 bg-white text-gray-900" />
                            </div>
                            <div className="space-y-1">
                              <p className="text-xs font-bold text-gray-700 flex items-center gap-1"><MapPin size={12}/> Locais Permitidos:</p>
@@ -403,7 +406,7 @@ const Users: React.FC = () => {
                       <select
                         value={user.role}
                         onChange={(e) => handleRoleChange(user.uid, e.target.value as UserRole)}
-                        className="text-xs font-semibold px-2 py-1 rounded-full border cursor-pointer bg-gray-50"
+                        className="text-xs font-semibold px-2 py-1 rounded-full border cursor-pointer bg-white text-gray-900"
                         disabled={user.email === 'gestor@mgr.com'}
                       >
                         <option value="pending">Pendente</option>
@@ -454,7 +457,7 @@ const Users: React.FC = () => {
                  <select 
                    value={selectedSectorId}
                    onChange={(e) => handleSectorChange(e.target.value)}
-                   className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500"
+                   className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                  >
                    <option value="">Selecione um setor...</option>
                    {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}

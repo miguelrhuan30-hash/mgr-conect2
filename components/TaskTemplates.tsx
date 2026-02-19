@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import firebase from '../firebase';
 import { db } from '../firebase';
 import { CollectionName, TaskTemplate, EvidenceType } from '../types';
 import { 
@@ -32,9 +32,8 @@ const TaskTemplates: React.FC = () => {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, CollectionName.TASK_TEMPLATES), orderBy('title', 'asc'));
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as TaskTemplate[];
+      const snapshot = await db.collection(CollectionName.TASK_TEMPLATES).orderBy('title', 'asc').get();
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) as TaskTemplate[];
       setTemplates(data);
     } catch (error) {
       console.error("Error fetching templates:", error);
@@ -75,7 +74,7 @@ const TaskTemplates: React.FC = () => {
   const handleDeleteTemplate = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir este modelo?')) {
       try {
-        await deleteDoc(doc(db, CollectionName.TASK_TEMPLATES, id));
+        await db.collection(CollectionName.TASK_TEMPLATES).doc(id).delete();
         setTemplates(templates.filter(t => t.id !== id));
       } catch (error) {
         console.error("Error deleting template:", error);
@@ -94,10 +93,10 @@ const TaskTemplates: React.FC = () => {
         description,
         tools,
         checklist: steps,
-        createdAt: serverTimestamp() as any
+        createdAt: firebase.firestore.FieldValue.serverTimestamp() as any
       };
       
-      const docRef = await addDoc(collection(db, CollectionName.TASK_TEMPLATES), payload);
+      const docRef = await db.collection(CollectionName.TASK_TEMPLATES).add(payload);
       setTemplates([...templates, { id: docRef.id, ...payload }]);
       setIsModalOpen(false);
       resetForm();
@@ -192,11 +191,11 @@ const TaskTemplates: React.FC = () => {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Título do Modelo</label>
-                      <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full rounded-lg border-gray-300" placeholder="Ex: Manutenção Preventiva" />
+                      <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="Ex: Manutenção Preventiva" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Descrição Geral</label>
-                      <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} className="w-full rounded-lg border-gray-300 resize-none" placeholder="Objetivo deste procedimento..." />
+                      <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900" placeholder="Objetivo deste procedimento..." />
                     </div>
                   </div>
 
@@ -211,7 +210,7 @@ const TaskTemplates: React.FC = () => {
                         value={newTool} 
                         onChange={e => setNewTool(e.target.value)} 
                         onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddTool())}
-                        className="flex-1 rounded-md border-orange-200 text-sm focus:ring-orange-500 focus:border-orange-500" 
+                        className="flex-1 rounded-md border-orange-200 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white text-gray-900" 
                         placeholder="Adicionar ferramenta..."
                       />
                       <button type="button" onClick={handleAddTool} className="p-2 bg-orange-200 text-orange-700 rounded-md hover:bg-orange-300"><Plus size={16}/></button>
@@ -237,15 +236,15 @@ const TaskTemplates: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                       <div className="md:col-span-5">
                         <label className="block text-xs font-medium text-gray-500 mb-1">Título da Etapa</label>
-                        <input type="text" value={newStepTitle} onChange={e => setNewStepTitle(e.target.value)} className="w-full rounded-md border-gray-300 text-sm" placeholder="Ex: Verificar conexões" />
+                        <input type="text" value={newStepTitle} onChange={e => setNewStepTitle(e.target.value)} className="w-full rounded-md border-gray-300 text-sm bg-white text-gray-900" placeholder="Ex: Verificar conexões" />
                       </div>
                       <div className="md:col-span-4">
                         <label className="block text-xs font-medium text-gray-500 mb-1">Descrição (Opcional)</label>
-                        <input type="text" value={newStepDesc} onChange={e => setNewStepDesc(e.target.value)} className="w-full rounded-md border-gray-300 text-sm" placeholder="Detalhes..." />
+                        <input type="text" value={newStepDesc} onChange={e => setNewStepDesc(e.target.value)} className="w-full rounded-md border-gray-300 text-sm bg-white text-gray-900" placeholder="Detalhes..." />
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-xs font-medium text-gray-500 mb-1">Evidência</label>
-                        <select value={newStepEvidence} onChange={e => setNewStepEvidence(e.target.value as EvidenceType)} className="w-full rounded-md border-gray-300 text-sm">
+                        <select value={newStepEvidence} onChange={e => setNewStepEvidence(e.target.value as EvidenceType)} className="w-full rounded-md border-gray-300 text-sm bg-white text-gray-900">
                           <option value="NONE">Apenas Check</option>
                           <option value="PHOTO">Exigir Foto</option>
                           <option value="TEXT">Exigir Texto</option>

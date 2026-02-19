@@ -1,13 +1,12 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
-import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout'; // Mantido estático como estrutura base
 import LoadingScreen from './components/LoadingScreen';
-import { PermissionSet, CollectionName } from './types';
+import { PermissionSet, CollectionName, UserProfile } from './types';
 import { ShieldAlert, LogOut, Clock, Lock } from 'lucide-react';
+import firebase from './firebase';
 
 // Lazy Load Components
 const Login = lazy(() => import('./components/Login'));
@@ -77,8 +76,7 @@ const AppContent: React.FC = () => {
         console.log("⚠️ MASTER ADMIN: Auto-correcting permissions...");
         const correctPermissions = async () => {
           try {
-             const userRef = doc(db, CollectionName.USERS, currentUser.uid);
-             await updateDoc(userRef, {
+             await db.collection(CollectionName.USERS).doc(currentUser.uid).update({
                role: 'admin',
                'permissions.requiresTimeClock': false,
                'permissions.canManageUsers': true,
@@ -103,14 +101,12 @@ const AppContent: React.FC = () => {
     }
 
     // Listener for the latest time entry
-    const q = query(
-      collection(db, CollectionName.TIME_ENTRIES),
-      where('userId', '==', currentUser.uid),
-      orderBy('timestamp', 'desc'),
-      limit(1)
-    );
+    const q = db.collection(CollectionName.TIME_ENTRIES)
+      .where('userId', '==', currentUser.uid)
+      .orderBy('timestamp', 'desc')
+      .limit(1);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
       if (!snapshot.empty) {
         const lastEntry = snapshot.docs[0].data();
         // Shift is open if last action was 'entry' or returning from lunch
@@ -121,7 +117,7 @@ const AppContent: React.FC = () => {
         setIsShiftOpen(false);
       }
       setCheckingShift(false);
-    }, (error) => {
+    }, (error: any) => {
       console.error("Error monitoring shift status:", error);
       setCheckingShift(false);
     });
@@ -140,7 +136,7 @@ const AppContent: React.FC = () => {
 
   const handleEmergencyLogout = async () => {
     try {
-      await signOut(auth);
+      await auth.signOut();
       window.location.href = '/';
     } catch (error) {
       console.error("Logout failed", error);

@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout'; // Mantido estático como estrutura base
@@ -64,7 +64,6 @@ const AppContent: React.FC = () => {
   const [checkingShift, setCheckingShift] = useState(true);
 
   // --- MASTER BYPASS LOGIC (Regra Suprema) ---
-  // Verifica se é o gestor supremo. Se for, ignora todas as restrições.
   const isMaster = currentUser?.email?.toLowerCase() === 'gestor@mgr.com';
 
   // 1. Auto-Correction Logic for Master Admin
@@ -111,7 +110,7 @@ const AppContent: React.FC = () => {
       limit(1)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
       if (!snapshot.empty) {
         const lastEntry = snapshot.docs[0].data();
         // Shift is open if last action was 'entry' or returning from lunch

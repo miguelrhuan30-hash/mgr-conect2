@@ -27,7 +27,11 @@ const AttendanceReports: React.FC = () => {
   const [exitReason, setExitReason] = useState('');
   const [isSavingExit, setIsSavingExit] = useState(false);
 
-  const isAuthorized = ['admin', 'manager', 'developer'].includes(userProfile?.role || '');
+  // Correct authorization check using specific permission
+  const isAuthorized = 
+    userProfile?.role === 'admin' || 
+    userProfile?.role === 'developer' || 
+    !!userProfile?.permissions?.canViewAttendanceReports;
 
   useEffect(() => {
     // Load Users
@@ -36,7 +40,7 @@ const AttendanceReports: React.FC = () => {
       
       try {
         const snap = await getDocs(collection(db, CollectionName.USERS));
-        setUsers(snap.docs.map(d => ({uid: d.id, ...d.data()} as UserProfile)));
+        setUsers(snap.docs.map(d => ({uid: d.id, ...(d.data() as any)} as UserProfile)));
       } catch (error: any) {
         if (error?.code !== 'permission-denied') {
             console.error("Error fetching users for report:", error);
@@ -132,7 +136,7 @@ const AttendanceReports: React.FC = () => {
         );
 
         const snapshot = await getDocs(q);
-        const allEntries = snapshot.docs.map(d => ({id: d.id, ...d.data()} as TimeEntry));
+        const allEntries = snapshot.docs.map(d => ({id: d.id, ...(d.data() as any)} as TimeEntry));
 
         // Group by User
         users.forEach(user => {
@@ -339,7 +343,7 @@ const AttendanceReports: React.FC = () => {
                     <select 
                         value={selectedUser} 
                         onChange={e => setSelectedUser(e.target.value)}
-                        className="w-full pl-9 rounded-lg border-gray-300"
+                        className="w-full pl-9 rounded-lg border-gray-300 bg-white text-gray-900"
                     >
                         <option value="">Selecione...</option>
                         {users.map(u => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}
@@ -353,7 +357,7 @@ const AttendanceReports: React.FC = () => {
                     type="month" 
                     value={selectedMonth}
                     onChange={e => setSelectedMonth(e.target.value)}
-                    className="w-full rounded-lg border-gray-300" 
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900" 
                     />
                 </div>
 
@@ -438,7 +442,7 @@ const AttendanceReports: React.FC = () => {
                             type="datetime-local" 
                             value={exitTime} 
                             onChange={e => setExitTime(e.target.value)}
-                            className="w-full rounded-lg border-gray-300"
+                            className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                          />
                      </div>
                      <div>
@@ -447,7 +451,7 @@ const AttendanceReports: React.FC = () => {
                             rows={2}
                             value={exitReason} 
                             onChange={e => setExitReason(e.target.value)}
-                            className="w-full rounded-lg border-gray-300 resize-none"
+                            className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
                             placeholder="Ex: Colaborador esqueceu de registrar saída."
                          />
                      </div>

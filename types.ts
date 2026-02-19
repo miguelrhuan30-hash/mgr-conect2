@@ -1,4 +1,7 @@
-import { Timestamp } from 'firebase/firestore';
+import firebase from 'firebase/app';
+import 'firebase/firestore';
+
+export type Timestamp = firebase.firestore.Timestamp;
 
 // --- ACCESS CONTROL & PERMISSIONS ---
 export type UserRole = 'admin' | 'manager' | 'employee' | 'technician' | 'pending' | 'developer';

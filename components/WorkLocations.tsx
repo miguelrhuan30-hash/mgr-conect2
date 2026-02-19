@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import firebase from '../firebase';
 import { db } from '../firebase';
 import { CollectionName, WorkLocation } from '../types';
 import { MapPin, Plus, Trash2, Save, Loader2 } from 'lucide-react';
@@ -16,11 +16,11 @@ const WorkLocations: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, CollectionName.WORK_LOCATIONS), orderBy('name', 'asc'));
+    const q = db.collection(CollectionName.WORK_LOCATIONS).orderBy('name', 'asc');
     
     // Added error handling to onSnapshot
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as WorkLocation[];
+    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) as WorkLocation[];
       setLocations(data);
       setLoading(false);
     }, (error: any) => {
@@ -54,7 +54,7 @@ const WorkLocations: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, CollectionName.WORK_LOCATIONS), {
+      await db.collection(CollectionName.WORK_LOCATIONS).add({
         name,
         latitude: parseFloat(lat),
         longitude: parseFloat(lng),
@@ -75,7 +75,7 @@ const WorkLocations: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     if (window.confirm("Remover este local?")) {
-      await deleteDoc(doc(db, CollectionName.WORK_LOCATIONS, id));
+      await db.collection(CollectionName.WORK_LOCATIONS).doc(id).delete();
     }
   };
 
@@ -96,19 +96,19 @@ const WorkLocations: React.FC = () => {
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div className="md:col-span-1">
             <label className="block text-xs font-medium text-gray-700 mb-1">Nome do Local</label>
-            <input required type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Sede, Obra X" className="w-full rounded-lg border-gray-300 text-sm" />
+            <input required type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Sede, Obra X" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
           </div>
           <div className="md:col-span-1">
             <label className="block text-xs font-medium text-gray-700 mb-1">Latitude</label>
-            <input required type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="-23.5505" className="w-full rounded-lg border-gray-300 text-sm" />
+            <input required type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="-23.5505" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
           </div>
           <div className="md:col-span-1">
              <label className="block text-xs font-medium text-gray-700 mb-1">Longitude</label>
-             <input required type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="-46.6333" className="w-full rounded-lg border-gray-300 text-sm" />
+             <input required type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="-46.6333" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
           </div>
           <div className="md:col-span-1">
              <label className="block text-xs font-medium text-gray-700 mb-1">Raio (metros)</label>
-             <input required type="number" value={radius} onChange={e => setRadius(e.target.value)} placeholder="100" className="w-full rounded-lg border-gray-300 text-sm" />
+             <input required type="number" value={radius} onChange={e => setRadius(e.target.value)} placeholder="100" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
           </div>
           
           <div className="md:col-span-2 flex gap-2">
@@ -141,23 +141,3 @@ const WorkLocations: React.FC = () => {
                  <td className="px-6 py-4 text-sm font-medium text-gray-900">{loc.name}</td>
                  <td className="px-6 py-4 text-xs text-gray-500">{loc.latitude}, {loc.longitude}</td>
                  <td className="px-6 py-4 text-sm text-gray-900">{loc.radius}m</td>
-                 <td className="px-6 py-4 text-right">
-                   <button onClick={() => handleDelete(loc.id)} className="text-red-500 hover:text-red-700">
-                     <Trash2 size={16} />
-                   </button>
-                 </td>
-               </tr>
-             ))}
-             {locations.length === 0 && (
-               <tr>
-                 <td colSpan={4} className="px-6 py-8 text-center text-gray-500 italic">Nenhum local cadastrado.</td>
-               </tr>
-             )}
-           </tbody>
-         </table>
-      </div>
-    </div>
-  );
-};
-
-export default WorkLocations;

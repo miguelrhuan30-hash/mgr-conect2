@@ -1,5 +1,4 @@
 import React from 'react';
-import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { ShieldAlert, LogOut, Clock, Hexagon } from 'lucide-react';
@@ -11,7 +10,7 @@ const PendingApproval: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await auth.signOut();
       navigate('/login');
     } catch (error) {
       console.error("Logout failed", error);

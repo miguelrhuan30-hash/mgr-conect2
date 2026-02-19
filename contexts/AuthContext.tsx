@@ -1,11 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import firebase from '../firebase';
 import { auth, db } from '../firebase';
 import { UserProfile, CollectionName } from '../types';
 
 interface AuthContextType {
-  currentUser: User | null;
+  currentUser: firebase.User | null;
   userProfile: UserProfile | null;
   loading: boolean;
   loginAsDemo: () => void;
@@ -21,12 +20,14 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<firebase.User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let unsubscribeProfile: () => void;
+
+    const unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
       // Demo Mode Check
       if (!user && currentUser?.email === 'demo@mgr.com') {
           setLoading(false);
@@ -44,9 +45,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: user.email,
               displayName: 'Gestor Mestre',
               role: 'admin', // Força permissão máxima
-              xp: 9999,
-              level: 99,
-              createdAt: Timestamp.now(),
+              xp: 0,
+              level: 1, // Zerado para Nível 1
+              createdAt: firebase.firestore.Timestamp.now(),
               // Garante que não haja restrições de horário ou local
               workSchedule: { startTime: '00:00', endTime: '23:59', lunchDuration: 0 },
               allowedLocationIds: [],
@@ -75,34 +76,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
            return; 
         }
 
+        // Real-time listener for User Profile updates
         try {
-          const docRef = doc(db, CollectionName.USERS, user.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data() as UserProfile);
-          } else {
-            // Fallback profile
-            setUserProfile({
-              uid: user.uid,
-              email: user.email || '',
-              displayName: user.displayName || 'Usuário',
-              role: 'pending', 
-              xp: 0,
-              level: 1,
-              createdAt: null as any
-            });
-          }
+          const docRef = db.collection(CollectionName.USERS).doc(user.uid);
+          
+          unsubscribeProfile = docRef.onSnapshot((docSnap) => {
+            if (docSnap.exists) {
+              const data = docSnap.data() as UserProfile;
+              // Ensure permissions object exists and has default values for critical new fields
+              const patchedPermissions = {
+                  ...data.permissions,
+                  canViewAttendanceReports: data.permissions?.canViewAttendanceReports ?? false
+              };
+              setUserProfile({ ...data, permissions: patchedPermissions });
+            } else {
+              // Fallback profile if doc doesn't exist yet
+              setUserProfile({
+                uid: user.uid,
+                email: user.email || '',
+                displayName: user.displayName || 'Usuário',
+                role: 'pending', 
+                xp: 0,
+                level: 1,
+                createdAt: null as any
+              });
+            }
+            setLoading(false);
+          }, (error) => {
+            console.error("Error listening to user profile:", error);
+            setLoading(false);
+          });
+          
         } catch (err) {
-          console.error("Error fetching user profile:", err);
+          console.error("Error setting up profile listener:", err);
+          setLoading(false);
         }
       } else {
         setUserProfile(null);
+        if (unsubscribeProfile) {
+          unsubscribeProfile();
+        }
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
+    };
   }, []);
 
   const loginAsDemo = () => {
@@ -124,7 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       phoneNumber: null,
       photoURL: null,
       providerId: 'firebase'
-    } as unknown as User;
+    } as unknown as firebase.User;
 
     setCurrentUser(demoUser);
     setUserProfile({

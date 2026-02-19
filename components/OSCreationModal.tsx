@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp } from 'firebase/firestore';
+import firebase from '../firebase';
 import { db } from '../firebase';
 import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate } from '../types';
 import { X, Plus, Trash2, FileText, Calendar, User, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft } from 'lucide-react';
@@ -42,16 +42,16 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         setLoadingData(true);
         try {
           // Fetch Clients
-          const clientsSnap = await getDocs(collection(db, CollectionName.CLIENTS));
-          setClients(clientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          const clientsSnap = await db.collection(CollectionName.CLIENTS).get();
+          setClients(clientsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
 
           // Fetch Users
-          const usersSnap = await getDocs(collection(db, CollectionName.USERS));
-          setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          const usersSnap = await db.collection(CollectionName.USERS).get();
+          setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
 
           // Fetch Templates
-          const tplSnap = await getDocs(collection(db, CollectionName.TASK_TEMPLATES));
-          setTemplates(tplSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TaskTemplate)));
+          const tplSnap = await db.collection(CollectionName.TASK_TEMPLATES).get();
+          setTemplates(tplSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as TaskTemplate)));
 
         } catch (error) {
           console.error("Error loading form data:", error);
@@ -71,9 +71,8 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         return;
       }
       try {
-        const q = query(collection(db, CollectionName.PROJECTS), where("clientId", "==", clientId));
-        const snap = await getDocs(q);
-        setProjects(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const snap = await db.collection(CollectionName.PROJECTS).where("clientId", "==", clientId).get();
+        setProjects(snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
       } catch (error) {
         console.error("Error loading projects:", error);
       }
@@ -134,14 +133,14 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         projectName,
         assignedTo: assigneeId,
         assigneeName,
-        startDate: startDate ? Timestamp.fromDate(new Date(startDate)) : null,
-        endDate: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
+        startDate: startDate ? firebase.firestore.Timestamp.fromDate(new Date(startDate)) : null,
+        endDate: endDate ? firebase.firestore.Timestamp.fromDate(new Date(endDate)) : null,
         checklist,
         tools, // Save tools
-        createdAt: serverTimestamp()
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
 
-      await addDoc(collection(db, CollectionName.TASKS), taskPayload);
+      await db.collection(CollectionName.TASKS).add(taskPayload);
       onSuccess();
       onClose();
     } catch (error) {
@@ -180,7 +179,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                 <label className="text-sm font-medium text-brand-800 block mb-1">Carregar Modelo (Template)</label>
                 <select 
                   onChange={(e) => applyTemplate(e.target.value)}
-                  className="block w-full text-sm rounded-lg border-brand-200 focus:ring-brand-500 focus:border-brand-500 bg-white"
+                  className="block w-full text-sm rounded-lg border-brand-200 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                   defaultValue=""
                 >
                   <option value="" disabled>Selecione um modelo para preencher...</option>
@@ -201,7 +200,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500"
+                    className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                     placeholder="Ex: Instalação de Câmeras"
                   />
                 </div>
@@ -214,7 +213,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     <select 
                       value={clientId}
                       onChange={(e) => setClientId(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                     >
                       <option value="">Selecione...</option>
                       {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -228,7 +227,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       value={projectId}
                       onChange={(e) => setProjectId(e.target.value)}
                       disabled={!clientId}
-                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 disabled:bg-gray-100"
+                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 disabled:bg-gray-100 bg-white text-gray-900"
                     >
                       <option value="">{clientId ? 'Selecione...' : 'Escolha Cliente'}</option>
                       {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -242,7 +241,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     rows={4}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 resize-none"
+                    className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 resize-none bg-white text-gray-900"
                     placeholder="Descreva o serviço a ser executado..."
                   />
                 </div>
@@ -272,7 +271,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     <select 
                       value={priority}
                       onChange={(e) => setPriority(e.target.value as PriorityLevel)}
-                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                     >
                       <option value="low">Baixa</option>
                       <option value="medium">Média</option>
@@ -287,7 +286,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     <select 
                       value={assigneeId}
                       onChange={(e) => setAssigneeId(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                     >
                       <option value="">Selecione...</option>
                       {users.map(u => <option key={u.id} value={u.id}>{u.displayName}</option>)}
@@ -304,7 +303,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       type="datetime-local"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 text-sm"
+                      className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900"
                     />
                   </div>
                   <div>
@@ -315,7 +314,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       type="datetime-local"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 text-sm"
+                      className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900"
                     />
                   </div>
                 </div>
@@ -333,7 +332,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                         onChange={(e) => setNewChecklistItem(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addChecklistItem())}
                         placeholder="Adicionar item rápido..."
-                        className="flex-1 text-sm rounded-md border-gray-300"
+                        className="flex-1 text-sm rounded-md border-gray-300 bg-white text-gray-900"
                      />
                      <button 
                         type="button" 

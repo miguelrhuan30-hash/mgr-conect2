@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, deleteDoc, doc, serverTimestamp, query, orderBy, onSnapshot } from 'firebase/firestore';
+import firebase from '../firebase';
 import { db } from '../firebase';
 import { CollectionName, Client } from '../types';
 import { 
@@ -21,14 +21,14 @@ const Clients: React.FC = () => {
   const [document, setDocument] = useState('');
 
   useEffect(() => {
-    const q = query(collection(db, CollectionName.CLIENTS), orderBy('name', 'asc'));
+    const q = db.collection(CollectionName.CLIENTS).orderBy('name', 'asc');
     
     // Added error handling to onSnapshot
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Client[];
+    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) as Client[];
       setClients(data);
       setLoading(false);
-    }, (error) => {
+    }, (error: any) => {
       console.error("Error fetching clients:", error);
       // Handle permission errors gracefully
       setLoading(false);
@@ -40,7 +40,7 @@ const Clients: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Tem certeza que deseja remover este cliente?')) {
       try {
-        await deleteDoc(doc(db, CollectionName.CLIENTS, id));
+        await db.collection(CollectionName.CLIENTS).doc(id).delete();
       } catch (error) {
         console.error("Error deleting client:", error);
       }
@@ -53,13 +53,13 @@ const Clients: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, CollectionName.CLIENTS), {
+      await db.collection(CollectionName.CLIENTS).add({
         name: name.trim(),
         contactName: contactName.trim(),
         phone: phone.trim(),
         address: address.trim(),
         document: document.trim(),
-        createdAt: serverTimestamp()
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       setIsModalOpen(false);
       resetForm();
@@ -107,7 +107,7 @@ const Clients: React.FC = () => {
         </div>
         <input
           type="text"
-          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 sm:text-sm"
+          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 sm:text-sm text-gray-900"
           placeholder="Buscar por nome da empresa ou contato..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -185,28 +185,28 @@ const Clients: React.FC = () => {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa / Cliente *</label>
-                <input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full rounded-lg border-gray-300" placeholder="Ex: Tech Solutions Ltda" />
+                <input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="Ex: Tech Solutions Ltda" />
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ / CPF</label>
-                  <input type="text" value={document} onChange={e => setDocument(e.target.value)} className="w-full rounded-lg border-gray-300" placeholder="00.000.000/0000-00" />
+                  <input type="text" value={document} onChange={e => setDocument(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="00.000.000/0000-00" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Telefone / WhatsApp</label>
-                  <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className="w-full rounded-lg border-gray-300" placeholder="(11) 99999-9999" />
+                  <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="(11) 99999-9999" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Contato</label>
-                <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className="w-full rounded-lg border-gray-300" placeholder="Ex: João da Silva" />
+                <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="Ex: João da Silva" />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Endereço Completo</label>
-                <textarea rows={3} value={address} onChange={e => setAddress(e.target.value)} className="w-full rounded-lg border-gray-300 resize-none" placeholder="Rua, Número, Bairro, Cidade - UF" />
+                <textarea rows={3} value={address} onChange={e => setAddress(e.target.value)} className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900" placeholder="Rua, Número, Bairro, Cidade - UF" />
               </div>
 
               <div className="pt-4 flex justify-end gap-3">

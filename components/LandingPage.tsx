@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import firebase from '../firebase';
 import { db } from '../firebase';
 import { CollectionName, LandingPageContent } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -92,11 +92,11 @@ const LandingPage: React.FC = () => {
   const canEdit = userProfile?.role === 'developer' || userProfile?.role === 'admin';
 
   useEffect(() => {
-    const docRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page');
+    const docRef = db.collection(CollectionName.SYSTEM_SETTINGS).doc('landing_page');
     
     // Improved error handling to suppress logs for public visitors
-    const unsub = onSnapshot(docRef, async (docSnap) => {
-      if (docSnap.exists()) {
+    const unsub = docRef.onSnapshot(async (docSnap) => {
+      if (docSnap.exists) {
         const data = docSnap.data() as any;
         
         // --- DATA MIGRATION LOGIC ---
@@ -125,7 +125,7 @@ const LandingPage: React.FC = () => {
         // otherwise just use static data to avoid permission errors on write.
         if (currentUser) {
             try {
-               await setDoc(docRef, MGR_REAL_DATA);
+               await docRef.set(MGR_REAL_DATA);
             } catch (e) {
                // Ignore write errors for non-admins
             }
@@ -150,11 +150,11 @@ const LandingPage: React.FC = () => {
     e.preventDefault();
     setFormStatus('sending');
     try {
-      await addDoc(collection(db, CollectionName.CONTACT_MESSAGES), {
+      await db.collection(CollectionName.CONTACT_MESSAGES).add({
         name: formName,
         email: formEmail,
         message: formMessage,
-        createdAt: serverTimestamp(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         status: 'new'
       });
       setFormStatus('success');
@@ -246,7 +246,7 @@ const LandingPage: React.FC = () => {
                 onClick={() => navigate(currentUser ? '/app' : '/login')}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors font-medium text-sm"
               >
-                {currentUser ? 'Ir para o Sistema' : 'Área do Cliente'}
+                {currentUser ? 'Ir para o Sistema' : 'Acesso ao Sistema'}
                 {currentUser ? <ArrowRight size={16} /> : <LogIn size={16} />}
               </button>
             </div>

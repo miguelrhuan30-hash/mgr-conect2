@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, Sector, PermissionSet } from '../types';
 import { 
@@ -117,10 +117,10 @@ const SectorManagement: React.FC = () => {
 
   useEffect(() => {
     const q = query(collection(db, CollectionName.SECTORS), orderBy('name', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
       const data = snapshot.docs.map(doc => ({ 
         id: doc.id, 
-        ...doc.data() 
+        ...(doc.data() as any) 
       })) as Sector[];
       setSectors(data);
       setLoading(false);
@@ -289,7 +289,7 @@ const SectorManagement: React.FC = () => {
                       type="text" 
                       value={formName} 
                       onChange={e => setFormName(e.target.value)} 
-                      className="w-full rounded-lg border-gray-300" 
+                      className="w-full rounded-lg border-gray-300 bg-white text-gray-900" 
                       placeholder="Ex: Auxiliar Administrativo" 
                     />
                   </div>
@@ -299,7 +299,7 @@ const SectorManagement: React.FC = () => {
                       rows={2}
                       value={formDesc} 
                       onChange={e => setFormDesc(e.target.value)} 
-                      className="w-full rounded-lg border-gray-300 resize-none" 
+                      className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900" 
                       placeholder="Breve descrição das responsabilidades..." 
                     />
                   </div>
