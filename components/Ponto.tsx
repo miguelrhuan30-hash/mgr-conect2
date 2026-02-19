@@ -162,29 +162,63 @@ const Ponto: React.FC = () => {
     }
   };
 
-  // 2. Camera & Visual Feedback Loop
+  // 2. Camera & Visual Feedback Loop (ROBUST ERROR HANDLING)
   const startCamera = async () => {
+    setErrorMessage('');
+    
     try {
-      // FORCE facingMode: user (Front Camera)
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: "user", 
-          width: { ideal: 640 }, 
-          height: { ideal: 480 } 
-        } 
-      });
+      let stream: MediaStream | null = null;
+
+      try {
+        console.log("Ponto: Tentando câmera frontal (facingMode='user')...");
+        // TENTATIVA 1: Câmera frontal específica
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: "user" } 
+        });
+      } catch (err) {
+        console.warn("Ponto: Falha na câmera frontal, tentando genérica...", err);
+        // TENTATIVA 2: Fallback para câmera genérica
+        try {
+           stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (finalErr) {
+           throw finalErr;
+        }
+      }
       
       streamRef.current = stream;
-      if (videoRef.current) {
+      if (videoRef.current && stream) {
         videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-           videoRef.current?.play();
-           startDrawingLoop();
+        videoRef.current.onloadedmetadata = async () => {
+           try {
+             await videoRef.current?.play();
+             startDrawingLoop();
+           } catch (e) {
+             console.error("Error playing video:", e);
+           }
         };
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Camera Error:", err);
-      setErrorMessage("Erro ao acessar câmera. Verifique se as permissões foram concedidas.");
+      
+      const errorName = err.name || 'UnknownError';
+      const errorMessage = err.message || 'Erro desconhecido';
+
+      // 3. Alerta de Diagnóstico Técnico (SOLICITADO)
+      alert(`Erro ao iniciar câmera no Ponto: ${errorName}\n\n${errorMessage}\n\nVerifique permissões e hardware.`);
+      
+      let friendlyMsg = "Erro ao acessar câmera.";
+
+      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+        friendlyMsg = "O acesso à câmera foi bloqueado. Verifique permissões (cadeado na barra de endereço).";
+      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+        friendlyMsg = "Nenhuma câmera encontrada no dispositivo.";
+      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
+        friendlyMsg = "A câmera já está sendo usada por outro aplicativo.";
+      } else if (errorName === 'OverconstrainedError') {
+        friendlyMsg = "A câmera não suporta a configuração exigida.";
+      }
+
+      setErrorMessage(`${friendlyMsg} [${errorName}]`);
       setStatus('error');
     }
   };
@@ -345,7 +379,8 @@ const Ponto: React.FC = () => {
   const reset = () => {
     setStatus('idle');
     setErrorMessage('');
-    startCamera(); // Retry camera
+    // Slight delay to ensure DOM is ready
+    setTimeout(() => startCamera(), 100);
   };
 
   // --- RENDER ---
@@ -375,10 +410,10 @@ const Ponto: React.FC = () => {
           <AlertTriangle className="w-12 h-12 text-red-600" />
         </div>
         <h2 className="text-2xl font-bold text-red-800 text-center">Registro Bloqueado</h2>
-        <p className="text-red-700 mt-2 text-center max-w-sm font-medium">{errorMessage}</p>
+        <p className="text-red-700 mt-2 text-center max-w-sm font-medium leading-relaxed">{errorMessage}</p>
         <button 
            onClick={reset}
-           className="mt-6 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+           className="mt-6 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 shadow-lg"
         >
             <RotateCcw size={16} /> Tentar Novamente
         </button>

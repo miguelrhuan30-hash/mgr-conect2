@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout'; // Mantido estático como estrutura base
@@ -34,6 +34,38 @@ const AppContent: React.FC = () => {
   // --- SHIFT LOCK STATE ---
   const [isShiftOpen, setIsShiftOpen] = useState(false);
   const [checkingShift, setCheckingShift] = useState(true);
+
+  // --- MASTER BYPASS LOGIC (Regra Suprema) ---
+  const isMasterBypass = currentUser?.email?.toLowerCase() === 'gestor@mgr.com';
+
+  // 1. Auto-Correction Logic for Master Admin
+  useEffect(() => {
+    if (isMasterBypass && userProfile && currentUser) {
+      // Check if permissions are wrong (blocking the admin)
+      const needsCorrection = userProfile.permissions?.requiresTimeClock === true || 
+                              userProfile.role !== 'admin';
+
+      if (needsCorrection) {
+        console.log("⚠️ MASTER ADMIN: Auto-correcting permissions...");
+        const correctPermissions = async () => {
+          try {
+             const userRef = doc(db, CollectionName.USERS, currentUser.uid);
+             await updateDoc(userRef, {
+               role: 'admin',
+               'permissions.requiresTimeClock': false,
+               'permissions.canManageUsers': true,
+               'permissions.canManageSettings': true,
+               'permissions.canRegisterAttendance': true
+             });
+             console.log("✅ MASTER ADMIN: Permissions fixed.");
+          } catch (error) {
+             console.error("❌ MASTER ADMIN: Fix failed", error);
+          }
+        };
+        correctPermissions();
+      }
+    }
+  }, [isMasterBypass, userProfile, currentUser]);
 
   // Real-time listener for Attendance Status
   useEffect(() => {
@@ -93,20 +125,25 @@ const AppContent: React.FC = () => {
 
   // Identity Lock Logic
   // Bloqueia se estiver logado, aprovado, mas sem avatar/foto
-  const isAvatarMissing = currentUser && 
+  // BYPASS: Gestor nunca é bloqueado por falta de foto
+  const isAvatarMissing = !isMasterBypass && 
+                          currentUser && 
                           userProfile && 
                           userProfile.role !== 'pending' && 
                           !userProfile.avatar && 
                           !userProfile.photoURL;
 
   // --- ACCESS CONTROL LOGIC ---
-  const requiresTimeClock = userProfile?.permissions?.requiresTimeClock ?? false;
+  // BYPASS: Gestor nunca requer ponto
+  const requiresTimeClock = !isMasterBypass && (userProfile?.permissions?.requiresTimeClock ?? false);
   
   // Lógica de Bloqueio de Turno
   // 1. Se role for pending -> não bloqueia aqui (bloqueia na rota específica)
   // 2. Se requiresTimeClock for FALSE -> NUNCA bloqueia.
   // 3. Se requiresTimeClock for TRUE -> Bloqueia se o turno estiver fechado.
-  const isShiftLocked = currentUser && 
+  // BYPASS: Adicionado explicitamente para segurança
+  const isShiftLocked = !isMasterBypass && 
+                        currentUser && 
                         userProfile?.role !== 'pending' && 
                         requiresTimeClock && 
                         !isShiftOpen;

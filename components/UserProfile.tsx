@@ -19,6 +19,7 @@ const UserProfile: React.FC = () => {
   const [processing, setProcessing] = useState(false); // Validating face
   const [saving, setSaving] = useState(false); // Uploading to firebase
   const [cameraError, setCameraError] = useState('');
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
   
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -37,26 +38,66 @@ const UserProfile: React.FC = () => {
     setIsCameraOpen(true);
     setCapturedImage(null);
     setCameraError('');
+    setIsStartingCamera(true);
     
     try {
-      // Pre-load models to ensure smoother experience
+      // 1. Pre-load models first
       await faceService.loadModels();
 
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'user',
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        } 
-      });
+      let stream: MediaStream | null = null;
+
+      try {
+        console.log("Tentando abrir câmera frontal (facingMode='user')...");
+        // TENTATIVA 1: Câmera frontal específica
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user' } 
+        });
+      } catch (err) {
+        console.warn("Falha ao abrir câmera frontal. Tentando configuração genérica...", err);
+        
+        // TENTATIVA 2: Configuração genérica (fallback para desktops/notebooks)
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (finalErr) {
+            // Se ambas falharem, lança o erro final para o catch principal
+            throw finalErr;
+        }
+      }
       
       streamRef.current = stream;
-      if (videoRef.current) {
+      if (videoRef.current && stream) {
         videoRef.current.srcObject = stream;
+        // Ensure video plays (vital for some mobile browsers)
+        try {
+            await videoRef.current.play();
+        } catch (e) {
+            console.error("Error playing video:", e);
+        }
       }
-    } catch (err) {
-      console.error("Camera Error:", err);
-      setCameraError("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
+    } catch (err: any) {
+      console.error("Camera Access Error:", err);
+      
+      const errorName = err.name || 'UnknownError';
+      const errorMessage = err.message || 'Erro desconhecido';
+      
+      // 3. Alerta com nome técnico para diagnóstico (SOLICITADO)
+      alert(`Erro de Câmera: ${errorName}\n\nDetalhes: ${errorMessage}\n\nPor favor, verifique se a câmera está conectada e se a permissão foi concedida.`);
+      
+      let friendlyMsg = "Não foi possível acessar a câmera.";
+
+      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+        friendlyMsg = "O acesso à câmera foi bloqueado. Verifique o ícone de cadeado na barra de endereço.";
+      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+        friendlyMsg = "Nenhuma câmera encontrada no dispositivo.";
+      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
+        friendlyMsg = "A câmera já está sendo usada por outro aplicativo ou aba.";
+      } else if (errorName === 'OverconstrainedError') {
+        friendlyMsg = "A câmera não suporta a resolução solicitada.";
+      }
+
+      setCameraError(`${friendlyMsg} (${errorName})`);
+    } finally {
+        setIsStartingCamera(false);
     }
   };
 
@@ -68,6 +109,7 @@ const UserProfile: React.FC = () => {
     setIsCameraOpen(false);
     setCapturedImage(null);
     setProcessing(false);
+    setIsStartingCamera(false);
   };
 
   // Cleanup on unmount
@@ -91,8 +133,7 @@ const UserProfile: React.FC = () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
-      // Draw image (mirror effect needs to be handled if CSS transform is used, 
-      // but for raw data analysis we draw normally, or flip if we want the saved image to match preview)
+      // Draw image
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       
       // 2. Convert to Base64
@@ -347,10 +388,22 @@ const UserProfile: React.FC = () => {
 
               {/* Video Area */}
               <div className="relative bg-black h-80 flex items-center justify-center overflow-hidden">
-                 {cameraError ? (
-                   <div className="text-white text-center p-6">
+                 {isStartingCamera && !cameraError ? (
+                   <div className="absolute inset-0 z-30 bg-black flex flex-col items-center justify-center">
+                      <Loader2 size={32} className="text-brand-500 animate-spin mb-2" />
+                      <p className="text-white text-sm">Iniciando câmera...</p>
+                   </div>
+                 ) : cameraError ? (
+                   <div className="text-white text-center p-6 flex flex-col items-center justify-center h-full w-full">
                       <AlertTriangle size={48} className="mx-auto text-red-500 mb-4" />
-                      <p>{cameraError}</p>
+                      <p className="mb-6 max-w-xs mx-auto text-sm leading-relaxed">{cameraError}</p>
+                      <button 
+                        onClick={startCamera}
+                        className="px-6 py-2 bg-white text-red-600 rounded-full font-bold hover:bg-gray-100 transition-colors flex items-center gap-2 shadow-lg"
+                      >
+                        <Camera size={18} />
+                        Habilitar Câmera
+                      </button>
                    </div>
                  ) : (
                    <>
@@ -398,7 +451,7 @@ const UserProfile: React.FC = () => {
                  {!capturedImage ? (
                     <button 
                        onClick={handleCapture}
-                       disabled={processing || !!cameraError}
+                       disabled={processing || !!cameraError || isStartingCamera}
                        className="w-full py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg hover:bg-brand-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                        <Camera size={20} /> Capturar Foto
