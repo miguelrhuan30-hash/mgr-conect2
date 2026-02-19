@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { faceService } from '../utils/FaceRecognitionService';
 import { 
   Camera, User, Loader2, ShieldCheck, 
-  AlertTriangle, MapPin, Clock, ScanFace, X, RefreshCw, Check
+  AlertTriangle, MapPin, Clock, ScanFace, X, RefreshCw, Check, Lock, Shield
 } from 'lucide-react';
 
 const UserProfile: React.FC = () => {
@@ -19,6 +19,9 @@ const UserProfile: React.FC = () => {
   const [processing, setProcessing] = useState(false); // Validating face
   const [saving, setSaving] = useState(false); // Uploading to firebase
   const [cameraError, setCameraError] = useState('');
+  
+  // Loading States
+  const [isLoadingAI, setIsLoadingAI] = useState(true); // Começa true para blindar a inicialização
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   
   // Refs
@@ -32,9 +35,30 @@ const UserProfile: React.FC = () => {
     ? userProfile.displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
     : 'U';
 
+  // --- 1. EAGER LOADING DA IA (Ao montar o componente) ---
+  useEffect(() => {
+    const initSecuritySystem = async () => {
+        setIsLoadingAI(true);
+        try {
+            // Carrega os modelos silenciosamente assim que o usuário entra na tela
+            await faceService.loadModels();
+        } catch (error) {
+            console.error("Critical AI Load Error:", error);
+            alert("Erro crítico: Não foi possível baixar a IA. Verifique sua conexão com a internet.");
+        } finally {
+            setIsLoadingAI(false);
+        }
+    };
+
+    initSecuritySystem();
+  }, []); // Executa apenas uma vez no mount
+
   // --- CAMERA LOGIC ---
 
   const startCamera = async () => {
+    // Se ainda estiver carregando (raro, pois o botão fica oculto), bloqueia
+    if (isLoadingAI) return;
+
     // UI Setup
     setIsCameraOpen(true);
     setCapturedImage(null);
@@ -42,7 +66,7 @@ const UserProfile: React.FC = () => {
     setIsStartingCamera(true);
     
     try {
-      // 0. Pre-load models first (Feature requirement)
+      // Garante que models estão ok (mesmo que o useEffect tenha rodado, o serviço é singleton e resolve rápido)
       await faceService.loadModels();
 
       let stream: MediaStream | null = null;
@@ -68,11 +92,11 @@ const UserProfile: React.FC = () => {
         streamRef.current = stream;
         if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            // Ensure video plays (vital for some mobile browsers)
+            // CRITICAL: Force play immediately after setting source
             try {
                 await videoRef.current.play();
             } catch (e) {
-                console.error("Error playing video:", e);
+                console.error("Erro ao dar play no vídeo:", e);
             }
         }
       }
@@ -80,11 +104,11 @@ const UserProfile: React.FC = () => {
     } catch (err: any) {
       console.error("Erro fatal de câmera:", err);
       
-      // ALERTA SOLICITADO
-      alert(`Não foi possível acessar a câmera. Erro: ${err.name} - ${err.message}`);
+      const errorMsg = `Não foi possível acessar a câmera. Erro: ${err.name} - ${err.message}`;
+      alert(errorMsg);
       
       // Update UI
-      setCameraError(`Erro técnico: ${err.name}`);
+      setCameraError(`Erro técnico: ${err.name}. Verifique permissões.`);
     } finally {
         setIsStartingCamera(false);
     }
@@ -158,7 +182,7 @@ const UserProfile: React.FC = () => {
   const handleRetake = () => {
     setCapturedImage(null);
     // Ensure video plays again if it was paused
-    if (videoRef.current) videoRef.current.play();
+    if (videoRef.current) videoRef.current.play().catch(e => console.error("Retake play error", e));
   };
 
   const handleSavePhoto = async () => {
@@ -225,19 +249,33 @@ const UserProfile: React.FC = () => {
                 ) : (
                   <span className="text-4xl font-bold text-brand-300">{initials}</span>
                 )}
+                
+                {/* LOADING OVERLAY NO AVATAR */}
+                {isLoadingAI && (
+                   <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+                      <Loader2 size={32} className="text-brand-600 animate-spin" />
+                   </div>
+                )}
               </div>
 
-              {/* Camera Trigger Button - NO FILE INPUT */}
-              <button 
-                onClick={startCamera}
-                className="absolute bottom-0 right-0 p-3 bg-brand-600 text-white rounded-full shadow-lg hover:bg-brand-700 hover:scale-105 transition-all border-2 border-white cursor-pointer"
-                title="Tirar Foto"
-              >
-                <Camera size={20} />
-              </button>
+              {/* CAMERA TRIGGER BUTTON / LOADING STATE */}
+              {isLoadingAI ? (
+                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 w-max px-4 py-2 bg-brand-50 border border-brand-200 text-brand-700 rounded-full shadow-lg flex items-center gap-2 z-20">
+                   <Loader2 size={14} className="animate-spin" />
+                   <span className="text-xs font-bold animate-pulse">Inicializando Sistema de Segurança...</span>
+                </div>
+              ) : (
+                <button 
+                  onClick={startCamera}
+                  className="absolute bottom-0 right-0 p-3 bg-brand-600 text-white rounded-full shadow-lg hover:bg-brand-700 hover:scale-105 transition-all border-2 border-white cursor-pointer z-20"
+                  title="Tirar Foto"
+                >
+                  <Camera size={20} />
+                </button>
+              )}
             </div>
 
-            <h2 className="text-xl font-bold text-gray-900">{userProfile?.displayName}</h2>
+            <h2 className="text-xl font-bold text-gray-900 mt-4">{userProfile?.displayName}</h2>
             <p className="text-sm text-gray-500 capitalize">{userProfile?.role === 'admin' ? 'Administrador' : userProfile?.role || 'Colaborador'}</p>
             
             <div className="mt-4 flex gap-2 justify-center">
@@ -377,7 +415,7 @@ const UserProfile: React.FC = () => {
 
               {/* Video Area */}
               <div className="relative bg-black h-80 flex items-center justify-center overflow-hidden">
-                 {isStartingCamera && !cameraError ? (
+                 {isStartingCamera ? (
                    <div className="absolute inset-0 z-30 bg-black flex flex-col items-center justify-center">
                       <Loader2 size={32} className="text-brand-500 animate-spin mb-2" />
                       <p className="text-white text-sm">Iniciando câmera...</p>
@@ -402,6 +440,9 @@ const UserProfile: React.FC = () => {
                         autoPlay 
                         playsInline 
                         muted 
+                        onLoadedMetadata={() => {
+                            videoRef.current?.play().catch(e => console.error("Play error:", e));
+                        }}
                         className={`absolute inset-0 w-full h-full object-cover transform scale-x-[-1] ${capturedImage ? 'hidden' : 'block'}`}
                       />
                       
@@ -441,7 +482,7 @@ const UserProfile: React.FC = () => {
                     <button 
                        onClick={handleCapture}
                        disabled={processing || !!cameraError || isStartingCamera}
-                       className="w-full py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg hover:bg-brand-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                       className="w-full py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg hover:bg-brand-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                        <Camera size={20} /> Capturar Foto
                     </button>

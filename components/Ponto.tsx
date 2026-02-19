@@ -189,12 +189,22 @@ const Ponto: React.FC = () => {
       streamRef.current = stream;
       if (videoRef.current && stream) {
         videoRef.current.srcObject = stream;
+        
+        // CRITICAL: Force play immediately after setting source
+        try {
+             await videoRef.current.play();
+             // Start loop after successful play
+             startDrawingLoop();
+        } catch (e) {
+             console.error("Error playing video:", e);
+        }
+
+        // Keep metadata handler as backup
         videoRef.current.onloadedmetadata = async () => {
            try {
              await videoRef.current?.play();
-             startDrawingLoop();
            } catch (e) {
-             console.error("Error playing video:", e);
+             console.error("Error playing video (metadata):", e);
            }
         };
       }
@@ -465,7 +475,16 @@ const Ponto: React.FC = () => {
                         <span className="text-xs">Carregando IA...</span>
                     </div>
                  )}
-                 <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]" />
+                 <video 
+                    ref={videoRef} 
+                    autoPlay 
+                    playsInline 
+                    muted 
+                    onLoadedMetadata={() => {
+                        videoRef.current?.play().catch(e => console.error("Play error:", e));
+                    }}
+                    className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]" 
+                 />
                  <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none transform scale-x-[-1]" />
                  
                  {/* Detection Feedback Overlay */}

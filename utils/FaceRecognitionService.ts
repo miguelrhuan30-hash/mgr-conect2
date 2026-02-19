@@ -3,67 +3,95 @@ import * as faceapi from 'face-api.js';
 /**
  * Service singleton responsible for Facial Biometrics operations.
  * Uses face-api.js (TensorFlow.js) to detect, extract and compare facial features.
+ * 
+ * ESTRATÉGIA DE BLINDAGEM (FAILOVER):
+ * 1. Tenta carregar modelos da pasta local '/models'.
+ * 2. Se falhar, tenta carregar da CDN oficial do face-api.js.
+ * 3. Garante que o sistema só falhe se ambas as fontes estiverem inacessíveis.
  */
 class FaceRecognitionService {
   private modelsLoaded = false;
   private loadPromise: Promise<void> | null = null;
   
-  // Path to models in the public folder
-  private readonly MODEL_URL = '/models';
+  // 1. Definição de URLs
+  private readonly LOCAL_URL = '/models';
+  private readonly CDN_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
   
-  // Security Thresholds
-  private readonly MATCH_THRESHOLD = 0.45; // Stricter than default (0.6) for security
+  // Configurações de Precisão
+  private readonly MATCH_THRESHOLD = 0.45; // Mais estrito que o padrão (0.6) para segurança
   private readonly DETECTION_CONFIDENCE = 0.5;
 
   /**
-   * Loads the necessary neural network models.
-   * Implements Singleton pattern to prevent multiple loads.
+   * Helper interno para carregar o conjunto de modelos de uma URL específica.
+   */
+  private async _loadModelsFromUrl(url: string): Promise<void> {
+    await Promise.all([
+      // SSD MobileNet V1: Mais preciso que o TinyFace, ideal para reconhecimento facial
+      faceapi.nets.ssdMobilenetv1.loadFromUri(url),
+      // 68 Point Landmark: Essencial para alinhamento do rosto
+      faceapi.nets.faceLandmark68Net.loadFromUri(url),
+      // Recognition Net: Gera o descritor facial (assinatura biométrica)
+      faceapi.nets.faceRecognitionNet.loadFromUri(url)
+    ]);
+  }
+
+  /**
+   * Carrega os modelos neurais com estratégia de redundância.
+   * Singleton: Evita múltiplos carregamentos simultâneos.
    */
   async loadModels(): Promise<void> {
     if (this.modelsLoaded) return;
     
-    // If a loading request is already in progress, return that promise
+    // Evita race conditions retornando a promise existente se já estiver carregando
     if (this.loadPromise) return this.loadPromise;
 
     this.loadPromise = (async () => {
       try {
-        console.log("[FaceBiometrics] Carregando modelos neurais...");
+        // TENTATIVA 1: Carregamento Local
+        console.log(`[FaceBiometrics] Tentando carregar modelos locais de: ${this.LOCAL_URL}`);
+        await this._loadModelsFromUrl(this.LOCAL_URL);
+        console.log("[FaceBiometrics] Sucesso: Modelos locais carregados.");
+      
+      } catch (localError) {
+        // FAILOVER: Captura o erro local e tenta CDN
+        console.warn("[FaceBiometrics] Falha ao carregar modelos locais. Tentando CDN...", localError);
         
-        await Promise.all([
-          // SSD MobileNet V1: Slower but much more accurate than TinyFace
-          faceapi.nets.ssdMobilenetv1.loadFromUri(this.MODEL_URL),
-          // 68 Point Landmark: Essential for face alignment
-          faceapi.nets.faceLandmark68Net.loadFromUri(this.MODEL_URL),
-          // Recognition Net: Generates the 128-float descriptor
-          faceapi.nets.faceRecognitionNet.loadFromUri(this.MODEL_URL)
-        ]);
-
-        this.modelsLoaded = true;
-        console.log("[FaceBiometrics] Modelos carregados com sucesso.");
-      } catch (error) {
-        console.error("[FaceBiometrics] Erro Crítico ao carregar modelos:", error);
-        this.loadPromise = null; // Reset promise to allow retry
-        throw new Error("Falha ao inicializar sistema de biometria. Verifique conexao ou arquivos de modelo.");
+        try {
+          // TENTATIVA 2: Carregamento via CDN
+          console.log(`[FaceBiometrics] Tentando carregar modelos da CDN: ${this.CDN_URL}`);
+          await this._loadModelsFromUrl(this.CDN_URL);
+          console.log("[FaceBiometrics] Sucesso: Modelos carregados via CDN.");
+        
+        } catch (cdnError) {
+          // ERRO FATAL: Ambas as tentativas falharam
+          console.error("[FaceBiometrics] Erro Crítico: Falha total no carregamento (Local e CDN).", cdnError);
+          this.loadPromise = null; // Reseta para permitir nova tentativa futura
+          throw new Error("Falha ao inicializar sistema de biometria. Verifique sua conexão.");
+        }
       }
+
+      this.modelsLoaded = true;
     })();
 
     return this.loadPromise;
   }
 
   /**
-   * Detects a single face and extracts its unique descriptor.
-   * @param image HTMLImageElement | HTMLVideoElement | HTMLCanvasElement
-   * @returns Float32Array (The "Face Signature") or null if no face found.
+   * Detecta um rosto na imagem e extrai seu descritor biométrico.
+   * @param image Elemento de vídeo, imagem ou canvas.
+   * @returns Float32Array (Assinatura do rosto) ou null se não encontrar.
    */
   async extractFaceDescriptor(image: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement): Promise<Float32Array | null> {
+    // Garante que os modelos estejam carregados
     if (!this.modelsLoaded) await this.loadModels();
 
-    // Check for valid dimensions to avoid TFJS errors
+    // Verificações de segurança para evitar erros do TensorFlow
     if (image instanceof HTMLVideoElement) {
         if (image.readyState < 2 || image.videoWidth === 0 || image.videoHeight === 0) return null;
     }
 
     try {
+      // Detecção usando SSD MobileNet v1
       const detection = await faceapi.detectSingleFace(
         image, 
         new faceapi.SsdMobilenetv1Options({ minConfidence: this.DETECTION_CONFIDENCE })
@@ -77,48 +105,40 @@ class FaceRecognitionService {
 
       return detection.descriptor;
     } catch (error) {
-      console.warn("[FaceBiometrics] Erro durante detecção:", error);
+      console.warn("[FaceBiometrics] Erro durante processamento da imagem:", error);
       return null;
     }
   }
 
   /**
-   * Compares two face descriptors using Euclidean Distance.
-   * @param descriptor1 Reference face (stored)
-   * @param descriptor2 Live face (camera)
-   * @returns number (Euclidean distance)
+   * Compara dois descritores faciais usando Distância Euclidiana.
+   * @param descriptor1 Rosto de referência (banco de dados)
+   * @param descriptor2 Rosto capturado (câmera)
+   * @returns number (Distância - quanto menor, mais parecido)
    */
   compareFaces(descriptor1: Float32Array | number[], descriptor2: Float32Array | number[]): number {
     return faceapi.euclideanDistance(descriptor1, descriptor2);
   }
 
   /**
-   * Determines if two faces belong to the same person based on security threshold.
-   * @param distance Result from compareFaces
-   * @returns boolean
+   * Verifica se a distância entre dois rostos é aceitável para considerar a mesma pessoa.
    */
   isMatch(distance: number): boolean {
     return distance < this.MATCH_THRESHOLD;
   }
 
-  // --- HELPERS FOR FIRESTORE STORAGE ---
+  // --- Helpers de Serialização para Firestore ---
 
-  /**
-   * Helper: Converts Float32Array descriptor to JSON string for Firestore storage.
-   */
   descriptorToString(descriptor: Float32Array): string {
     return JSON.stringify(Array.from(descriptor));
   }
 
-  /**
-   * Helper: Converts JSON string back to Float32Array for comparison.
-   */
   stringToDescriptor(jsonString: string): Float32Array {
     try {
       const parsed = JSON.parse(jsonString);
       return new Float32Array(parsed);
     } catch (e) {
-      console.error("Invalid descriptor format", e);
+      console.error("[FaceBiometrics] Erro ao converter descritor salvo:", e);
       return new Float32Array([]);
     }
   }
