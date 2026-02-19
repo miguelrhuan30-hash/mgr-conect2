@@ -4,8 +4,7 @@ import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, WorkLocation, TimeEntry } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { faceService } from '../utils/FaceRecognitionService';
-import * as faceapi from 'face-api.js';
+import { GoogleGenAI } from "@google/genai";
 import { 
   Clock, MapPin, ShieldCheck, Loader2, AlertTriangle, 
   History, RotateCcw, Calendar, ScanFace, Camera, Lock 
@@ -27,10 +26,6 @@ const Ponto: React.FC = () => {
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
   const [detectedLocation, setDetectedLocation] = useState<WorkLocation | null>(null);
   
-  // AI State
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [faceDetected, setFaceDetected] = useState(false);
-  
   // History State
   const [history, setHistory] = useState<TimeEntry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -38,9 +33,7 @@ const Ponto: React.FC = () => {
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
-  const overlayRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Clock Ticker
   useEffect(() => {
@@ -48,27 +41,19 @@ const Ponto: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 1. Initial Load: Models, Locations & History
+  // 1. Initial Load: Locations & History
   useEffect(() => {
     if (!currentUser) return;
 
     const initData = async () => {
-      // A. Load AI Models
-      try {
-        await faceService.loadModels();
-        setModelsLoaded(true);
-        startCamera(); // Start camera immediately after models load
-      } catch (e) {
-        console.error("AI Models failed", e);
-        setErrorMessage("Falha ao carregar sistema de IA. Recarregue a página.");
-        setStatus('error');
-      }
-
       // B. Load Locations
       loadLocations();
 
       // C. Load History
       fetchHistory();
+
+      // Start Camera
+      startCamera();
     };
 
     initData();
@@ -162,123 +147,47 @@ const Ponto: React.FC = () => {
     }
   };
 
-  // 2. Camera & Visual Feedback Loop (ROBUST ERROR HANDLING)
+  // 2. Camera Logic
   const startCamera = async () => {
     setErrorMessage('');
     
     try {
-      let stream: MediaStream | null = null;
-
-      try {
-        console.log("Ponto: Tentando câmera frontal (facingMode='user')...");
-        // TENTATIVA 1: Câmera frontal específica
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user' } 
-        });
-      } catch (err) {
-        console.warn("Ponto: Falha na câmera frontal, tentando genérica...", err);
-        // TENTATIVA 2: Fallback para câmera genérica
-        try {
-           console.log("Ponto: Tentando câmera genérica...");
-           stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        } catch (finalErr) {
-           throw finalErr;
-        }
-      }
+      // Fix: Wait 150ms to ensure DOM is ready
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: { ideal: "user" }, 
+          width: { ideal: 480 }, 
+          height: { ideal: 480 } 
+        } 
+      });
       
       streamRef.current = stream;
-      if (videoRef.current && stream) {
+      
+      if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        
-        // CRITICAL: Force play immediately after setting source
-        try {
-             await videoRef.current.play();
-             // Start loop after successful play
-             startDrawingLoop();
-        } catch (e) {
-             console.error("Error playing video:", e);
-        }
-
-        // Keep metadata handler as backup
-        videoRef.current.onloadedmetadata = async () => {
-           try {
-             await videoRef.current?.play();
-           } catch (e) {
-             console.error("Error playing video (metadata):", e);
-           }
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(e => console.error("Erro no play:", e)); 
         };
       }
     } catch (err: any) {
       console.error("Camera Error:", err);
-      
+      alert("Câmera bloqueada. Verifique as permissões do navegador.");
       const errorName = err.name || 'UnknownError';
-      const errorMessage = err.message || 'Erro desconhecido';
-
-      // 3. Alerta de Diagnóstico Técnico (SOLICITADO)
-      alert(`Erro ao iniciar câmera no Ponto: ${errorName}\n\n${errorMessage}\n\nVerifique permissões e hardware.`);
-      
-      let friendlyMsg = "Erro ao acessar câmera.";
-
-      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
-        friendlyMsg = "O acesso à câmera foi bloqueado. Verifique permissões (cadeado na barra de endereço).";
-      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
-        friendlyMsg = "Nenhuma câmera encontrada no dispositivo.";
-      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
-        friendlyMsg = "A câmera já está sendo usada por outro aplicativo.";
-      } else if (errorName === 'OverconstrainedError') {
-        friendlyMsg = "A câmera não suporta a configuração exigida.";
-      }
-
-      setErrorMessage(`${friendlyMsg} [${errorName}]`);
+      setErrorMessage(`Câmera bloqueada ou indisponível (${errorName}). Verifique as permissões.`);
       setStatus('error');
     }
   };
 
   const stopCamera = () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
   };
 
-  const startDrawingLoop = () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-
-    intervalRef.current = setInterval(async () => {
-       if (!videoRef.current || videoRef.current.paused || videoRef.current.ended || !overlayRef.current) return;
-       
-       const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
-       const detection = await faceapi.detectSingleFace(videoRef.current, options);
-
-       const canvas = overlayRef.current;
-       const dims = faceapi.matchDimensions(canvas, videoRef.current, true);
-       const ctx = canvas.getContext('2d');
-       
-       if (ctx) {
-           ctx.clearRect(0, 0, dims.width, dims.height);
-           
-           if (detection) {
-               setFaceDetected(true);
-               const resized = faceapi.resizeResults(detection, dims);
-               const { x, y, width, height } = resized.box;
-               
-               // Visual Feedback
-               ctx.strokeStyle = '#00FF00';
-               ctx.lineWidth = 3;
-               ctx.strokeRect(x, y, width, height);
-               
-               ctx.fillStyle = '#00FF00';
-               ctx.font = 'bold 16px Arial';
-               ctx.fillText('Rosto Identificado', x, y - 10);
-           } else {
-               setFaceDetected(false);
-           }
-       }
-    }, 200);
-  };
-
-  // 3. Register Action (STRICTLY FROM VIDEO)
+  // 3. Register Action (GEMINI VALIDATION)
   const handleRegister = async (type: string) => {
     if (!currentUser || !videoRef.current) return;
 
@@ -289,8 +198,8 @@ const Ponto: React.FC = () => {
         return;
     }
 
-    if (!userProfile?.biometrics) {
-        alert("BLOQUEIO DE SEGURANÇA: Biometria não cadastrada. Atualize seu perfil.");
+    if (!userProfile?.photoURL) {
+        alert("BLOQUEIO DE SEGURANÇA: Foto de perfil não cadastrada. Atualize seu perfil.");
         return;
     }
     if (!detectedLocation && userProfile?.role !== 'admin') {
@@ -298,7 +207,6 @@ const Ponto: React.FC = () => {
         return;
     }
     
-    // Prevent double entry
     if (type === 'entry' && todaysEntries.length > 0 && todaysEntries[0].type === 'entry') {
         if (!window.confirm("Você já tem uma entrada aberta. Registrar nova entrada?")) return;
     }
@@ -306,17 +214,16 @@ const Ponto: React.FC = () => {
     setStatus('validating');
     
     try {
-        // B. Capture Frame from Video (No File Upload)
+        // B. Capture Frame
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 480;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error("Canvas context failed");
         
-        // Draw the current video frame
         ctx.drawImage(videoRef.current, 0, 0, 640, 480);
         
-        // Add timestamp to image (Anti-spoofing)
+        // Anti-spoofing Timestamp
         ctx.font = "20px Arial";
         ctx.fillStyle = "white";
         ctx.shadowColor = "black";
@@ -325,27 +232,40 @@ const Ponto: React.FC = () => {
 
         const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
         
-        // Prepare image for AI
-        const tempImg = new Image();
-        tempImg.src = photoBase64;
-        await new Promise(r => tempImg.onload = r);
-
-        // C. AI Validation 1: Liveness / Detection
-        const capturedDescriptor = await faceService.extractFaceDescriptor(tempImg);
-
-        if (!capturedDescriptor) {
-            setErrorMessage("Rosto não visível. Olhe diretamente para a câmera.");
-            setStatus('error');
-            return;
-        }
-
-        // D. AI Validation 2: Identity Verification
-        const storedDescriptor = faceService.stringToDescriptor(userProfile.biometrics);
-        const distance = faceService.compareFaces(storedDescriptor, capturedDescriptor);
+        // C. GEMINI VALIDATION
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
-        console.log("Biometric Distance:", distance);
+        // Fetch Stored Profile Image
+        const refImageResp = await fetch(userProfile.photoURL);
+        const refBlob = await refImageResp.blob();
+        const refBase64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(refBlob);
+        });
 
-        if (!faceService.isMatch(distance)) {
+        const currentData = photoBase64.split(',')[1];
+        const refData = refBase64.split(',')[1];
+
+        // Call Gemini
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: {
+              parts: [
+                 { inlineData: { mimeType: 'image/jpeg', data: currentData } },
+                 { inlineData: { mimeType: 'image/jpeg', data: refData } },
+                 { text: "Analyze these two faces. Are they the same person? Reply with strictly valid JSON: { \"match\": boolean, \"confidence\": number } where confidence is 0.0 to 1.0." }
+              ]
+            },
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+
+        const result = JSON.parse(response.text);
+        console.log("Gemini Verification Result:", result);
+
+        if (!result.match || result.confidence < 0.7) {
             setErrorMessage(`Reconhecimento Facial Falhou. Identidade não confirmada.`);
             setStatus('error');
             return;
@@ -354,12 +274,10 @@ const Ponto: React.FC = () => {
         // E. Save Data
         setStatus('uploading');
         
-        // Upload Evidence
         const storageRef = ref(storage, `time_clock/${currentUser.uid}/${Date.now()}.jpg`);
         await uploadString(storageRef, photoBase64, 'data_url');
         const photoUrl = await getDownloadURL(storageRef);
 
-        // Save Firestore
         await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
             userId: currentUser.uid,
             type: type,
@@ -369,7 +287,7 @@ const Ponto: React.FC = () => {
             photoEvidenceUrl: photoUrl,
             userAgent: navigator.userAgent,
             isManual: false,
-            biometricVerified: true // Proven by AI
+            biometricVerified: true // Proven by Gemini
         });
 
         setStatus('success');
@@ -390,13 +308,11 @@ const Ponto: React.FC = () => {
   const reset = () => {
     setStatus('idle');
     setErrorMessage('');
-    // Slight delay to ensure DOM is ready
     setTimeout(() => startCamera(), 100);
   };
 
   // --- RENDER ---
 
-  // Success Screen
   if (status === 'success') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 bg-green-50 rounded-2xl border border-green-200 animate-in fade-in zoom-in">
@@ -404,7 +320,7 @@ const Ponto: React.FC = () => {
           <ScanFace className="w-12 h-12 text-green-600" />
         </div>
         <h2 className="text-3xl font-bold text-green-800">Ponto Registrado!</h2>
-        <p className="text-green-700 mt-2">Identidade biométrica confirmada.</p>
+        <p className="text-green-700 mt-2">Identidade confirmada via Gemini AI.</p>
         <div className="mt-6 flex flex-col items-center gap-2 text-sm text-gray-600">
            <span className="flex items-center gap-2"><MapPin size={14} /> {detectedLocation?.name || 'Local Detectado'}</span>
            <span className="flex items-center gap-2"><Clock size={14} /> {currentTime.toLocaleTimeString()}</span>
@@ -413,7 +329,6 @@ const Ponto: React.FC = () => {
     );
   }
 
-  // Error Screen
   if (status === 'error') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 bg-red-50 rounded-2xl border border-red-200 animate-in fade-in">
@@ -435,20 +350,18 @@ const Ponto: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
       
-      {/* Header */}
       <div className="flex items-center justify-between">
          <div>
             <h1 className="text-2xl font-bold text-gray-900">Registro de Ponto</h1>
-            <p className="text-gray-500 text-sm">Controle de jornada com validação facial em tempo real.</p>
+            <p className="text-gray-500 text-sm">Controle de jornada com validação facial via Gemini AI.</p>
          </div>
          {status === 'validating' && (
              <div className="flex items-center gap-2 text-brand-600 bg-brand-50 px-3 py-1 rounded-full text-xs font-bold animate-pulse border border-brand-200">
-                 <Loader2 size={14} className="animate-spin" /> Processando Biometria...
+                 <Loader2 size={14} className="animate-spin" /> Verificando Identidade...
              </div>
          )}
       </div>
 
-      {/* Tabs */}
       <div className="flex p-1 bg-gray-200 rounded-xl">
          <button 
            onClick={() => setActiveTab('register')}
@@ -467,14 +380,7 @@ const Ponto: React.FC = () => {
       {activeTab === 'register' && (
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
-            {/* Left Col: Camera */}
             <div className="bg-black rounded-2xl overflow-hidden shadow-lg relative h-[400px] flex items-center justify-center group">
-                 {!modelsLoaded && (
-                    <div className="text-white flex flex-col items-center gap-2 z-10">
-                        <Loader2 className="w-8 h-8 animate-spin" />
-                        <span className="text-xs">Carregando IA...</span>
-                    </div>
-                 )}
                  <video 
                     ref={videoRef} 
                     autoPlay 
@@ -485,20 +391,15 @@ const Ponto: React.FC = () => {
                     }}
                     className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]" 
                  />
-                 <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none transform scale-x-[-1]" />
-                 
-                 {/* Detection Feedback Overlay */}
                  <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md shadow-sm transition-all ${faceDetected ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}>
-                        {faceDetected ? 'Rosto Detectado' : 'Posicione seu Rosto'}
+                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-brand-500/80 text-white backdrop-blur-md shadow-sm">
+                        Posicione seu Rosto
                     </span>
                  </div>
             </div>
 
-            {/* Right Col: Controls */}
             <div className="flex flex-col justify-between h-[400px]">
                 
-                {/* Info Card */}
                 <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex-1 mb-4 flex flex-col items-center justify-center text-center">
                     <div className="text-5xl font-bold text-gray-900 tabular-nums tracking-tighter mb-2">
                         {currentTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -521,11 +422,10 @@ const Ponto: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Buttons */}
                 <div className="grid grid-cols-2 gap-3">
                     <button 
                         onClick={() => handleRegister('entry')}
-                        disabled={!faceDetected || !detectedLocation || status !== 'idle'}
+                        disabled={!detectedLocation || status !== 'idle'}
                         className="p-4 rounded-xl bg-green-50 border-2 border-green-100 hover:bg-green-100 hover:border-green-300 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-1"
                     >
                         <Clock className="text-green-600" size={24} />
@@ -534,7 +434,7 @@ const Ponto: React.FC = () => {
                     
                     <button 
                         onClick={() => handleRegister('exit')}
-                        disabled={!faceDetected || !detectedLocation || status !== 'idle'}
+                        disabled={!detectedLocation || status !== 'idle'}
                         className="p-4 rounded-xl bg-red-50 border-2 border-red-100 hover:bg-red-100 hover:border-red-300 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-1"
                     >
                         <Clock className="text-red-600" size={24} />
@@ -543,7 +443,7 @@ const Ponto: React.FC = () => {
 
                     <button 
                         onClick={() => handleRegister('lunch_start')}
-                        disabled={!faceDetected || !detectedLocation || status !== 'idle'}
+                        disabled={!detectedLocation || status !== 'idle'}
                         className="p-3 rounded-xl bg-yellow-50 border border-yellow-100 hover:bg-yellow-100 transition-all disabled:opacity-50 text-xs font-bold text-yellow-800"
                     >
                         Início Almoço
@@ -551,7 +451,7 @@ const Ponto: React.FC = () => {
                     
                     <button 
                         onClick={() => handleRegister('lunch_end')}
-                        disabled={!faceDetected || !detectedLocation || status !== 'idle'}
+                        disabled={!detectedLocation || status !== 'idle'}
                         className="p-3 rounded-xl bg-yellow-50 border border-yellow-100 hover:bg-yellow-100 transition-all disabled:opacity-50 text-xs font-bold text-yellow-800"
                     >
                         Fim Almoço

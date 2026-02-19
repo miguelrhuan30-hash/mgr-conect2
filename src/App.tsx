@@ -27,6 +27,34 @@ const PendingApproval = lazy(() => import('./components/PendingApproval'));
 const LandingPage = lazy(() => import('./components/LandingPage'));
 const LandingPageEditor = lazy(() => import('./components/LandingPageEditor'));
 
+// Extracted EnforceShiftLock Component
+const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean, children?: React.ReactNode }) => {
+  const location = useLocation();
+
+  if (isShiftLocked) {
+     // If currently not on Ponto page, redirect to Ponto
+     if (!location.pathname.includes('/app/ponto')) {
+        return <Navigate to="/app/ponto" replace />;
+     }
+     
+     // If on Ponto page, show a warning banner above the content
+     return (
+       <div className="flex flex-col h-full">
+          <div className="bg-orange-50 border-b border-orange-200 px-4 py-3 flex items-center justify-between">
+             <div className="flex items-center gap-3">
+                <Lock className="text-orange-600 w-5 h-5 animate-pulse" />
+                <span className="text-orange-800 text-sm font-bold">
+                  Acesso ao sistema bloqueado. Registre sua entrada para liberar os menus.
+                </span>
+             </div>
+          </div>
+          {children}
+       </div>
+     );
+  }
+  return <>{children}</>;
+};
+
 const AppContent: React.FC = () => {
   const { currentUser, userProfile, loading } = useAuth();
   const location = useLocation();
@@ -147,33 +175,6 @@ const AppContent: React.FC = () => {
                         requiresTimeClock && 
                         !isShiftOpen;
 
-  // If locked, restrict navigation ONLY to Ponto page
-  // We use a redirect logic inside the protected route render
-  const EnforceShiftLock = ({ children }: { children: React.ReactNode }) => {
-    if (isShiftLocked) {
-       // If currently not on Ponto page, redirect to Ponto
-       if (!location.pathname.includes('/app/ponto')) {
-          return <Navigate to="/app/ponto" replace />;
-       }
-       
-       // If on Ponto page, show a warning banner above the content (Optional UX improvement)
-       return (
-         <div className="flex flex-col h-full">
-            <div className="bg-orange-50 border-b border-orange-200 px-4 py-3 flex items-center justify-between">
-               <div className="flex items-center gap-3">
-                  <Lock className="text-orange-600 w-5 h-5 animate-pulse" />
-                  <span className="text-orange-800 text-sm font-bold">
-                    Acesso ao sistema bloqueado. Registre sua entrada para liberar os menus.
-                  </span>
-               </div>
-            </div>
-            {children}
-         </div>
-       );
-    }
-    return <>{children}</>;
-  };
-
   return (
     <Suspense fallback={<LoadingScreen />}>
         <Routes>
@@ -199,7 +200,7 @@ const AppContent: React.FC = () => {
                // LÓGICA DE PRIORIDADE:
                // 1. SE FOR GESTOR (isMaster) -> ACESSO TOTAL IMEDIATO
                isMaster ? (
-                 <EnforceShiftLock>
+                 <EnforceShiftLock isShiftLocked={isShiftLocked}>
                     <Layout />
                  </EnforceShiftLock>
                ) : 
@@ -233,7 +234,7 @@ const AppContent: React.FC = () => {
                  </div>
                ) : (
                  // 4. ACESSO NORMAL (SUJEITO A SHIFT LOCK)
-                 <EnforceShiftLock>
+                 <EnforceShiftLock isShiftLocked={isShiftLocked}>
                     <Layout />
                  </EnforceShiftLock>
                )
