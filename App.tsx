@@ -101,7 +101,11 @@ const AppContent: React.FC = () => {
 
   // --- ACCESS CONTROL LOGIC ---
   const requiresTimeClock = userProfile?.permissions?.requiresTimeClock ?? false;
-  // Admin role typically overrides this via permissions, but explicit check handles edge cases
+  
+  // Lógica de Bloqueio de Turno
+  // 1. Se role for pending -> não bloqueia aqui (bloqueia na rota específica)
+  // 2. Se requiresTimeClock for FALSE -> NUNCA bloqueia.
+  // 3. Se requiresTimeClock for TRUE -> Bloqueia se o turno estiver fechado.
   const isShiftLocked = currentUser && 
                         userProfile?.role !== 'pending' && 
                         requiresTimeClock && 

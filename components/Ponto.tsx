@@ -8,7 +8,7 @@ import { faceService } from '../utils/FaceRecognitionService';
 import * as faceapi from 'face-api.js';
 import { 
   Clock, MapPin, ShieldCheck, Loader2, AlertTriangle, 
-  Navigation, History, RotateCcw, Calendar, ScanFace, Lock, Camera
+  History, RotateCcw, Calendar, ScanFace, Camera, Lock 
 } from 'lucide-react';
 
 const Ponto: React.FC = () => {
@@ -19,11 +19,6 @@ const Ponto: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   
   // Register Flow State
-  // 'idle' -> User is looking at camera
-  // 'validating' -> AI is processing the frame
-  // 'uploading' -> Saving to Firebase
-  // 'success' -> Done
-  // 'error' -> Any failure
   const [status, setStatus] = useState<'idle' | 'validating' | 'uploading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   
@@ -34,7 +29,7 @@ const Ponto: React.FC = () => {
   
   // AI State
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [faceDetected, setFaceDetected] = useState(false); // Real-time feedback
+  const [faceDetected, setFaceDetected] = useState(false);
   
   // History State
   const [history, setHistory] = useState<TimeEntry[]>([]);
@@ -43,8 +38,7 @@ const Ponto: React.FC = () => {
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null); // For capturing photo logic
-  const overlayRef = useRef<HTMLCanvasElement>(null); // For drawing bounding box UI
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -66,7 +60,7 @@ const Ponto: React.FC = () => {
         startCamera(); // Start camera immediately after models load
       } catch (e) {
         console.error("AI Models failed", e);
-        setErrorMessage("Falha ao carregar sistema de IA.");
+        setErrorMessage("Falha ao carregar sistema de IA. Recarregue a página.");
         setStatus('error');
       }
 
@@ -105,22 +99,20 @@ const Ponto: React.FC = () => {
   };
 
   const checkGeolocation = () => {
-     if (!navigator.geolocation) return;
+     if (!navigator.geolocation) {
+         setErrorMessage("Geolocalização não suportada pelo navegador.");
+         return;
+     }
      navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
         setCurrentLocation({ lat: latitude, lng: longitude });
 
-        // Check proximity
+        // Admin Bypass (Global)
         if (userProfile?.role === 'admin' && (!userProfile.allowedLocationIds || userProfile.allowedLocationIds.length === 0)) {
              setDetectedLocation({ name: 'Acesso Admin (Global)' } as WorkLocation);
              return;
         }
-        
-        // Find nearest allowed location
-        // Note: We use allowedLocations from state, but inside useEffect we might need to access it differently if closure is stale.
-        // For simplicity, we'll re-run this check when allowedLocations updates or use a ref if needed. 
-        // Here we assume simple flow.
       }, 
       (err) => console.error("GPS Error", err),
       { enableHighAccuracy: true }
@@ -173,18 +165,26 @@ const Ponto: React.FC = () => {
   // 2. Camera & Visual Feedback Loop
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+      // FORCE facingMode: user (Front Camera)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: "user", 
+          width: { ideal: 640 }, 
+          height: { ideal: 480 } 
+        } 
+      });
+      
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Wait for video to be ready before starting loop
         videoRef.current.onloadedmetadata = () => {
            videoRef.current?.play();
            startDrawingLoop();
         };
       }
     } catch (err) {
-      setErrorMessage("Erro ao acessar câmera. Verifique permissões.");
+      console.error("Camera Error:", err);
+      setErrorMessage("Erro ao acessar câmera. Verifique se as permissões foram concedidas.");
       setStatus('error');
     }
   };
@@ -193,6 +193,7 @@ const Ponto: React.FC = () => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
   };
 
@@ -202,7 +203,6 @@ const Ponto: React.FC = () => {
     intervalRef.current = setInterval(async () => {
        if (!videoRef.current || videoRef.current.paused || videoRef.current.ended || !overlayRef.current) return;
        
-       // Use lightweight detection for UI feedback
        const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
        const detection = await faceapi.detectSingleFace(videoRef.current, options);
 
@@ -218,12 +218,11 @@ const Ponto: React.FC = () => {
                const resized = faceapi.resizeResults(detection, dims);
                const { x, y, width, height } = resized.box;
                
-               // Draw Green Box
+               // Visual Feedback
                ctx.strokeStyle = '#00FF00';
                ctx.lineWidth = 3;
                ctx.strokeRect(x, y, width, height);
                
-               // Draw Label
                ctx.fillStyle = '#00FF00';
                ctx.font = 'bold 16px Arial';
                ctx.fillText('Rosto Identificado', x, y - 10);
@@ -231,14 +230,20 @@ const Ponto: React.FC = () => {
                setFaceDetected(false);
            }
        }
-    }, 100); // 10 FPS for UI is enough
+    }, 200);
   };
 
-  // 3. Register Action (The "Button" Click)
+  // 3. Register Action (STRICTLY FROM VIDEO)
   const handleRegister = async (type: string) => {
     if (!currentUser || !videoRef.current) return;
 
-    // A. Pre-Validation Checks
+    // A. Security Checks
+    if (!streamRef.current || !streamRef.current.active) {
+        setErrorMessage("Câmera desconectada. Recarregue a página.");
+        setStatus('error');
+        return;
+    }
+
     if (!userProfile?.biometrics) {
         alert("BLOQUEIO DE SEGURANÇA: Biometria não cadastrada. Atualize seu perfil.");
         return;
@@ -247,6 +252,8 @@ const Ponto: React.FC = () => {
         alert("Você está fora do perímetro permitido.");
         return;
     }
+    
+    // Prevent double entry
     if (type === 'entry' && todaysEntries.length > 0 && todaysEntries[0].type === 'entry') {
         if (!window.confirm("Você já tem uma entrada aberta. Registrar nova entrada?")) return;
     }
@@ -254,23 +261,26 @@ const Ponto: React.FC = () => {
     setStatus('validating');
     
     try {
-        // B. Capture Frame
+        // B. Capture Frame from Video (No File Upload)
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 480;
         const ctx = canvas.getContext('2d');
-        ctx?.drawImage(videoRef.current, 0, 0, 640, 480);
+        if (!ctx) throw new Error("Canvas context failed");
         
-        // Add timestamp to image (Anti-spoofing / Evidence)
-        if (ctx) {
-            ctx.font = "20px Arial";
-            ctx.fillStyle = "white";
-            ctx.shadowColor = "black";
-            ctx.shadowBlur = 4;
-            ctx.fillText(new Date().toLocaleString(), 10, 470);
-        }
+        // Draw the current video frame
+        ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+        
+        // Add timestamp to image (Anti-spoofing)
+        ctx.font = "20px Arial";
+        ctx.fillStyle = "white";
+        ctx.shadowColor = "black";
+        ctx.shadowBlur = 4;
+        ctx.fillText(new Date().toLocaleString(), 10, 470);
 
         const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+        
+        // Prepare image for AI
         const tempImg = new Image();
         tempImg.src = photoBase64;
         await new Promise(r => tempImg.onload = r);
@@ -335,6 +345,7 @@ const Ponto: React.FC = () => {
   const reset = () => {
     setStatus('idle');
     setErrorMessage('');
+    startCamera(); // Retry camera
   };
 
   // --- RENDER ---
@@ -413,16 +424,16 @@ const Ponto: React.FC = () => {
             {/* Left Col: Camera */}
             <div className="bg-black rounded-2xl overflow-hidden shadow-lg relative h-[400px] flex items-center justify-center group">
                  {!modelsLoaded && (
-                    <div className="text-white flex flex-col items-center gap-2">
+                    <div className="text-white flex flex-col items-center gap-2 z-10">
                         <Loader2 className="w-8 h-8 animate-spin" />
                         <span className="text-xs">Carregando IA...</span>
                     </div>
                  )}
-                 <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
-                 <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+                 <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]" />
+                 <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none transform scale-x-[-1]" />
                  
                  {/* Detection Feedback Overlay */}
-                 <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+                 <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md shadow-sm transition-all ${faceDetected ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}>
                         {faceDetected ? 'Rosto Detectado' : 'Posicione seu Rosto'}
                     </span>

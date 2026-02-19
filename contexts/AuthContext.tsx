@@ -49,7 +49,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               createdAt: Timestamp.now(),
               // Garante que não haja restrições de horário ou local
               workSchedule: { startTime: '00:00', endTime: '23:59', lunchDuration: 0 },
-              allowedLocationIds: [] 
+              allowedLocationIds: [],
+              // Permissões explícitas para garantir acesso total sem bloqueio de ponto
+              permissions: {
+                canManageUsers: true,
+                canManageSettings: true,
+                canManageSectors: true,
+                canViewTasks: true,
+                canCreateTasks: true,
+                canEditTasks: true,
+                canDeleteTasks: true,
+                canManageClients: true,
+                canManageProjects: true,
+                canViewInventory: true,
+                canManageInventory: true,
+                canRegisterAttendance: true,
+                canViewAttendanceReports: true,
+                canManageAttendance: true,
+                requiresTimeClock: false, // CRÍTICO: Mestre não precisa bater ponto
+                canViewFinancial: true,
+                canManageFinancial: true,
+              }
            });
            setLoading(false);
            return; 

@@ -85,7 +85,7 @@ const Login: React.FC = () => {
         const isMaster = user.email?.toLowerCase() === 'gestor@mgr.com';
 
         if (isMaster) {
-            // FORÇA BRUTA: Garante que o usuário Mestre seja Admin no Banco de Dados
+            // FORÇA BRUTA: Garante que o usuário Mestre seja Admin no Banco de Dados com todas as permissões
             await setDoc(doc(db, CollectionName.USERS, user.uid), {
               uid: user.uid,
               email: user.email,
@@ -99,7 +99,26 @@ const Login: React.FC = () => {
                  endTime: '23:59',
                  lunchDuration: 0
               },
-              allowedLocationIds: [] // Acesso irrestrito
+              allowedLocationIds: [], // Acesso irrestrito
+              permissions: {
+                canManageUsers: true,
+                canManageSettings: true,
+                canManageSectors: true,
+                canViewTasks: true,
+                canCreateTasks: true,
+                canEditTasks: true,
+                canDeleteTasks: true,
+                canManageClients: true,
+                canManageProjects: true,
+                canViewInventory: true,
+                canManageInventory: true,
+                canRegisterAttendance: true,
+                canViewAttendanceReports: true,
+                canManageAttendance: true,
+                requiresTimeClock: false, // CRÍTICO: Mestre não precisa bater ponto
+                canViewFinancial: true,
+                canManageFinancial: true,
+              }
           }, { merge: true });
         } 
         else if (!effectiveIsLogin) {
