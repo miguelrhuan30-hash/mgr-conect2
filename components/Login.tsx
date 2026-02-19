@@ -5,11 +5,11 @@ import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { CollectionName } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { Loader2, Lock, Mail, Hexagon, AlertCircle, TestTube2, ArrowLeft } from 'lucide-react';
+import { Loader2, Lock, Mail, Hexagon, AlertCircle, ArrowLeft } from 'lucide-react';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { loginAsDemo, currentUser } = useAuth();
+  const { currentUser } = useAuth();
   
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -43,11 +43,6 @@ const Login: React.FC = () => {
       default:
         return `Erro: ${error.message || 'Falha na autenticação'}`;
     }
-  };
-
-  const handleDemoLogin = () => {
-    loginAsDemo();
-    navigate('/app');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -207,15 +202,6 @@ const Login: React.FC = () => {
               ) : (
                 isLogin ? 'Entrar no Sistema' : 'Criar Conta'
               )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              className="group relative w-full flex justify-center items-center py-3 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 transition-colors"
-            >
-              <TestTube2 className="w-4 h-4 mr-2 text-gray-500" />
-              Acesso Demonstração (Teste)
             </button>
           </div>
 

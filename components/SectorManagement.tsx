@@ -23,6 +23,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canRegisterAttendance: true,
   canViewAttendanceReports: false,
   canManageAttendance: false,
+  requiresTimeClock: false,
   canViewFinancial: false,
   canManageFinancial: false,
 };
@@ -49,6 +50,11 @@ const PERMISSION_GROUPS = [
       { key: 'canRegisterAttendance', label: 'Registrar Ponto' },
       { key: 'canViewAttendanceReports', label: 'Ver Relatórios de Equipe' },
       { key: 'canManageAttendance', label: 'Gerenciar/Corrigir Ponto' },
+      { 
+        key: 'requiresTimeClock', 
+        label: 'Exigir Ponto para Acesso ao Sistema?', 
+        description: 'Se desmarcado, o usuário poderá acessar o sistema mesmo sem registrar entrada.'
+      },
     ]
   },
   {
@@ -253,7 +259,7 @@ const SectorManagement: React.FC = () => {
                     {/* Permission Pills Preview */}
                     {sector.defaultPermissions.canManageUsers && <span className="text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100">Gestão Usuários</span>}
                     {sector.defaultPermissions.canViewFinancial && <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100">Financeiro</span>}
-                    {sector.defaultPermissions.canManageInventory && <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100">Estoque</span>}
+                    {sector.defaultPermissions.requiresTimeClock && <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">Exige Ponto</span>}
                  </div>
                </div>
             </div>
@@ -313,19 +319,25 @@ const SectorManagement: React.FC = () => {
                         </div>
                         <div className="p-4 space-y-3">
                           {group.perms.map(perm => (
-                            <label key={perm.key} className="flex items-center justify-between cursor-pointer group/toggle">
-                              <span className="text-sm text-gray-600 group-hover/toggle:text-gray-900 transition-colors">{perm.label}</span>
-                              <div className="relative">
-                                <input 
-                                  type="checkbox" 
-                                  className="sr-only"
-                                  checked={!!formPerms[perm.key as keyof PermissionSet]}
-                                  onChange={() => handleTogglePerm(perm.key as keyof PermissionSet)}
-                                />
-                                <div className={`block w-10 h-6 rounded-full transition-colors ${formPerms[perm.key as keyof PermissionSet] ? 'bg-brand-600' : 'bg-gray-300'}`}></div>
-                                <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${formPerms[perm.key as keyof PermissionSet] ? 'transform translate-x-4' : ''}`}></div>
-                              </div>
-                            </label>
+                            <div key={perm.key} className="flex flex-col">
+                              <label className="flex items-center justify-between cursor-pointer group/toggle">
+                                <span className="text-sm text-gray-600 group-hover/toggle:text-gray-900 transition-colors">{perm.label}</span>
+                                <div className="relative">
+                                  <input 
+                                    type="checkbox" 
+                                    className="sr-only"
+                                    checked={!!formPerms[perm.key as keyof PermissionSet]}
+                                    onChange={() => handleTogglePerm(perm.key as keyof PermissionSet)}
+                                  />
+                                  <div className={`block w-10 h-6 rounded-full transition-colors ${formPerms[perm.key as keyof PermissionSet] ? 'bg-brand-600' : 'bg-gray-300'}`}></div>
+                                  <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${formPerms[perm.key as keyof PermissionSet] ? 'transform translate-x-4' : ''}`}></div>
+                                </div>
+                              </label>
+                              {/* Render Description if Exists */}
+                              {(perm as any).description && (
+                                <p className="text-[10px] text-gray-400 mt-1 ml-0.5 leading-tight">{(perm as any).description}</p>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>

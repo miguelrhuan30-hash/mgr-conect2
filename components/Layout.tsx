@@ -71,6 +71,10 @@ const Layout: React.FC = () => {
 
   const visibleItems = navItems.filter(item => item.visible);
 
+  // Avatar logic
+  const avatarUrl = userProfile?.avatar || userProfile?.photoURL;
+  const initial = (userProfile?.displayName || currentUser?.email || 'U').charAt(0).toUpperCase();
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
       
@@ -84,9 +88,15 @@ const Layout: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-3">
-           <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-xs border border-brand-200">
-              {(userProfile?.displayName || currentUser?.email || 'U').charAt(0).toUpperCase()}
-           </div>
+           <button onClick={() => navigate('/app/perfil')} className="relative">
+             {avatarUrl ? (
+               <img src={avatarUrl} alt="User" className="w-8 h-8 rounded-full border border-brand-200 object-cover" />
+             ) : (
+               <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-xs border border-brand-200">
+                  {initial}
+               </div>
+             )}
+           </button>
            <button onClick={handleLogout} className="text-gray-500 hover:text-red-600">
              <LogOut size={20} />
            </button>
@@ -136,12 +146,19 @@ const Layout: React.FC = () => {
 
           {/* User Profile & Logout */}
           <div className="p-4 border-t border-gray-100 bg-gray-50/50">
-            <div className="flex items-center mb-4">
-              <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold">
-                {(userProfile?.displayName || currentUser?.email || 'U').charAt(0).toUpperCase()}
-              </div>
+            <div 
+              onClick={() => navigate('/app/perfil')}
+              className="flex items-center mb-4 cursor-pointer hover:bg-white p-2 rounded-lg transition-colors group"
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="User" className="w-10 h-10 rounded-full border border-gray-200 object-cover" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold group-hover:bg-brand-200 transition-colors">
+                  {initial}
+                </div>
+              )}
               <div className="ml-3 overflow-hidden">
-                <p className="text-sm font-medium text-gray-900 truncate">
+                <p className="text-sm font-medium text-gray-900 truncate group-hover:text-brand-600 transition-colors">
                   {userProfile?.displayName || 'Usuário'}
                 </p>
                 <p className="text-xs text-gray-500 truncate capitalize">
@@ -168,26 +185,25 @@ const Layout: React.FC = () => {
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION (Footer) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex items-center overflow-x-auto no-scrollbar pb-safe">
-        {visibleItems.slice(0, 5).map((item) => (
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex items-center overflow-x-auto no-scrollbar pb-safe w-full">
+        {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
             className={({ isActive }) => `
-              min-w-[4.5rem] flex-1 flex flex-col items-center justify-center py-2 px-1 transition-colors
+              min-w-[5rem] flex-1 flex flex-col items-center justify-center py-2 px-1 transition-colors flex-shrink-0
               ${isActive 
                 ? 'text-brand-600 border-t-2 border-brand-600' 
                 : 'text-gray-500 hover:text-gray-900 border-t-2 border-transparent'}
             `}
           >
             <item.icon size={20} className="mb-1" />
-            <span className="text-[10px] font-medium truncate w-full text-center leading-none">
+            <span className="text-[10px] font-medium truncate w-full text-center leading-none px-1">
               {item.label}
             </span>
           </NavLink>
         ))}
-        {/* Mobile menu truncation handler could go here if more than 5 items */}
       </nav>
     </div>
   );

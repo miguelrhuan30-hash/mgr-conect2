@@ -27,6 +27,7 @@ export interface PermissionSet {
   canRegisterAttendance: boolean;       // Clock in/out
   canViewAttendanceReports: boolean;    // View team reports
   canManageAttendance: boolean;         // Edit entries, close shifts manually
+  requiresTimeClock: boolean;           // If true, system access is blocked until user clocks in
 
   // Financial (Future Proofing)
   canViewFinancial: boolean;
@@ -48,7 +49,11 @@ export interface UserProfile {
   role: UserRole; // Legacy role for backward compatibility
   xp: number;
   level: number;
-  photoURL?: string; // Facial Biometrics Base
+  
+  photoURL?: string; // Facial Biometrics Base (Google Auth / System default)
+  avatar?: string | null; // Identidade Visual do Colaborador (Custom Upload)
+  biometrics?: string; // JSON stringified Float32Array of face descriptor
+  
   createdAt: Timestamp;
   
   // New Access Control Fields
@@ -135,7 +140,10 @@ export interface TimeEntry {
     lat: number;
     lng: number;
   };
-  photoEvidenceUrl?: string; // Optional if manual
+  
+  photoEvidenceUrl?: string; // Legacy/System use
+  photoUrl?: string; // Identidade Visual do Registro (Foto do Ponto)
+  
   isOnTime?: boolean;
   userAgent?: string;
   
@@ -145,6 +153,7 @@ export interface TimeEntry {
   editedBy?: string;         // UID of the manager who edited
   editReason?: string;       // "Esquecimento", "Doença", etc.
   editTimestamp?: Timestamp; // When the edit happened
+  biometricVerified?: boolean; // True if face recognition was successful
 }
 
 // --- TASKS & SERVICE ORDERS (O.S.) ---
@@ -221,10 +230,9 @@ export enum CollectionName {
   SECTORS = 'sectors', // New collection for Role Templates
   TIME_ENTRIES = 'time_entries',
   PROJECTS = 'projects',
+  WORK_LOCATIONS = 'work_locations',
   CLIENTS = 'clients',
-  INVENTORY_REQUESTS = 'inventory_requests',
   TASK_TEMPLATES = 'task_templates',
   SYSTEM_SETTINGS = 'system_settings',
   CONTACT_MESSAGES = 'contact_messages',
-  WORK_LOCATIONS = 'work_locations'
 }

@@ -26,6 +26,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canRegisterAttendance: true,
   canViewAttendanceReports: false,
   canManageAttendance: false,
+  requiresTimeClock: false,
   canViewFinancial: false,
   canManageFinancial: false,
 };
@@ -51,6 +52,11 @@ const PERMISSION_GROUPS = [
       { key: 'canRegisterAttendance', label: 'Registrar Ponto' },
       { key: 'canViewAttendanceReports', label: 'Ver Relatórios de Equipe' },
       { key: 'canManageAttendance', label: 'Gerenciar/Corrigir Ponto' },
+      { 
+        key: 'requiresTimeClock', 
+        label: 'Exigir Ponto para Acesso ao Sistema?', 
+        description: 'Se desmarcado, o usuário poderá acessar o sistema mesmo sem registrar entrada.'
+      },
     ]
   },
   {
@@ -473,19 +479,25 @@ const Users: React.FC = () => {
                         </div>
                         <div className="p-4 space-y-3">
                           {group.perms.map(perm => (
-                            <label key={perm.key} className="flex items-center justify-between cursor-pointer group/toggle">
-                              <span className="text-sm text-gray-600 group-hover/toggle:text-gray-900 transition-colors">{perm.label}</span>
-                              <div className="relative">
-                                <input 
-                                  type="checkbox" 
-                                  className="sr-only"
-                                  checked={!!currentPermissions[perm.key as keyof PermissionSet]}
-                                  onChange={() => togglePermission(perm.key as keyof PermissionSet)}
-                                />
-                                <div className={`block w-10 h-6 rounded-full transition-colors ${currentPermissions[perm.key as keyof PermissionSet] ? 'bg-brand-600' : 'bg-gray-300'}`}></div>
-                                <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${currentPermissions[perm.key as keyof PermissionSet] ? 'transform translate-x-4' : ''}`}></div>
-                              </div>
-                            </label>
+                            <div key={perm.key} className="flex flex-col">
+                              <label className="flex items-center justify-between cursor-pointer group/toggle">
+                                <span className="text-sm text-gray-600 group-hover/toggle:text-gray-900 transition-colors">{perm.label}</span>
+                                <div className="relative">
+                                  <input 
+                                    type="checkbox" 
+                                    className="sr-only"
+                                    checked={!!currentPermissions[perm.key as keyof PermissionSet]}
+                                    onChange={() => togglePermission(perm.key as keyof PermissionSet)}
+                                  />
+                                  <div className={`block w-10 h-6 rounded-full transition-colors ${currentPermissions[perm.key as keyof PermissionSet] ? 'bg-brand-600' : 'bg-gray-300'}`}></div>
+                                  <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${currentPermissions[perm.key as keyof PermissionSet] ? 'transform translate-x-4' : ''}`}></div>
+                                </div>
+                              </label>
+                              {/* Render Description if Exists */}
+                              {(perm as any).description && (
+                                <p className="text-[10px] text-gray-400 mt-1 ml-0.5 leading-tight">{(perm as any).description}</p>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>
