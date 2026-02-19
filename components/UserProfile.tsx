@@ -35,67 +35,56 @@ const UserProfile: React.FC = () => {
   // --- CAMERA LOGIC ---
 
   const startCamera = async () => {
+    // UI Setup
     setIsCameraOpen(true);
     setCapturedImage(null);
     setCameraError('');
     setIsStartingCamera(true);
     
     try {
-      // 1. Pre-load models first
+      // 0. Pre-load models first (Feature requirement)
       await faceService.loadModels();
 
       let stream: MediaStream | null = null;
 
       try {
-        console.log("Tentando abrir câmera frontal (facingMode='user')...");
-        // TENTATIVA 1: Câmera frontal específica
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user' } 
-        });
-      } catch (err) {
-        console.warn("Falha ao abrir câmera frontal. Tentando configuração genérica...", err);
-        
-        // TENTATIVA 2: Configuração genérica (fallback para desktops/notebooks)
+        // Tentativa 1: Tenta pegar a câmera frontal (ideal para celular)
+        console.log("Tentando câmera frontal...");
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      } catch (err: any) {
+        console.warn("Erro na câmera frontal, tentando genérica...", err);
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        } catch (finalErr) {
-            // Se ambas falharem, lança o erro final para o catch principal
-            throw finalErr;
+          // Tentativa 2: Tenta pegar QUALQUER câmera disponível (para PC/Notebook)
+          console.log("Tentando câmera genérica...");
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (finalErr: any) {
+           // Se falhar tudo, lança para o bloco catch principal
+           throw finalErr;
         }
       }
       
-      streamRef.current = stream;
-      if (videoRef.current && stream) {
-        videoRef.current.srcObject = stream;
-        // Ensure video plays (vital for some mobile browsers)
-        try {
-            await videoRef.current.play();
-        } catch (e) {
-            console.error("Error playing video:", e);
+      // Success Setup
+      if (stream) {
+        streamRef.current = stream;
+        if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            // Ensure video plays (vital for some mobile browsers)
+            try {
+                await videoRef.current.play();
+            } catch (e) {
+                console.error("Error playing video:", e);
+            }
         }
       }
+
     } catch (err: any) {
-      console.error("Camera Access Error:", err);
+      console.error("Erro fatal de câmera:", err);
       
-      const errorName = err.name || 'UnknownError';
-      const errorMessage = err.message || 'Erro desconhecido';
+      // ALERTA SOLICITADO
+      alert(`Não foi possível acessar a câmera. Erro: ${err.name} - ${err.message}`);
       
-      // 3. Alerta com nome técnico para diagnóstico (SOLICITADO)
-      alert(`Erro de Câmera: ${errorName}\n\nDetalhes: ${errorMessage}\n\nPor favor, verifique se a câmera está conectada e se a permissão foi concedida.`);
-      
-      let friendlyMsg = "Não foi possível acessar a câmera.";
-
-      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
-        friendlyMsg = "O acesso à câmera foi bloqueado. Verifique o ícone de cadeado na barra de endereço.";
-      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
-        friendlyMsg = "Nenhuma câmera encontrada no dispositivo.";
-      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
-        friendlyMsg = "A câmera já está sendo usada por outro aplicativo ou aba.";
-      } else if (errorName === 'OverconstrainedError') {
-        friendlyMsg = "A câmera não suporta a resolução solicitada.";
-      }
-
-      setCameraError(`${friendlyMsg} (${errorName})`);
+      // Update UI
+      setCameraError(`Erro técnico: ${err.name}`);
     } finally {
         setIsStartingCamera(false);
     }

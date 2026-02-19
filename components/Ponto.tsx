@@ -173,12 +173,13 @@ const Ponto: React.FC = () => {
         console.log("Ponto: Tentando câmera frontal (facingMode='user')...");
         // TENTATIVA 1: Câmera frontal específica
         stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: "user" } 
+          video: { facingMode: 'user' } 
         });
       } catch (err) {
         console.warn("Ponto: Falha na câmera frontal, tentando genérica...", err);
         // TENTATIVA 2: Fallback para câmera genérica
         try {
+           console.log("Ponto: Tentando câmera genérica...");
            stream = await navigator.mediaDevices.getUserMedia({ video: true });
         } catch (finalErr) {
            throw finalErr;
