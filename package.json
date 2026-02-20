@@ -17,7 +17,11 @@
     "@google/genai": "^0.7.0",
     "clsx": "^2.1.0",
     "tailwind-merge": "^2.2.1",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
+    "xlsx": "^0.18.5",
+    "date-fns": "^3.3.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",

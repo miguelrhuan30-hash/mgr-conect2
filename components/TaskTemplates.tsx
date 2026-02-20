@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import firebase from '../firebase';
+import { collection, addDoc, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, TaskTemplate, EvidenceType } from '../types';
 import { 
@@ -32,7 +32,8 @@ const TaskTemplates: React.FC = () => {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const snapshot = await db.collection(CollectionName.TASK_TEMPLATES).orderBy('title', 'asc').get();
+      const q = query(collection(db, CollectionName.TASK_TEMPLATES), orderBy('title', 'asc'));
+      const snapshot = await getDocs(q);
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) as TaskTemplate[];
       setTemplates(data);
     } catch (error) {
@@ -74,7 +75,7 @@ const TaskTemplates: React.FC = () => {
   const handleDeleteTemplate = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir este modelo?')) {
       try {
-        await db.collection(CollectionName.TASK_TEMPLATES).doc(id).delete();
+        await deleteDoc(doc(db, CollectionName.TASK_TEMPLATES, id));
         setTemplates(templates.filter(t => t.id !== id));
       } catch (error) {
         console.error("Error deleting template:", error);
@@ -93,10 +94,10 @@ const TaskTemplates: React.FC = () => {
         description,
         tools,
         checklist: steps,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp() as any
+        createdAt: serverTimestamp() as any
       };
       
-      const docRef = await db.collection(CollectionName.TASK_TEMPLATES).add(payload);
+      const docRef = await addDoc(collection(db, CollectionName.TASK_TEMPLATES), payload);
       setTemplates([...templates, { id: docRef.id, ...payload }]);
       setIsModalOpen(false);
       resetForm();

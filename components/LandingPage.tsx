@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import firebase from '../firebase';
+import { doc, onSnapshot, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, LandingPageContent } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -92,11 +92,11 @@ const LandingPage: React.FC = () => {
   const canEdit = userProfile?.role === 'developer' || userProfile?.role === 'admin';
 
   useEffect(() => {
-    const docRef = db.collection(CollectionName.SYSTEM_SETTINGS).doc('landing_page');
+    const docRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page');
     
     // Improved error handling to suppress logs for public visitors
-    const unsub = docRef.onSnapshot(async (docSnap) => {
-      if (docSnap.exists) {
+    const unsub = onSnapshot(docRef, async (docSnap) => {
+      if (docSnap.exists()) {
         const data = docSnap.data() as any;
         
         // --- DATA MIGRATION LOGIC ---
@@ -125,7 +125,7 @@ const LandingPage: React.FC = () => {
         // otherwise just use static data to avoid permission errors on write.
         if (currentUser) {
             try {
-               await docRef.set(MGR_REAL_DATA);
+               await setDoc(docRef, MGR_REAL_DATA);
             } catch (e) {
                // Ignore write errors for non-admins
             }
@@ -150,11 +150,11 @@ const LandingPage: React.FC = () => {
     e.preventDefault();
     setFormStatus('sending');
     try {
-      await db.collection(CollectionName.CONTACT_MESSAGES).add({
+      await addDoc(collection(db, CollectionName.CONTACT_MESSAGES), {
         name: formName,
         email: formEmail,
         message: formMessage,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
         status: 'new'
       });
       setFormStatus('success');

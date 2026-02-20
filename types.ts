@@ -1,7 +1,7 @@
-import firebase from 'firebase/app';
-import 'firebase/firestore';
 
-export type Timestamp = firebase.firestore.Timestamp;
+import { Timestamp } from 'firebase/firestore';
+
+export { Timestamp };
 
 // --- ACCESS CONTROL & PERMISSIONS ---
 export type UserRole = 'admin' | 'manager' | 'employee' | 'technician' | 'pending' | 'developer';
@@ -17,6 +17,7 @@ export interface PermissionSet {
   canCreateTasks: boolean;
   canEditTasks: boolean;
   canDeleteTasks: boolean;
+  canViewSchedule: boolean;     // NEW: View Gantt Chart/Schedule
 
   // Commercial
   canManageClients: boolean;
@@ -177,6 +178,7 @@ export interface ChecklistItem {
 
 export interface Task {
   id: string;
+  code?: string; // OS-YYYY-NNN
   title: string;
   description: string;
   status: 'pending' | 'in-progress' | 'completed' | 'blocked';
@@ -189,6 +191,7 @@ export interface Task {
   assigneeName?: string;
   startDate?: Timestamp;
   endDate?: Timestamp;
+  progress?: number; // 0-100
   tools?: string[];
   checklist: ChecklistItem[];
   evidenceUrl?: string; 

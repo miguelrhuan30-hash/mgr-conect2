@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import firebase from '../firebase';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, Task } from '../types';
 import TaskList from './TaskList';
@@ -17,16 +17,19 @@ const Tasks: React.FC = () => {
 
   useEffect(() => {
     // Real-time listener for tasks
-    const q = db.collection(CollectionName.TASKS).orderBy('createdAt', 'desc');
+    const q = query(
+      collection(db, CollectionName.TASKS),
+      orderBy('createdAt', 'desc')
+    );
 
-    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const taskData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Task[];
       setTasks(taskData);
       setLoading(false);
-    }, (error: any) => {
+    }, (error) => {
       console.error("Error fetching tasks:", error);
       // Gracefully handle permission errors by stopping loading state
       setLoading(false);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import firebase from '../firebase';
+import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate } from '../types';
 import { X, Plus, Trash2, FileText, Calendar, User, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft } from 'lucide-react';
@@ -42,15 +42,15 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         setLoadingData(true);
         try {
           // Fetch Clients
-          const clientsSnap = await db.collection(CollectionName.CLIENTS).get();
+          const clientsSnap = await getDocs(collection(db, CollectionName.CLIENTS));
           setClients(clientsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
 
           // Fetch Users
-          const usersSnap = await db.collection(CollectionName.USERS).get();
+          const usersSnap = await getDocs(collection(db, CollectionName.USERS));
           setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
 
           // Fetch Templates
-          const tplSnap = await db.collection(CollectionName.TASK_TEMPLATES).get();
+          const tplSnap = await getDocs(collection(db, CollectionName.TASK_TEMPLATES));
           setTemplates(tplSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as TaskTemplate)));
 
         } catch (error) {
@@ -71,7 +71,8 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         return;
       }
       try {
-        const snap = await db.collection(CollectionName.PROJECTS).where("clientId", "==", clientId).get();
+        const q = query(collection(db, CollectionName.PROJECTS), where("clientId", "==", clientId));
+        const snap = await getDocs(q);
         setProjects(snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
       } catch (error) {
         console.error("Error loading projects:", error);
@@ -133,14 +134,14 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         projectName,
         assignedTo: assigneeId,
         assigneeName,
-        startDate: startDate ? firebase.firestore.Timestamp.fromDate(new Date(startDate)) : null,
-        endDate: endDate ? firebase.firestore.Timestamp.fromDate(new Date(endDate)) : null,
+        startDate: startDate ? Timestamp.fromDate(new Date(startDate)) : null,
+        endDate: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
         checklist,
         tools, // Save tools
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        createdAt: serverTimestamp()
       };
 
-      await db.collection(CollectionName.TASKS).add(taskPayload);
+      await addDoc(collection(db, CollectionName.TASKS), taskPayload);
       onSuccess();
       onClose();
     } catch (error) {

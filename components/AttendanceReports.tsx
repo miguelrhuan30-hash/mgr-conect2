@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, TimeEntry, UserProfile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { Calendar, User, Search, AlertCircle, CheckCircle, Clock, AlertTriangle, ShieldAlert, X, Save, Loader2 } from 'lucide-react';
+import { Calendar, User, Search, AlertCircle, CheckCircle, Clock, AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, FileText, FileSpreadsheet } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 const AttendanceReports: React.FC = () => {
   const { userProfile, currentUser } = useAuth();
@@ -229,6 +232,315 @@ const AttendanceReports: React.FC = () => {
       return diffHrs.toFixed(1);
   };
 
+  const calcWorkedHours = (day: any) => {
+    if (!day.entry || !day.exit) return null;
+    
+    const entryTime = day.entry.timestamp.toDate().getTime();
+    const exitTime = day.exit.timestamp.toDate().getTime();
+    
+    let totalMs = exitTime - entryTime;
+    
+    // Desconta almoço se ambos registrados
+    if (day.lunchStart && day.lunchEnd) {
+      const lunchStartTime = day.lunchStart.timestamp.toDate().getTime();
+      const lunchEndTime = day.lunchEnd.timestamp.toDate().getTime();
+      totalMs -= (lunchEndTime - lunchStartTime);
+    }
+    
+    const totalMinutes = Math.floor(totalMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    
+    return { 
+      display: `${hours}h ${String(minutes).padStart(2,'0')}m`,
+      totalMinutes,
+      hours
+    };
+  };
+
+  const summary = useMemo(() => {
+    let totalMinutes = 0;
+    let daysWorked = 0;
+    let absences = 0;
+
+    reportData.forEach(day => {
+        const result = calcWorkedHours(day);
+        if (result) {
+            totalMinutes += result.totalMinutes;
+            daysWorked++;
+        }
+
+        const date = new Date(day.date + 'T12:00:00');
+        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+        if (!day.hasEntries && !isWeekend) {
+            absences++;
+        }
+    });
+
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    return {
+        totalTime: `${hours}h ${String(minutes).padStart(2, '0')}m`,
+        daysWorked,
+        absences
+    };
+  }, [reportData]);
+
+  // --- EXPORT FUNCTIONS ---
+
+  const exportPDF = () => {
+    const doc = new jsPDF({ 
+      orientation: 'portrait', 
+      unit: 'mm', 
+      format: 'a4' 
+    });
+    
+    const user = users.find(u => u.uid === selectedUser);
+    const userName = user?.displayName || 'Colaborador';
+    
+    // Parse month
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const monthDate = new Date(year, month - 1, 1);
+    
+    // Capitalize month name
+    const monthNameRaw = monthDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+    const monthName = monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+    
+    // Safe access to potential missing fields
+    const userAny = user as any;
+    const userDocNum = userAny?.cpf || userAny?.document || '_______________________';
+    
+    const roleMap: Record<string, string> = {
+        'admin': 'Gestor',
+        'developer': 'Desenvolvedor',
+        'manager': 'Gerente',
+        'technician': 'Técnico',
+        'employee': 'Colaborador',
+        'pending': 'Pendente'
+    };
+    const userRole = roleMap[user?.role || ''] || userAny?.jobTitle || 'Colaborador';
+    
+    // === CABEÇALHO ===
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MGR SERVIÇOS', 105, 18, { align: 'center' });
+    
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'normal');
+    doc.text('FOLHA DE PONTO', 105, 26, { align: 'center' });
+    
+    doc.setLineWidth(0.5);
+    doc.line(14, 30, 196, 30);
+    
+    // === DADOS DO FUNCIONÁRIO ===
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.rect(14, 33, 182, 28);
+    
+    doc.text('DADOS DO COLABORADOR', 16, 39);
+    doc.setFont('helvetica', 'normal');
+    
+    doc.text(`Nome Completo: ${userName}`, 16, 46);
+    doc.text(`Nº Documento: ${userDocNum}`, 16, 52);
+    
+    doc.text(`Cargo/Função: ${userRole}`, 110, 46);
+    doc.text(`Competência: ${monthName}`, 110, 52);
+    
+    // === TABELA DE REGISTROS ===
+    const rows = reportData.map(day => {
+      const dateObj = new Date(day.date + 'T12:00:00');
+      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+      const weekDay = dateObj.toLocaleString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase();
+      const worked = calcWorkedHours(day);
+      
+      let ocorrencia = '';
+      if (isWeekend) ocorrencia = 'Final de Semana';
+      else if (!day.hasEntries) ocorrencia = 'FALTA';
+      else if (day.exit?.forcedClose) ocorrencia = 'Saída Forçada';
+      
+      return {
+        data: [
+          String(dateObj.getDate()).padStart(2,'0'),
+          weekDay,
+          getTimeString(day.entry),
+          getTimeString(day.lunchStart),
+          getTimeString(day.lunchEnd),
+          getTimeString(day.exit),
+          worked ? worked.display : '--',
+          ocorrencia
+        ],
+        isWeekend,
+        isAbsent: !isWeekend && !day.hasEntries
+      };
+    });
+    
+    autoTable(doc, {
+      head: [['Dia','Sem.','Entrada','Almoço','Volta','Saída','Total','Ocorrência']],
+      body: rows.map(r => r.data),
+      startY: 65,
+      styles: { 
+        fontSize: 8, 
+        cellPadding: 2,
+        halign: 'center',
+        valign: 'middle',
+        lineColor: [200, 200, 200],
+        lineWidth: 0.1
+      },
+      headStyles: { 
+        fillColor: [180, 83, 9],
+        textColor: 255,
+        fontStyle: 'bold'
+      },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 12 },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 18 },
+        4: { cellWidth: 18 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 20 },
+        7: { cellWidth: 'auto', halign: 'left' }
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+           const rowData = rows[data.row.index];
+           if (rowData?.isWeekend) {
+             data.cell.styles.fillColor = [240,240,240];
+             data.cell.styles.textColor = [150,150,150];
+           } else if (rowData?.isAbsent && data.column.index === 7) {
+             data.cell.styles.textColor = [200,0,0];
+             data.cell.styles.fontStyle = 'bold';
+           }
+        }
+      },
+      alternateRowStyles: { 
+        fillColor: [252, 252, 252] 
+      }
+    });
+    
+    // === RODAPÉ DE TOTAIS ===
+    const totalMinutes = reportData.reduce((acc, day) => {
+      const w = calcWorkedHours(day);
+      return acc + (w ? w.totalMinutes : 0);
+    }, 0);
+    const totalH = Math.floor(totalMinutes / 60);
+    const totalM = totalMinutes % 60;
+    const workedDays = reportData.filter(d => d.hasEntries).length;
+    const faltaDays = reportData.filter(d => {
+      const dateObj = new Date(d.date + 'T12:00:00');
+      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+      return !d.hasEntries && !isWeekend;
+    }).length;
+    
+    let finalY = (doc as any).lastAutoTable.finalY + 5;
+
+    // Check page break
+    if (finalY > 250) {
+        doc.addPage();
+        finalY = 20;
+    }
+    
+    doc.rect(14, finalY, 182, 14);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Total de Dias Trabalhados: ${workedDays}`, 20, finalY + 9);
+    doc.text(`Total de Horas: ${totalH}h ${String(totalM).padStart(2,'0')}m`, 80, finalY + 9);
+    doc.text(`Total de Faltas: ${faltaDays} dias`, 148, finalY + 9);
+    
+    // === RODAPÉ DE ASSINATURA ===
+    let signY = finalY + 25;
+    if (signY + 40 > 285) {
+        doc.addPage();
+        signY = 30;
+    }
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(
+      `Declaro estar ciente das informações registradas nesta folha de ponto referente ao período de ${monthName}.`,
+      105, signY, { align: 'center' }
+    );
+    
+    // Assinatura Colaborador
+    doc.line(14, signY + 18, 95, signY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Assinatura do Colaborador', 54, signY + 23, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text(userName, 54, signY + 28, { align: 'center' });
+    doc.text('Data: ____/____/________', 54, signY + 34, { align: 'center' });
+    
+    // Assinatura RH
+    doc.line(105, signY + 18, 196, signY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Responsável RH / Gestão', 150, signY + 23, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text('____________________________', 150, signY + 28, { align: 'center' });
+    doc.text('Data: ____/____/________', 150, signY + 34, { align: 'center' });
+    
+    // Salvar
+    doc.save(`folha_ponto_${userName.replace(/ /g,'_')}_${selectedMonth}.pdf`);
+  };
+
+  const exportExcel = () => {
+    const userName = users.find(u => u.uid === selectedUser)?.displayName || 'Colaborador';
+    
+    // Dados da planilha
+    const wsData = [
+      ['ESPELHO DE PONTO - MGR SERVIÇOS'],
+      [`Colaborador: ${userName}`],
+      [`Período: ${selectedMonth}`],
+      [`Gerado em: ${new Date().toLocaleString()}`],
+      [],
+      ['Data','Entrada','Almoço','Volta','Saída','Total Trabalhado','Obs']
+    ];
+    
+    reportData.forEach(day => {
+      const dateObj = new Date(day.date + 'T12:00:00');
+      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+      const worked = calcWorkedHours(day);
+      
+      wsData.push([
+        dateObj.toLocaleDateString(),
+        getTimeString(day.entry),
+        getTimeString(day.lunchStart),
+        getTimeString(day.lunchEnd),
+        getTimeString(day.exit),
+        worked ? worked.display : '--',
+        !day.hasEntries && !isWeekend ? 'Falta' :
+        day.exit?.forcedClose ? 'Saída Forçada' : ''
+      ]);
+    });
+    
+    // Linha de totais
+    const totalMinutes = reportData.reduce((acc, day) => {
+      const w = calcWorkedHours(day);
+      return acc + (w ? w.totalMinutes : 0);
+    }, 0);
+    const totalH = Math.floor(totalMinutes / 60);
+    const totalM = totalMinutes % 60;
+    const workedDays = reportData.filter(d => d.hasEntries).length;
+    
+    wsData.push([]);
+    wsData.push([
+      `Total do Mês: ${totalH}h ${String(totalM).padStart(2,'0')}m`,
+      `Dias Trabalhados: ${workedDays}`
+    ]);
+    
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    
+    // Largura das colunas
+    ws['!cols'] = [
+      {wch:14},{wch:10},{wch:10},
+      {wch:10},{wch:10},{wch:16},{wch:14}
+    ];
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Ponto ${selectedMonth}`);
+    
+    XLSX.writeFile(wb, `ponto_${userName}_${selectedMonth}.xlsx`);
+  };
+
   if (!isAuthorized) {
     return (
       <div className="text-center py-12">
@@ -370,6 +682,24 @@ const AttendanceReports: React.FC = () => {
                 </button>
              </div>
 
+             {/* Export Actions */}
+             {reportData.length > 0 && (
+                <div className="flex flex-wrap justify-end gap-3 pt-2 border-t border-gray-100">
+                    <button 
+                      onClick={exportPDF}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                        <FileText size={16} /> Folha de Ponto (PDF)
+                    </button>
+                    <button 
+                      onClick={exportExcel}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                    >
+                        <FileSpreadsheet size={16} /> Exportar Excel
+                    </button>
+                </div>
+             )}
+
              {/* Table */}
              {reportData.length > 0 && (
                 <div className="overflow-x-auto">
@@ -381,6 +711,7 @@ const AttendanceReports: React.FC = () => {
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Almoço</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Volta</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Saída</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Obs.</th>
                             </tr>
                         </thead>
@@ -389,6 +720,14 @@ const AttendanceReports: React.FC = () => {
                                 const dateObj = new Date(day.date + 'T12:00:00');
                                 const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                                 const isLateEntry = isLate(day.entry, day.userSchedule?.startTime);
+                                const worked = calcWorkedHours(day);
+
+                                let totalColor = "text-gray-400";
+                                if (worked) {
+                                  if (worked.hours < 6) totalColor = "text-red-600 font-bold";
+                                  else if (worked.hours < 8) totalColor = "text-yellow-600 font-bold";
+                                  else totalColor = "text-green-600 font-bold";
+                                }
 
                                 return (
                                     <tr key={idx} className={`${isWeekend ? 'bg-gray-50/50' : 'hover:bg-gray-50'}`}>
@@ -408,6 +747,9 @@ const AttendanceReports: React.FC = () => {
                                             {getTimeString(day.exit)}
                                             {day.exit?.forcedClose && <span className="text-[10px] text-red-500 font-normal">Forçado</span>}
                                         </td>
+                                        <td className={`px-6 py-4 text-center text-sm ${totalColor}`}>
+                                            {worked ? worked.display : '--'}
+                                        </td>
                                         <td className="px-6 py-4 text-center">
                                             {!day.hasEntries && !isWeekend ? (
                                                 <span className="text-red-400 text-xs flex items-center justify-center gap-1"><AlertCircle size={12}/> Falta</span>
@@ -419,6 +761,18 @@ const AttendanceReports: React.FC = () => {
                                 );
                             })}
                         </tbody>
+                        <tfoot className="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300">
+                            <tr>
+                                <td colSpan={5} className="px-6 py-4 text-right uppercase text-xs tracking-wider">Totais do Mês</td>
+                                <td className="px-6 py-4 text-center text-brand-700 text-base">{summary.totalTime}</td>
+                                <td className="px-6 py-4 text-center text-xs font-normal">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-green-600">{summary.daysWorked} dias trab.</span>
+                                        {summary.absences > 0 && <span className="text-red-600">{summary.absences} faltas</span>}
+                                    </div>
+                                </td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
              )}

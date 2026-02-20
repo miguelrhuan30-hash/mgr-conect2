@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import firebase from '../firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName } from '../types';
 import { PlusCircle, Loader2 } from 'lucide-react';
@@ -16,11 +16,11 @@ const TaskForm: React.FC = () => {
     setIsSubmitting(true);
     try {
       // Direct Firestore Operation - No local state management for the data itself
-      await db.collection(CollectionName.TASKS).add({
+      await addDoc(collection(db, CollectionName.TASKS), {
         title: title.trim(),
         description: description.trim(),
         status: 'pending',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp() // Server-side timestamp for accuracy
+        createdAt: serverTimestamp() // Server-side timestamp for accuracy
       });
 
       // Reset form only

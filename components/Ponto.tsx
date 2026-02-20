@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import firebase from '../firebase';
+import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, WorkLocation, TimeEntry } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -85,10 +86,10 @@ const Ponto: React.FC = () => {
     // Admin bypass or load assigned locations
     let locs: WorkLocation[] = [];
     if (userProfile.role === 'admin' && (!userProfile.allowedLocationIds || userProfile.allowedLocationIds.length === 0)) {
-        const allLocs = await db.collection(CollectionName.WORK_LOCATIONS).get();
+        const allLocs = await getDocs(query(collection(db, CollectionName.WORK_LOCATIONS)));
         locs = allLocs.docs.map(d => ({id:d.id, ...(d.data() as any)} as WorkLocation));
     } else if (userProfile.allowedLocationIds && userProfile.allowedLocationIds.length > 0) {
-        const querySnapshot = await db.collection(CollectionName.WORK_LOCATIONS).get();
+        const querySnapshot = await getDocs(collection(db, CollectionName.WORK_LOCATIONS));
         querySnapshot.forEach((doc) => {
           if (userProfile.allowedLocationIds?.includes(doc.id)) {
             locs.push({ id: doc.id, ...(doc.data() as any) } as WorkLocation);
@@ -143,17 +144,19 @@ const Ponto: React.FC = () => {
       const today = new Date();
       today.setHours(0,0,0,0);
       
-      const q = db.collection(CollectionName.TIME_ENTRIES)
-        .where('userId', '==', currentUser.uid)
-        .orderBy('timestamp', 'desc')
-        .limit(20);
+      const q = query(
+        collection(db, CollectionName.TIME_ENTRIES),
+        where('userId', '==', currentUser.uid),
+        orderBy('timestamp', 'desc'),
+        limit(20)
+      );
       
-      const snapshot = await q.get();
+      const snapshot = await getDocs(q);
       const entries = snapshot.docs.map(d => ({id: d.id, ...(d.data() as any)} as TimeEntry));
       setHistory(entries);
 
       // Find the very last entry OF TODAY to determine next state
-      const todaysEntries = entries.filter(e => e.timestamp.toDate() >= today);
+      const todaysEntries = entries.filter(e => e.timestamp && e.timestamp.toDate && e.timestamp.toDate() >= today);
       if (todaysEntries.length > 0) {
         setLastEntry(todaysEntries[0]); // The most recent one because of orderBy desc
       } else {
@@ -359,7 +362,9 @@ const Ponto: React.FC = () => {
             config: { responseMimeType: "application/json" }
         });
 
-        const result = JSON.parse(response.text);
+        const text = response.text;
+        if (!text) throw new Error("No response from AI");
+        const result = JSON.parse(text);
 
         if (!result.match || result.confidence < 0.7) {
             throw new Error(`Rosto não corresponde ao perfil (Confiança: ${Math.round(result.confidence * 100)}%)`);
@@ -367,14 +372,14 @@ const Ponto: React.FC = () => {
 
         // C. Upload & Save
         setProcessMessage('Registrando no sistema...');
-        const storageRef = storage.ref(`time_clock/${currentUser.uid}/${Date.now()}.jpg`);
-        await storageRef.putString(photoBase64, 'data_url');
-        const photoUrl = await storageRef.getDownloadURL();
+        const storageRef = ref(storage, `time_clock/${currentUser.uid}/${Date.now()}.jpg`);
+        await uploadString(storageRef, photoBase64, 'data_url');
+        const photoUrl = await getDownloadURL(storageRef);
 
-        await db.collection(CollectionName.TIME_ENTRIES).add({
+        await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
             userId: currentUser.uid,
             type: nextAction.type,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            timestamp: serverTimestamp(),
             locationId: detectedLocation?.id || 'unknown',
             location: currentLocation,
             photoEvidenceUrl: photoUrl,
@@ -534,7 +539,7 @@ const Ponto: React.FC = () => {
             {/* Last Record Hint */}
             {lastEntry && (
                 <div className="text-center text-xs text-gray-400">
-                    Último registro: {getActionLabel(lastEntry.type).text} às {lastEntry.timestamp.toDate().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                    Último registro: {getActionLabel(lastEntry.type).text} às {lastEntry.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) ?? '--:--'}
                 </div>
             )}
         </div>
@@ -575,7 +580,7 @@ const Ponto: React.FC = () => {
                                  
                                  <div className="text-right">
                                      <div className="font-mono font-bold text-gray-900 text-lg">
-                                        {entry.timestamp.toDate().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                                        {entry.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) ?? '--:--'}
                                      </div>
                                      {entry.biometricVerified && (
                                          <div className="flex items-center justify-end gap-1 text-[10px] text-green-600 font-bold">

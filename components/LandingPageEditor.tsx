@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import firebase from '../firebase';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, LandingPageContent, Partner } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,9 +46,9 @@ const LandingPageEditor: React.FC = () => {
 
     const fetchContent = async () => {
       try {
-        const docRef = db.collection(CollectionName.SYSTEM_SETTINGS).doc('landing_page');
-        const docSnap = await docRef.get();
-        if (docSnap.exists) {
+        const docRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
           const data = docSnap.data() as any;
           
           // Migration Logic for Editor
@@ -87,7 +88,7 @@ const LandingPageEditor: React.FC = () => {
     if (!content) return;
     setSaving(true);
     try {
-      await db.collection(CollectionName.SYSTEM_SETTINGS).doc('landing_page').set(content, { merge: true });
+      await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), content, { merge: true });
       alert("Alterações salvas com sucesso!");
     } catch (error) {
       console.error("Error saving content:", error);
@@ -163,9 +164,9 @@ const LandingPageEditor: React.FC = () => {
         // Compress Image
         const compressedFile = await compressImage(partnerLogoFile, 400, 0.8);
 
-        const storageRef = storage.ref(`landing/partners/${Date.now()}_${compressedFile.name}`);
-        await storageRef.put(compressedFile);
-        logoUrl = await storageRef.getDownloadURL();
+        const storageRef = ref(storage, `landing/partners/${Date.now()}_${compressedFile.name}`);
+        await uploadBytes(storageRef, compressedFile);
+        logoUrl = await getDownloadURL(storageRef);
       }
 
       const newPartner: Partner = {

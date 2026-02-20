@@ -1,18 +1,20 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { signOut } from 'firebase/auth';
+import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout'; // Mantido estático como estrutura base
 import LoadingScreen from './components/LoadingScreen';
-import { PermissionSet, CollectionName, UserProfile } from './types';
+import { PermissionSet, CollectionName } from './types';
 import { ShieldAlert, LogOut, Clock, Lock } from 'lucide-react';
-import firebase from './firebase';
 
 // Lazy Load Components
 const Login = lazy(() => import('./components/Login'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const Ponto = lazy(() => import('./components/Ponto'));
 const Tasks = lazy(() => import('./components/Tasks'));
+const Schedule = lazy(() => import('./components/Schedule')); // NEW
 const TaskTemplates = lazy(() => import('./components/TaskTemplates'));
 const Projects = lazy(() => import('./components/Projects'));
 const Inventory = lazy(() => import('./components/Inventory'));
@@ -63,11 +65,11 @@ const AppContent: React.FC = () => {
   const [checkingShift, setCheckingShift] = useState(true);
 
   // --- MASTER BYPASS LOGIC (Regra Suprema) ---
-  const isMasterBypass = currentUser?.email?.toLowerCase() === 'gestor@mgr.com';
+  const isMaster = currentUser?.email?.toLowerCase() === 'gestor@mgr.com';
 
   // 1. Auto-Correction Logic for Master Admin
   useEffect(() => {
-    if (isMasterBypass && userProfile && currentUser) {
+    if (isMaster && userProfile && currentUser) {
       // Check if permissions are wrong (blocking the admin)
       const needsCorrection = userProfile.permissions?.requiresTimeClock === true || 
                               userProfile.role !== 'admin';
@@ -76,7 +78,8 @@ const AppContent: React.FC = () => {
         console.log("⚠️ MASTER ADMIN: Auto-correcting permissions...");
         const correctPermissions = async () => {
           try {
-             await db.collection(CollectionName.USERS).doc(currentUser.uid).update({
+             const userRef = doc(db, CollectionName.USERS, currentUser.uid);
+             await updateDoc(userRef, {
                role: 'admin',
                'permissions.requiresTimeClock': false,
                'permissions.canManageUsers': true,
@@ -91,7 +94,7 @@ const AppContent: React.FC = () => {
         correctPermissions();
       }
     }
-  }, [isMasterBypass, userProfile, currentUser]);
+  }, [isMaster, userProfile, currentUser]);
 
   // Real-time listener for Attendance Status
   useEffect(() => {
@@ -101,12 +104,14 @@ const AppContent: React.FC = () => {
     }
 
     // Listener for the latest time entry
-    const q = db.collection(CollectionName.TIME_ENTRIES)
-      .where('userId', '==', currentUser.uid)
-      .orderBy('timestamp', 'desc')
-      .limit(1);
+    const q = query(
+      collection(db, CollectionName.TIME_ENTRIES),
+      where('userId', '==', currentUser.uid),
+      orderBy('timestamp', 'desc'),
+      limit(1)
+    );
 
-    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
       if (!snapshot.empty) {
         const lastEntry = snapshot.docs[0].data();
         // Shift is open if last action was 'entry' or returning from lunch
@@ -117,7 +122,7 @@ const AppContent: React.FC = () => {
         setIsShiftOpen(false);
       }
       setCheckingShift(false);
-    }, (error: any) => {
+    }, (error) => {
       console.error("Error monitoring shift status:", error);
       setCheckingShift(false);
     });
@@ -136,7 +141,7 @@ const AppContent: React.FC = () => {
 
   const handleEmergencyLogout = async () => {
     try {
-      await auth.signOut();
+      await signOut(auth);
       window.location.href = '/';
     } catch (error) {
       console.error("Logout failed", error);
@@ -148,10 +153,8 @@ const AppContent: React.FC = () => {
   }
 
   // Identity Lock Logic
-  // Bloqueia se estiver logado, aprovado, mas sem avatar/foto
-  // BYPASS: Gestor nunca é bloqueado por falta de foto
-  const isAvatarMissing = !isMasterBypass && 
-                          currentUser && 
+  // Define se falta a foto. (A lógica de bypass do gestor é feita na renderização)
+  const isAvatarMissing = currentUser && 
                           userProfile && 
                           userProfile.role !== 'pending' && 
                           !userProfile.avatar && 
@@ -159,18 +162,18 @@ const AppContent: React.FC = () => {
 
   // --- ACCESS CONTROL LOGIC ---
   // BYPASS: Gestor nunca requer ponto
-  const requiresTimeClock = !isMasterBypass && (userProfile?.permissions?.requiresTimeClock ?? false);
+  const requiresTimeClock = !isMaster && (userProfile?.permissions?.requiresTimeClock ?? false);
   
   // Lógica de Bloqueio de Turno
   // 1. Se role for pending -> não bloqueia aqui (bloqueia na rota específica)
   // 2. Se requiresTimeClock for FALSE -> NUNCA bloqueia.
   // 3. Se requiresTimeClock for TRUE -> Bloqueia se o turno estiver fechado.
   // BYPASS: Adicionado explicitamente para segurança
-  const isShiftLocked = !isMasterBypass && 
+  const isShiftLocked = !!(!isMaster && 
                         currentUser && 
                         userProfile?.role !== 'pending' && 
                         requiresTimeClock && 
-                        !isShiftOpen;
+                        !isShiftOpen);
 
   return (
     <Suspense fallback={<LoadingScreen />}>
@@ -194,7 +197,18 @@ const AppContent: React.FC = () => {
           {/* PROTECTED APP ROUTES */}
           <Route path="/app" element={
             currentUser ? (
-               userProfile?.role === 'pending' ? <Navigate to="/aguardando-aprovacao" /> : 
+               // LÓGICA DE PRIORIDADE:
+               // 1. SE FOR GESTOR (isMaster) -> ACESSO TOTAL IMEDIATO
+               isMaster ? (
+                 <EnforceShiftLock isShiftLocked={isShiftLocked}>
+                    <Layout />
+                 </EnforceShiftLock>
+               ) : 
+               // 2. SE FOR PENDENTE -> TELA DE ESPERA
+               userProfile?.role === 'pending' ? (
+                 <Navigate to="/aguardando-aprovacao" />
+               ) : 
+               // 3. SE FALTAR FOTO (E NÃO FOR GESTOR) -> BLOQUEIO
                isAvatarMissing ? (
                  // BLOQUEIO DE SEGURANÇA DE IDENTIDADE
                  <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -219,7 +233,7 @@ const AppContent: React.FC = () => {
                     </div>
                  </div>
                ) : (
-                 // BLOQUEIO DE TURNO (Shift Lock) wrapper
+                 // 4. ACESSO NORMAL (SUJEITO A SHIFT LOCK)
                  <EnforceShiftLock isShiftLocked={isShiftLocked}>
                     <Layout />
                  </EnforceShiftLock>
@@ -242,6 +256,11 @@ const AppContent: React.FC = () => {
             
             <Route path="tarefas" element={
               hasPermission('canViewTasks') ? <Tasks /> : <Navigate to="/app" />
+            } />
+
+            {/* NEW: SCHEDULE ROUTE */}
+            <Route path="agenda" element={
+              hasPermission('canViewSchedule') ? <Schedule /> : <Navigate to="/app" />
             } />
             
             <Route path="clientes" element={

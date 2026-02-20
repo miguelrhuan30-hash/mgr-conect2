@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import firebase from '../firebase';
+import { collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs, QuerySnapshot, DocumentData } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, UserProfile, UserRole, WorkLocation, Sector, PermissionSet } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,6 +19,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canCreateTasks: false,
   canEditTasks: false,
   canDeleteTasks: false,
+  canViewSchedule: false, // New permission default
   canManageClients: false,
   canManageProjects: false,
   canViewInventory: false,
@@ -69,6 +71,7 @@ const PERMISSION_GROUPS = [
     color: 'text-orange-600 bg-orange-100',
     perms: [
       { key: 'canViewTasks', label: 'Visualizar Tarefas' },
+      { key: 'canViewSchedule', label: 'Visualizar Agenda/Gantt', description: 'Acesso ao cronograma de Ordens de Serviço' },
       { key: 'canCreateTasks', label: 'Criar Novas Tarefas' },
       { key: 'canEditTasks', label: 'Editar Tarefas' },
       { key: 'canDeleteTasks', label: 'Excluir Tarefas' },
@@ -135,12 +138,12 @@ const Users: React.FC = () => {
     }
 
     // Fetch Users
-    const q = db.collection(CollectionName.USERS).orderBy('displayName', 'asc');
-    const unsubscribeUsers = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+    const q = query(collection(db, CollectionName.USERS), orderBy('displayName', 'asc'));
+    const unsubscribeUsers = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
       const usersData = snapshot.docs.map(doc => ({ ...(doc.data() as any), uid: doc.id })) as UserProfile[];
       setUsers(usersData);
       setLoading(false);
-    }, (error: any) => {
+    }, (error) => {
       console.error("Error fetching users:", error);
       setLoading(false);
     });
@@ -148,7 +151,7 @@ const Users: React.FC = () => {
     // Fetch Locations
     const fetchLocs = async () => {
       try {
-        const snap = await db.collection(CollectionName.WORK_LOCATIONS).get();
+        const snap = await getDocs(collection(db, CollectionName.WORK_LOCATIONS));
         setLocations(snap.docs.map(d => ({id: d.id, ...(d.data() as any)} as WorkLocation)));
       } catch (error) {
         console.error("Error fetching locations:", error);
@@ -158,7 +161,7 @@ const Users: React.FC = () => {
     // Fetch Sectors
     const fetchSectors = async () => {
       try {
-        const snap = await db.collection(CollectionName.SECTORS).orderBy('name').get();
+        const snap = await getDocs(query(collection(db, CollectionName.SECTORS), orderBy('name')));
         setSectors(snap.docs.map(d => ({id: d.id, ...(d.data() as any)} as Sector)));
       } catch (error) {
         console.error("Error fetching sectors:", error);
@@ -185,7 +188,7 @@ const Users: React.FC = () => {
   const saveEdits = async (uid: string) => {
     setIsSaving(true);
     try {
-      await db.collection(CollectionName.USERS).doc(uid).update({
+      await updateDoc(doc(db, CollectionName.USERS, uid), {
         workSchedule: {
           startTime: editSchedule.start,
           lunchDuration: editSchedule.lunch,
@@ -250,7 +253,7 @@ const Users: React.FC = () => {
     try {
       const sectorName = sectors.find(s => s.id === selectedSectorId)?.name || '';
       
-      await db.collection(CollectionName.USERS).doc(permEditingUser.uid).update({
+      await updateDoc(doc(db, CollectionName.USERS, permEditingUser.uid), {
         sectorId: selectedSectorId,
         sectorName: sectorName,
         permissions: currentPermissions
@@ -268,17 +271,17 @@ const Users: React.FC = () => {
 
   // --- GENERAL ACTIONS ---
   const handleRoleChange = async (uid: string, newRole: UserRole) => {
-    await db.collection(CollectionName.USERS).doc(uid).update({ role: newRole });
+    await updateDoc(doc(db, CollectionName.USERS, uid), { role: newRole });
   };
 
   const handlePhotoUpload = async (uid: string, file: File) => {
     if (!file) return;
     try {
       const compressedFile = await compressImage(file, 600, 0.8);
-      const storageRef = storage.ref(`users/${uid}/profile_${Date.now()}.jpg`);
-      await storageRef.put(compressedFile);
-      const url = await storageRef.getDownloadURL();
-      await db.collection(CollectionName.USERS).doc(uid).update({ photoURL: url });
+      const storageRef = ref(storage, `users/${uid}/profile_${Date.now()}.jpg`);
+      await uploadBytes(storageRef, compressedFile);
+      const url = await getDownloadURL(storageRef);
+      await updateDoc(doc(db, CollectionName.USERS, uid), { photoURL: url });
       alert("Foto atualizada!");
     } catch (e) {
       console.error(e);

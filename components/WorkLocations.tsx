@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import firebase from '../firebase';
+import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, WorkLocation } from '../types';
 import { MapPin, Plus, Trash2, Save, Loader2 } from 'lucide-react';
@@ -16,10 +16,10 @@ const WorkLocations: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const q = db.collection(CollectionName.WORK_LOCATIONS).orderBy('name', 'asc');
+    const q = query(collection(db, CollectionName.WORK_LOCATIONS), orderBy('name', 'asc'));
     
     // Added error handling to onSnapshot
-    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) as WorkLocation[];
       setLocations(data);
       setLoading(false);
@@ -54,7 +54,7 @@ const WorkLocations: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await db.collection(CollectionName.WORK_LOCATIONS).add({
+      await addDoc(collection(db, CollectionName.WORK_LOCATIONS), {
         name,
         latitude: parseFloat(lat),
         longitude: parseFloat(lng),
@@ -66,78 +66,146 @@ const WorkLocations: React.FC = () => {
       setLng('');
       setRadius('100');
     } catch (error) {
-      console.error("Error saving location:", error);
-      alert("Erro ao salvar local.");
+      console.error("Error adding location:", error);
+      alert("Erro ao adicionar local.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Remover este local?")) {
-      await db.collection(CollectionName.WORK_LOCATIONS).doc(id).delete();
-    }
-  };
+      if(window.confirm("Tem certeza que deseja remover este local?")) {
+          try {
+              await deleteDoc(doc(db, CollectionName.WORK_LOCATIONS, id));
+          } catch(e) {
+              console.error(e);
+              alert("Erro ao remover local.");
+          }
+      }
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Locais de Trabalho (Cercas Virtuais)</h1>
-          <p className="text-gray-500">Defina onde os funcionários podem registrar o ponto.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Locais de Trabalho</h1>
+          <p className="text-gray-500">Defina os perímetros (Geofence) onde o ponto é permitido.</p>
         </div>
       </div>
 
-      {/* Form */}
-      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <Plus size={20} className="text-brand-600"/> Adicionar Novo Local
-        </h3>
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div className="md:col-span-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Nome do Local</label>
-            <input required type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Sede, Obra X" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
-          </div>
-          <div className="md:col-span-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Latitude</label>
-            <input required type="text" value={lat} onChange={e => setLat(e.target.value)} placeholder="-23.5505" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
-          </div>
-          <div className="md:col-span-1">
-             <label className="block text-xs font-medium text-gray-700 mb-1">Longitude</label>
-             <input required type="text" value={lng} onChange={e => setLng(e.target.value)} placeholder="-46.6333" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
-          </div>
-          <div className="md:col-span-1">
-             <label className="block text-xs font-medium text-gray-700 mb-1">Raio (metros)</label>
-             <input required type="number" value={radius} onChange={e => setRadius(e.target.value)} placeholder="100" className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
-          </div>
-          
-          <div className="md:col-span-2 flex gap-2">
-             <button type="button" onClick={getCurrentLocation} className="flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium w-full">
-               <MapPin size={16} className="mr-2"/> Usar GPS Atual
-             </button>
-          </div>
-          <div className="md:col-span-2">
-             <button type="submit" disabled={isSubmitting} className="flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium w-full disabled:opacity-70">
-               {isSubmitting ? <Loader2 className="animate-spin w-4 h-4"/> : <Save size={16} className="mr-2"/>} Salvar Local
-             </button>
-          </div>
-        </form>
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Form */}
+          <div className="lg:col-span-1">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-6">
+                  <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <Plus className="w-5 h-5 text-brand-600"/> Adicionar Local
+                  </h3>
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Local</label>
+                          <input 
+                            required
+                            type="text" 
+                            value={name} 
+                            onChange={e => setName(e.target.value)}
+                            className="w-full rounded-lg border-gray-300 bg-white text-gray-900" 
+                            placeholder="Ex: Matriz Indaiatuba"
+                          />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                          <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Latitude</label>
+                              <input 
+                                required
+                                type="text" 
+                                value={lat} 
+                                onChange={e => setLat(e.target.value)}
+                                className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" 
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Longitude</label>
+                              <input 
+                                required
+                                type="text" 
+                                value={lng} 
+                                onChange={e => setLng(e.target.value)}
+                                className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" 
+                              />
+                          </div>
+                      </div>
 
-      {/* List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-         <table className="min-w-full divide-y divide-gray-200">
-           <thead className="bg-gray-50">
-             <tr>
-               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nome</th>
-               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Coordenadas</th>
-               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Raio</th>
-               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
-             </tr>
-           </thead>
-           <tbody className="divide-y divide-gray-200">
-             {locations.map(loc => (
-               <tr key={loc.id}>
-                 <td className="px-6 py-4 text-sm font-medium text-gray-900">{loc.name}</td>
-                 <td className="px-6 py-4 text-xs text-gray-500">{loc.latitude}, {loc.longitude}</td>
-                 <td className="px-6 py-4 text-sm text-gray-900">{loc.radius}m</td>
+                      <button 
+                        type="button" 
+                        onClick={getCurrentLocation}
+                        className="w-full py-2 text-sm bg-brand-50 text-brand-700 rounded-lg hover:bg-brand-100 flex items-center justify-center gap-2"
+                      >
+                          <MapPin size={16} /> Usar Localização Atual
+                      </button>
+
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Raio (metros)</label>
+                          <input 
+                            type="number" 
+                            value={radius} 
+                            onChange={e => setRadius(e.target.value)}
+                            className="w-full rounded-lg border-gray-300 bg-white text-gray-900" 
+                          />
+                          <p className="text-xs text-gray-400 mt-1">Distância máxima permitida para o registro.</p>
+                      </div>
+
+                      <button 
+                        type="submit" 
+                        disabled={isSubmitting}
+                        className="w-full py-2 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 flex items-center justify-center gap-2 disabled:opacity-70"
+                      >
+                          {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Salvar
+                      </button>
+                  </form>
+              </div>
+          </div>
+
+          {/* List */}
+          <div className="lg:col-span-2">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  {loading ? (
+                      <div className="flex justify-center p-12"><Loader2 className="animate-spin text-brand-600"/></div>
+                  ) : locations.length === 0 ? (
+                      <div className="text-center p-12 text-gray-500">Nenhum local cadastrado.</div>
+                  ) : (
+                      <div className="divide-y divide-gray-100">
+                          {locations.map(loc => (
+                              <div key={loc.id} className="p-4 hover:bg-gray-50 transition-colors flex justify-between items-center group">
+                                  <div className="flex items-start gap-3">
+                                      <div className="mt-1 bg-brand-100 text-brand-600 p-2 rounded-lg">
+                                          <MapPin size={20} />
+                                      </div>
+                                      <div>
+                                          <h4 className="font-bold text-gray-900">{loc.name}</h4>
+                                          <div className="text-xs text-gray-500 font-mono mt-1">
+                                              {loc.latitude.toFixed(6)}, {loc.longitude.toFixed(6)}
+                                          </div>
+                                          <div className="text-xs text-gray-500 mt-0.5">
+                                              Raio: {loc.radius}m
+                                          </div>
+                                      </div>
+                                  </div>
+                                  <button 
+                                    onClick={() => handleDelete(loc.id)}
+                                    className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                  >
+                                      <Trash2 size={18} />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+              </div>
+          </div>
+      </div>
+    </div>
+  );
+};
+
+export default WorkLocations;

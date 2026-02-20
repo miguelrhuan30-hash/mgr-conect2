@@ -1,4 +1,5 @@
 import React from 'react';
+import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Task, CollectionName, PriorityLevel } from '../types';
 import { Trash2, Calendar, User, Building, ListTodo, Repeat } from 'lucide-react';
@@ -23,7 +24,7 @@ const TaskList: React.FC<TaskListProps> = ({ tasks }) => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta O.S.?')) {
       try {
-        await db.collection(CollectionName.TASKS).doc(id).delete();
+        await deleteDoc(doc(db, CollectionName.TASKS, id));
       } catch (error) {
         console.error("Error removing document: ", error);
       }

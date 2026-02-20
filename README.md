@@ -82,19 +82,20 @@ service firebase.storage {
 
 ## 🗄️ 4. Índices do Firestore
 
-O sistema realiza consultas complexas (filtros compostos e ordenação). O Firestore exigirá a criação de índices manuais.
+O sistema realiza consultas complexas (filtros compostos e ordenação). Os índices necessários para o correto funcionamento do sistema estão documentados no arquivo `firestore.indexes.json` na raiz do projeto.
 
-**Índice Principal Necessário:**
-*   **Coleção:** `time_entries`
-*   **Campos:**
-    *   `userId` (Ascendente)
-    *   `timestamp` (Descendente)
+**Como identificar e criar índices faltantes:**
 
-**Como criar:**
-1.  Navegue pelo app até a tela de "Histórico" ou "Relatórios".
-2.  Abra o Console do Desenvolvedor no navegador (F12).
-3.  Você verá um erro do Firebase contendo um **link direto**.
-4.  Clique no link para criar o índice automaticamente no Console do Firebase.
+Sempre que uma consulta falhar devido à falta de um índice, o Firebase gerará um erro específico no console do navegador.
+
+1.  Abra o Console do Desenvolvedor no navegador (F12) ao acessar telas como "Histórico" ou "Relatórios".
+2.  Se houver erro, você verá uma mensagem contendo um **link direto** (geralmente começa com `https://console.firebase.google.com/...`).
+3.  **Clique neste link**: Ele levará você diretamente para a página de criação de índices no Console do Firebase com todos os campos já preenchidos corretamente.
+4.  Basta clicar em "Criar Índice".
+
+**Índices Principais (Time Entries):**
+*   `userId` (Ascendente) + `timestamp` (Descendente)
+*   `userId` (Ascendente) + `timestamp` (Ascendente)
 
 ---
 

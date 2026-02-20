@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import firebase from '../firebase';
+import { User, onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { UserProfile, CollectionName } from '../types';
 
 interface AuthContextType {
-  currentUser: firebase.User | null;
+  currentUser: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
   loginAsDemo: () => void;
@@ -20,14 +21,14 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<firebase.User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let unsubscribeProfile: () => void;
 
-    const unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       // Demo Mode Check
       if (!user && currentUser?.email === 'demo@mgr.com') {
           setLoading(false);
@@ -47,7 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               role: 'admin', // Força permissão máxima
               xp: 0,
               level: 1, // Zerado para Nível 1
-              createdAt: firebase.firestore.Timestamp.now(),
+              createdAt: Timestamp.now(),
               // Garante que não haja restrições de horário ou local
               workSchedule: { startTime: '00:00', endTime: '23:59', lunchDuration: 0 },
               allowedLocationIds: [],
@@ -78,10 +79,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Real-time listener for User Profile updates
         try {
-          const docRef = db.collection(CollectionName.USERS).doc(user.uid);
+          const docRef = doc(db, CollectionName.USERS, user.uid);
           
-          unsubscribeProfile = docRef.onSnapshot((docSnap) => {
-            if (docSnap.exists) {
+          unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
               const data = docSnap.data() as UserProfile;
               // Ensure permissions object exists and has default values for critical new fields
               const patchedPermissions = {
@@ -147,7 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       phoneNumber: null,
       photoURL: null,
       providerId: 'firebase'
-    } as unknown as firebase.User;
+    } as unknown as User;
 
     setCurrentUser(demoUser);
     setUserProfile({

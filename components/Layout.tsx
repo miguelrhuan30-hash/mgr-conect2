@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { PermissionSet } from '../types';
@@ -20,7 +21,8 @@ import {
   CalendarCheck,
   Shield,
   Menu,
-  X
+  X,
+  CalendarDays
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -33,7 +35,7 @@ const Layout: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await auth.signOut();
+      await signOut(auth);
       navigate('/login');
     } catch (error) {
       console.error("Logout failed", error);
@@ -52,7 +54,8 @@ const Layout: React.FC = () => {
   // Dynamic Navigation Building
   const navItems = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
-    { to: '/app/tarefas', icon: CheckSquare, label: 'Tarefas', visible: can('canViewTasks') },
+    { to: '/app/tarefas', icon: CheckSquare, label: 'Tarefas (OS)', visible: can('canViewTasks') },
+    { to: '/app/agenda', icon: CalendarDays, label: 'Agenda (Gantt)', visible: can('canViewSchedule') },
     { to: '/app/clientes', icon: Building, label: 'Clientes', visible: can('canManageClients') },
     { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },

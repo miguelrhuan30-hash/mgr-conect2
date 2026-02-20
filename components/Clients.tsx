@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import firebase from '../firebase';
+import { collection, addDoc, deleteDoc, doc, serverTimestamp, query, orderBy, onSnapshot, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, Client } from '../types';
 import { 
@@ -21,14 +21,14 @@ const Clients: React.FC = () => {
   const [document, setDocument] = useState('');
 
   useEffect(() => {
-    const q = db.collection(CollectionName.CLIENTS).orderBy('name', 'asc');
+    const q = query(collection(db, CollectionName.CLIENTS), orderBy('name', 'asc'));
     
     // Added error handling to onSnapshot
-    const unsubscribe = q.onSnapshot((snapshot: firebase.firestore.QuerySnapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) as Client[];
       setClients(data);
       setLoading(false);
-    }, (error: any) => {
+    }, (error) => {
       console.error("Error fetching clients:", error);
       // Handle permission errors gracefully
       setLoading(false);
@@ -40,7 +40,7 @@ const Clients: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Tem certeza que deseja remover este cliente?')) {
       try {
-        await db.collection(CollectionName.CLIENTS).doc(id).delete();
+        await deleteDoc(doc(db, CollectionName.CLIENTS, id));
       } catch (error) {
         console.error("Error deleting client:", error);
       }
@@ -53,13 +53,13 @@ const Clients: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await db.collection(CollectionName.CLIENTS).add({
+      await addDoc(collection(db, CollectionName.CLIENTS), {
         name: name.trim(),
         contactName: contactName.trim(),
         phone: phone.trim(),
         address: address.trim(),
         document: document.trim(),
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        createdAt: serverTimestamp()
       });
       setIsModalOpen(false);
       resetForm();

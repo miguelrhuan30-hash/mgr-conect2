@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-import firebase from '../firebase';
 import { auth, db } from '../firebase';
 import { CollectionName } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -61,15 +62,15 @@ const Login: React.FC = () => {
       
       try {
         if (isLogin) {
-          userCredential = await auth.signInWithEmailAndPassword(email, password);
+          userCredential = await signInWithEmailAndPassword(auth, email, password);
         } else {
-          userCredential = await auth.createUserWithEmailAndPassword(email, password);
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
         }
       } catch (initialError: any) {
         // Auto-switch to login if user tries to register existing email
         if (!isLogin && initialError.code === 'auth/email-already-in-use') {
            try {
-             userCredential = await auth.signInWithEmailAndPassword(email, password);
+             userCredential = await signInWithEmailAndPassword(auth, email, password);
              effectiveIsLogin = true; 
            } catch (loginError: any) {
              throw loginError; 
@@ -85,7 +86,7 @@ const Login: React.FC = () => {
 
         if (isMaster) {
             // FORÇA BRUTA: Garante que o usuário Mestre seja Admin no Banco de Dados com todas as permissões
-            await db.collection(CollectionName.USERS).doc(user.uid).set({
+            await setDoc(doc(db, CollectionName.USERS, user.uid), {
               uid: user.uid,
               email: user.email,
               displayName: 'Gestor Mestre',
@@ -122,14 +123,14 @@ const Login: React.FC = () => {
         } 
         else if (!effectiveIsLogin) {
           // New normal users start as pending
-          await db.collection(CollectionName.USERS).doc(user.uid).set({
+          await setDoc(doc(db, CollectionName.USERS, user.uid), {
               uid: user.uid,
               email: user.email,
               displayName: user.displayName || email.split('@')[0],
               role: 'pending', 
               xp: 0,
               level: 1,
-              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              createdAt: serverTimestamp()
           });
         }
         

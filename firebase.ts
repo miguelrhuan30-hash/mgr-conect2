@@ -1,7 +1,7 @@
-import firebase from 'firebase/app';
-import 'firebase/auth';
-import 'firebase/firestore';
-import 'firebase/storage';
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { initializeFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDgIijdFVs2_ti7rqndRZhKI3QYpkOlwsg",
@@ -12,11 +12,11 @@ const firebaseConfig = {
   appId: "1:94240285880:web:8fad80b8c49c7f7280c04d"
 };
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
+const app = initializeApp(firebaseConfig);
 
-export const db = firebase.firestore();
-export const auth = firebase.auth();
-export const storage = firebase.storage();
-export default firebase;
+export const auth = getAuth(app);
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
+export const storage = getStorage(app);
+export default app;
