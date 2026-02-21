@@ -17,7 +17,9 @@ export interface PermissionSet {
   canCreateTasks: boolean;
   canEditTasks: boolean;
   canDeleteTasks: boolean;
-  canViewSchedule: boolean;     // NEW: View Gantt Chart/Schedule
+  canViewSchedule: boolean;     // Legacy: View Gantt Chart/Schedule (General Access)
+  canViewFullSchedule: boolean; // NEW: View ALL schedules
+  canViewMySchedule: boolean;   // NEW: View ONLY own schedule
 
   // Commercial
   canManageClients: boolean;
@@ -187,8 +189,10 @@ export interface Task {
   clientName?: string;
   projectId?: string;
   projectName?: string;
-  assignedTo?: string;
+  assignedTo?: string; // Legacy: Primary assignee
   assigneeName?: string;
+  assignedUsers?: string[]; // NEW: Multiple assignees
+  assignedUserNames?: string[]; // NEW: Names for display
   startDate?: Timestamp;
   endDate?: Timestamp;
   progress?: number; // 0-100

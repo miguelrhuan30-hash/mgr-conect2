@@ -55,7 +55,7 @@ const Layout: React.FC = () => {
   const navItems = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
     { to: '/app/tarefas', icon: CheckSquare, label: 'Tarefas (OS)', visible: can('canViewTasks') },
-    { to: '/app/agenda', icon: CalendarDays, label: 'Agenda (Gantt)', visible: can('canViewSchedule') },
+    { to: '/app/agenda', icon: CalendarDays, label: 'Agenda (Gantt)', visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
     { to: '/app/clientes', icon: Building, label: 'Clientes', visible: can('canManageClients') },
     { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },

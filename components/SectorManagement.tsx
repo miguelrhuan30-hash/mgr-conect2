@@ -17,6 +17,8 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canEditTasks: false,
   canDeleteTasks: false,
   canViewSchedule: false,
+  canViewFullSchedule: false,
+  canViewMySchedule: false,
   canManageClients: false,
   canManageProjects: false,
   canViewInventory: false,
@@ -66,6 +68,8 @@ const PERMISSION_GROUPS = [
     perms: [
       { key: 'canViewTasks', label: 'Visualizar Tarefas' },
       { key: 'canViewSchedule', label: 'Visualizar Agenda/Gantt' },
+      { key: 'canViewFullSchedule', label: 'Agenda Completa (Gerencial)' },
+      { key: 'canViewMySchedule', label: 'Minha Agenda (Pessoal)' },
       { key: 'canCreateTasks', label: 'Criar Novas Tarefas' },
       { key: 'canEditTasks', label: 'Editar Tarefas' },
       { key: 'canDeleteTasks', label: 'Excluir Tarefas' },

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate } from '../types';
-import { X, Plus, Trash2, FileText, Calendar, User, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft } from 'lucide-react';
+import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft } from 'lucide-react';
 
 interface OSCreationModalProps {
   isOpen: boolean;
@@ -18,6 +18,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [clientId, setClientId] = useState('');
   const [projectId, setProjectId] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
+  const [assignedUsers, setAssignedUsers] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
@@ -122,6 +123,10 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
       const clientName = clients.find(c => c.id === clientId)?.name || 'Cliente N/A';
       const projectName = projects.find(p => p.id === projectId)?.name || 'Projeto Geral';
       const assigneeName = users.find(u => u.id === assigneeId)?.displayName || 'Não Atribuído';
+      
+      const assignedUserNames = assignedUsers.map(uid => 
+        users.find(u => u.id === uid)?.displayName || 'Desconhecido'
+      );
 
       const taskPayload = {
         title,
@@ -134,6 +139,8 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         projectName,
         assignedTo: assigneeId,
         assigneeName,
+        assignedUsers,
+        assignedUserNames,
         startDate: startDate ? Timestamp.fromDate(new Date(startDate)) : null,
         endDate: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
         checklist,
@@ -293,6 +300,40 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       {users.map(u => <option key={u.id} value={u.id}>{u.displayName}</option>)}
                     </select>
                   </div>
+                </div>
+
+                {/* Multi-Assignee Selection */}
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                   <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
+                      <Users className="w-4 h-4 mr-1 text-gray-400" /> Colaboradores Adicionais
+                   </label>
+                   <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                      {users.map(u => (
+                        <label key={u.id} className={`
+                           flex items-center gap-2 px-2 py-1 rounded border text-xs cursor-pointer transition-colors
+                           ${assignedUsers.includes(u.id) ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
+                        `}>
+                           <input 
+                             type="checkbox" 
+                             className="rounded text-brand-600 focus:ring-brand-500 w-3 h-3"
+                             checked={assignedUsers.includes(u.id)}
+                             onChange={(e) => {
+                               if (e.target.checked) {
+                                 setAssignedUsers([...assignedUsers, u.id]);
+                               } else {
+                                 setAssignedUsers(assignedUsers.filter(id => id !== u.id));
+                               }
+                             }}
+                           />
+                           {u.photoURL ? (
+                             <img src={u.photoURL} className="w-4 h-4 rounded-full object-cover" alt="" />
+                           ) : (
+                             <div className="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold">{u.displayName.charAt(0)}</div>
+                           )}
+                           {u.displayName.split(' ')[0]}
+                        </label>
+                      ))}
+                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

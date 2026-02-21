@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, addDoc, serverTimestamp, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, Task, UserProfile, PriorityLevel } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 import OSCreationModal from './OSCreationModal';
 import { 
   startOfWeek, endOfWeek, addDays, format, isSameDay, 
@@ -20,10 +21,22 @@ type ViewMode = 'week' | 'month';
 type VisualizationType = 'gantt' | 'calendar';
 
 const Schedule: React.FC = () => {
+  const { userProfile, currentUser } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Permissions
+  const isFullView = userProfile?.permissions?.canViewFullSchedule 
+    || userProfile?.role === 'admin'
+    || userProfile?.role === 'developer';
+
+  const isMyView = userProfile?.permissions?.canViewMySchedule;
+  
+  const canCreate = userProfile?.permissions?.canCreateTasks 
+    || userProfile?.role === 'admin' 
+    || userProfile?.role === 'developer';
+
   // View State
   const [visualizationMode, setVisualizationMode] = useState<VisualizationType>('calendar');
   const [viewMode, setViewMode] = useState<ViewMode>('month'); // Gantt specific
@@ -47,6 +60,7 @@ const Schedule: React.FC = () => {
   const [editFormEndDate, setEditFormEndDate] = useState('');
   const [editFormProgress, setEditFormProgress] = useState(0);
   const [editFormAssignee, setEditFormAssignee] = useState('');
+  const [editFormAssignedUsers, setEditFormAssignedUsers] = useState<string[]>([]);
 
   useEffect(() => {
     // 1. Fetch Users for assignments
@@ -112,11 +126,24 @@ const Schedule: React.FC = () => {
 
   // --- FILTERING ---
   const filteredTasks = tasks.filter(task => {
+    // 1. Permission Check
+    if (!isFullView) {
+      if (!isMyView) return false; // No access
+      
+      // Check if user is assigned (either as primary or in list)
+      const isAssigned = task.assignedTo === currentUser?.uid || 
+                         (task.assignedUsers && task.assignedUsers.includes(currentUser?.uid || ''));
+      
+      if (!isAssigned) return false;
+    }
+
     const matchesSearch = 
       task.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
       (task.code && task.code.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    const matchesAssignee = filterAssignee === 'all' || task.assignedTo === filterAssignee;
+    const matchesAssignee = filterAssignee === 'all' || 
+                            task.assignedTo === filterAssignee ||
+                            (task.assignedUsers && task.assignedUsers.includes(filterAssignee));
     
     const matchesStatus = filterStatus === 'all' 
       ? true 
@@ -167,6 +194,7 @@ const Schedule: React.FC = () => {
     setEditFormEndDate(task.endDate ? task.endDate.toDate().toISOString().slice(0, 16) : '');
     setEditFormProgress(task.progress || calculateChecklistProgress(task));
     setEditFormAssignee(task.assignedTo || '');
+    setEditFormAssignedUsers(task.assignedUsers || (task.assignedTo ? [task.assignedTo] : []));
     // Close detail modal if open
     setSelectedDayTasks(null); 
   };
@@ -177,7 +205,8 @@ const Schedule: React.FC = () => {
     try {
       const updates: any = {
         progress: editFormProgress,
-        assignedTo: editFormAssignee
+        assignedTo: editFormAssignee,
+        assignedUsers: editFormAssignedUsers
       };
 
       if (editFormStartDate) updates.startDate = Timestamp.fromDate(new Date(editFormStartDate));
@@ -188,6 +217,11 @@ const Schedule: React.FC = () => {
           const newUser = users.find(u => u.uid === editFormAssignee);
           if (newUser) updates.assigneeName = newUser.displayName;
       }
+      
+      // Update Assigned User Names
+      updates.assignedUserNames = editFormAssignedUsers.map(uid => 
+        users.find(u => u.uid === uid)?.displayName || 'Desconhecido'
+      );
 
       await updateDoc(doc(db, CollectionName.TASKS, editTask.id), updates);
       setEditTask(null);
@@ -268,6 +302,16 @@ const Schedule: React.FC = () => {
   };
 
   // --- RENDER ---
+  if (!isFullView && !isMyView) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-80px)] text-gray-500">
+        <AlertCircle size={48} className="mb-4 text-red-500" />
+        <h2 className="text-xl font-bold text-gray-900">Acesso Negado</h2>
+        <p>Você não tem permissão para acessar a agenda.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-white">
       {/* HEADER TOOLBAR */}
@@ -338,14 +382,16 @@ const Schedule: React.FC = () => {
                />
             </div>
             
-            <button 
-              onClick={() => setIsOSModalOpen(true)}
-              className="flex items-center justify-center px-3 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium shadow-sm transition-colors whitespace-nowrap flex-1 md:flex-none"
-            >
-              <Plus className="w-4 h-4 md:mr-2" />
-              <span className="hidden md:inline">Nova O.S.</span>
-              <span className="md:hidden">Nova</span>
-            </button>
+            {canCreate && (
+              <button 
+                onClick={() => setIsOSModalOpen(true)}
+                className="flex items-center justify-center px-3 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm font-medium shadow-sm transition-colors whitespace-nowrap flex-1 md:flex-none"
+              >
+                <Plus className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Nova O.S.</span>
+                <span className="md:hidden">Nova</span>
+              </button>
+            )}
         </div>
       </div>
 
@@ -463,9 +509,42 @@ const Schedule: React.FC = () => {
                                 </div>
                                 <h4 className="text-sm font-bold text-gray-800 leading-tight mb-1 group-hover:text-brand-600">{task.title}</h4>
                                 <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-                                    <span className="truncate max-w-[120px] flex items-center gap-1">
-                                    <User size={10} /> {task.assigneeName || 'N/A'}
-                                    </span>
+                                    <div className="flex -space-x-2 overflow-hidden">
+                                      {/* Primary Assignee */}
+                                      {task.assignedTo && (
+                                        <div className="relative inline-block h-5 w-5 rounded-full ring-2 ring-white bg-gray-100 flex items-center justify-center text-[8px] font-bold text-gray-600" title={task.assigneeName}>
+                                           {users.find(u => u.uid === task.assignedTo)?.photoURL ? (
+                                             <img src={users.find(u => u.uid === task.assignedTo)?.photoURL} alt="" className="h-full w-full rounded-full object-cover"/>
+                                           ) : (
+                                             (task.assigneeName || '?').charAt(0)
+                                           )}
+                                        </div>
+                                      )}
+                                      {/* Additional Assignees */}
+                                      {task.assignedUsers?.filter(uid => uid !== task.assignedTo).slice(0, 2).map(uid => {
+                                         const u = users.find(user => user.uid === uid);
+                                         return (
+                                           <div key={uid} className="relative inline-block h-5 w-5 rounded-full ring-2 ring-white bg-gray-100 flex items-center justify-center text-[8px] font-bold text-gray-600" title={u?.displayName}>
+                                              {u?.photoURL ? (
+                                                <img src={u.photoURL} alt="" className="h-full w-full rounded-full object-cover"/>
+                                              ) : (
+                                                (u?.displayName || '?').charAt(0)
+                                              )}
+                                           </div>
+                                         );
+                                      })}
+                                      {/* Overflow Count */}
+                                      {(task.assignedUsers?.filter(uid => uid !== task.assignedTo).length || 0) > 2 && (
+                                        <div className="relative inline-block h-5 w-5 rounded-full ring-2 ring-white bg-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-600">
+                                          +{(task.assignedUsers?.filter(uid => uid !== task.assignedTo).length || 0) - 2}
+                                        </div>
+                                      )}
+                                      {/* Fallback if no one assigned */}
+                                      {!task.assignedTo && (!task.assignedUsers || task.assignedUsers.length === 0) && (
+                                         <span className="text-gray-400 italic text-[10px]">Sem resp.</span>
+                                      )}
+                                    </div>
+
                                     {!hasDates && (
                                     <span className="text-orange-500 flex items-center gap-1" title="Sem data definida">
                                         <AlertCircle size={10} /> Sem Data
@@ -610,6 +689,40 @@ const Schedule: React.FC = () => {
                      </select>
                   </div>
 
+                  {/* Multi-Assignee Selection */}
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                     <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
+                        <User className="w-4 h-4 mr-1 text-gray-400" /> Colaboradores Adicionais
+                     </label>
+                     <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                        {users.map(u => (
+                          <label key={u.uid} className={`
+                             flex items-center gap-2 px-2 py-1 rounded border text-xs cursor-pointer transition-colors
+                             ${editFormAssignedUsers.includes(u.uid) ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
+                          `}>
+                             <input 
+                               type="checkbox" 
+                               className="rounded text-brand-600 focus:ring-brand-500 w-3 h-3"
+                               checked={editFormAssignedUsers.includes(u.uid)}
+                               onChange={(e) => {
+                                 if (e.target.checked) {
+                                   setEditFormAssignedUsers([...editFormAssignedUsers, u.uid]);
+                                 } else {
+                                   setEditFormAssignedUsers(editFormAssignedUsers.filter(id => id !== u.uid));
+                                 }
+                               }}
+                             />
+                             {u.photoURL ? (
+                               <img src={u.photoURL} className="w-4 h-4 rounded-full object-cover" alt="" />
+                             ) : (
+                               <div className="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold">{u.displayName.charAt(0)}</div>
+                             )}
+                             {u.displayName.split(' ')[0]}
+                          </label>
+                        ))}
+                     </div>
+                  </div>
+
                   <div>
                      <label className="flex justify-between text-sm font-medium text-gray-700 mb-1">
                         <span>Progresso Manual</span>
@@ -673,7 +786,28 @@ const Schedule: React.FC = () => {
                               </div>
                               <h4 className="text-sm font-bold text-gray-800 group-hover:text-brand-600">{task.title}</h4>
                               <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
-                                  <User size={12}/> {task.assigneeName || 'N/A'}
+                                  <div className="flex -space-x-1.5">
+                                    {/* Primary */}
+                                    {task.assignedTo && (
+                                       <div className="w-4 h-4 rounded-full bg-gray-200 ring-1 ring-white flex items-center justify-center text-[8px] font-bold" title={task.assigneeName}>
+                                          {users.find(u => u.uid === task.assignedTo)?.photoURL ? (
+                                            <img src={users.find(u => u.uid === task.assignedTo)?.photoURL} className="w-full h-full rounded-full object-cover"/>
+                                          ) : (task.assigneeName || '?').charAt(0)}
+                                       </div>
+                                    )}
+                                    {/* Others */}
+                                    {task.assignedUsers?.filter(uid => uid !== task.assignedTo).map(uid => {
+                                       const u = users.find(user => user.uid === uid);
+                                       return (
+                                         <div key={uid} className="w-4 h-4 rounded-full bg-gray-200 ring-1 ring-white flex items-center justify-center text-[8px] font-bold" title={u?.displayName}>
+                                            {u?.photoURL ? (
+                                              <img src={u.photoURL} className="w-full h-full rounded-full object-cover"/>
+                                            ) : (u?.displayName || '?').charAt(0)}
+                                         </div>
+                                       );
+                                    })}
+                                  </div>
+                                  {(!task.assignedTo && (!task.assignedUsers || task.assignedUsers.length === 0)) && <span>Sem responsável</span>}
                               </div>
                           </div>
                       ))}

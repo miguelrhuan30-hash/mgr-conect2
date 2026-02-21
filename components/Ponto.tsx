@@ -302,6 +302,7 @@ const Ponto: React.FC = () => {
     const nextAction = getNextAction();
 
     // 1. Pre-checks
+    console.log('1. Iniciando registro...');
     if (!currentUser || !videoRef.current) return;
     if (!streamRef.current || !streamRef.current.active) {
         setErrorMessage("Câmera desconectada. Recarregue a página.");
@@ -326,6 +327,7 @@ const Ponto: React.FC = () => {
 
     try {
         // A. Capture Frame
+        console.log('2. Capturando frame...');
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 480;
@@ -340,11 +342,17 @@ const Ponto: React.FC = () => {
         ctx.fillText(new Date().toLocaleString(), 10, 470);
 
         const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+        console.log('2. Foto capturada');
         
         // B. Gemini Validation
         setProcessMessage('Validando biometria com IA...');
         
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        if (!apiKey) {
+            throw new Error('Chave da API Gemini não configurada (VITE_GEMINI_API_KEY).');
+        }
+
+        const ai = new GoogleGenAI({ apiKey });
         const refBase64 = await getBase64FromUrl(profilePhotoUrl);
         
         const currentData = photoBase64.split(',')[1];
@@ -365,6 +373,7 @@ const Ponto: React.FC = () => {
         const text = response.text;
         if (!text) throw new Error("No response from AI");
         const result = JSON.parse(text);
+        console.log('3. Gemini validado:', result);
 
         if (!result.match || result.confidence < 0.7) {
             throw new Error(`Rosto não corresponde ao perfil (Confiança: ${Math.round(result.confidence * 100)}%)`);
@@ -375,8 +384,10 @@ const Ponto: React.FC = () => {
         const storageRef = ref(storage, `time_clock/${currentUser.uid}/${Date.now()}.jpg`);
         await uploadString(storageRef, photoBase64, 'data_url');
         const photoUrl = await getDownloadURL(storageRef);
+        console.log('4. Upload foto concluído:', photoUrl);
 
-        await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
+        console.log('5. Salvando no Firestore...');
+        const docRef = await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
             userId: currentUser.uid,
             type: nextAction.type,
             timestamp: serverTimestamp(),
@@ -387,13 +398,16 @@ const Ponto: React.FC = () => {
             isManual: false,
             biometricVerified: true
         });
+        console.log('6. Firestore salvo com sucesso, ID:', docRef.id);
 
         // D. Success State
         setSuccessMessage(`${nextAction.label} REGISTRADA!`);
         setProcessing(false);
         stopCamera();
 
-        // Refresh Data
+        // Refresh Data with Delay
+        console.log('7. Atualizando histórico...');
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchHistory();
 
         // Auto-reset after 3s

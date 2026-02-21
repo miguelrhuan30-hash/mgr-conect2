@@ -13,7 +13,7 @@ const MGR_REAL_DATA: LandingPageContent = {
   hero: {
     title: "Solução do Frio. Eficiência e Economia.",
     subtitle: "Na indústria, refrigeração parada é prejuízo na certa. Garantimos que sua operação funcione, protegendo seu produto e sua lucratividade.",
-    backgroundImageUrl: "https://images.unsplash.com/photo-1565043589221-1a6fd9ae45c7?auto=format&fit=crop&q=80&w=1920",
+    backgroundImageUrl: "",
     ctaText: "Solicitar Vistoria Técnica",
     ctaLink: "#contact"
   },
@@ -61,7 +61,7 @@ const MGR_REAL_DATA: LandingPageContent = {
   about: {
     title: "Engenharia que Gera Resultados",
     description: "Nossa missão é entregar a solução completa: equipamentos robustos feitos sob medida e o serviço de manutenção mais transparente do mercado. Com uma frota própria e equipe técnica certificada, atendemos Indaiatuba e região com agilidade.",
-    imageUrl: "https://images.unsplash.com/photo-1581092921461-eab6245b0262?auto=format&fit=crop&q=80&w=800"
+    imageUrl: ""
   },
   contact: {
     address: "Indaiatuba - SP e Região",
@@ -256,11 +256,15 @@ const LandingPage: React.FC = () => {
 
       <section id="home" className="relative pt-20 pb-16 md:pt-32 md:pb-32 overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <img 
-            src={content.hero.backgroundImageUrl} 
-            alt="Background" 
-            className="w-full h-full object-cover opacity-30"
-          />
+          {content.hero.backgroundImageUrl ? (
+            <img 
+              src={content.hero.backgroundImageUrl} 
+              alt="Background" 
+              className="w-full h-full object-cover opacity-30"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-brand-50 to-gray-100 opacity-50"></div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-r from-gray-50 via-white/80 to-transparent"></div>
         </div>
         
@@ -415,11 +419,17 @@ const LandingPage: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div className="relative order-2 lg:order-1">
               <div className="absolute -top-4 -left-4 w-72 h-72 bg-brand-100 rounded-full blur-3xl opacity-50"></div>
-              <img 
-                src={content.about.imageUrl} 
-                alt="Sobre a Empresa" 
-                className="relative rounded-2xl shadow-2xl w-full object-cover h-[500px]"
-              />
+              {content.about.imageUrl ? (
+                <img 
+                  src={content.about.imageUrl} 
+                  alt="Sobre a Empresa" 
+                  className="relative rounded-2xl shadow-2xl w-full object-cover h-[500px]"
+                />
+              ) : (
+                <div className="relative rounded-2xl shadow-2xl w-full h-[500px] bg-gray-100 flex items-center justify-center border border-gray-200">
+                  <Factory className="w-24 h-24 text-gray-300" />
+                </div>
+              )}
               <div className="absolute bottom-8 -right-8 bg-white p-6 rounded-xl shadow-xl hidden md:block">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600">
