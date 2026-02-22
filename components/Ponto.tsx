@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, WorkLocation, TimeEntry } from '../types';
@@ -58,11 +58,8 @@ const Ponto: React.FC = () => {
 
     const initData = async () => {
       setLoadingData(true);
-      await Promise.all([
-        loadLocations(),
-        fetchHistory()
-      ]);
-      setLoadingData(false);
+      await loadLocations();
+      // History is now loaded via real-time listener below
     };
 
     initData();
@@ -135,37 +132,42 @@ const Ponto: React.FC = () => {
     return R * c * 1000;
   };
 
-  // --- HISTORY & STATE MACHINE LOGIC ---
-  const fetchHistory = async () => {
+  // --- HISTORY & STATE MACHINE LOGIC (REAL-TIME) ---
+  useEffect(() => {
     if (!currentUser) return;
-    
-    try {
-      // Fetch today's entries to determine state
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      
-      const q = query(
-        collection(db, CollectionName.TIME_ENTRIES),
-        where('userId', '==', currentUser.uid),
-        orderBy('timestamp', 'desc'),
-        limit(20)
-      );
-      
-      const snapshot = await getDocs(q);
+
+    const q = query(
+      collection(db, CollectionName.TIME_ENTRIES),
+      where('userId', '==', currentUser.uid),
+      orderBy('timestamp', 'desc'),
+      limit(20)
+    );
+
+    const unsubscribe = onSnapshot(q, { includeMetadataChanges: false }, (snapshot) => {
+      // Ignorar se ainda tem escritas pendentes (evita reset falso)
+      if (snapshot.metadata.hasPendingWrites) return;
+
       const entries = snapshot.docs.map(d => ({id: d.id, ...(d.data() as any)} as TimeEntry));
       setHistory(entries);
 
-      // Find the very last entry OF TODAY to determine next state
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
       const todaysEntries = entries.filter(e => e.timestamp && e.timestamp.toDate && e.timestamp.toDate() >= today);
       if (todaysEntries.length > 0) {
-        setLastEntry(todaysEntries[0]); // The most recent one because of orderBy desc
+        setLastEntry(todaysEntries[0]);
       } else {
         setLastEntry(null);
       }
-    } catch (err) {
+      
+      setLoadingData(false);
+    }, (err: any) => {
       console.error("Error fetching history", err);
-    }
-  };
+      setLoadingData(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
 
   // DETERMINISTIC NEXT ACTION (Problem 3 & 6)
   const getNextAction = (): ActionState => {
@@ -408,7 +410,7 @@ const Ponto: React.FC = () => {
         // Refresh Data with Delay
         console.log('7. Atualizando histórico...');
         await new Promise(resolve => setTimeout(resolve, 500));
-        await fetchHistory();
+        // await fetchHistory(); // Removed as it is now real-time
 
         // Auto-reset after 3s
         setTimeout(() => {
