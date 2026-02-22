@@ -135,6 +135,9 @@ const Ponto: React.FC = () => {
   // --- HISTORY & STATE MACHINE LOGIC (REAL-TIME) ---
   useEffect(() => {
     if (!currentUser) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     const q = query(
       collection(db, CollectionName.TIME_ENTRIES),
@@ -143,24 +146,27 @@ const Ponto: React.FC = () => {
       limit(20)
     );
 
-    const unsubscribe = onSnapshot(q, { includeMetadataChanges: false }, (snapshot) => {
-      // Ignorar se ainda tem escritas pendentes (evita reset falso)
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      // Ignorar snapshots com escritas pendentes para evitar flickering
       if (snapshot.metadata.hasPendingWrites) return;
 
-      const entries = snapshot.docs.map(d => ({id: d.id, ...(d.data() as any)} as TimeEntry));
+      const entries = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) } as TimeEntry))
+        .filter(e => e.timestamp && e.timestamp.toDate);
+      
       setHistory(entries);
+      setLoadingData(false);
 
-      const today = new Date();
-      today.setHours(0,0,0,0);
+      // Determinar último registro de HOJE
+      const todaysEntries = entries.filter(e => 
+        e.timestamp.toDate() >= today
+      );
 
-      const todaysEntries = entries.filter(e => e.timestamp && e.timestamp.toDate && e.timestamp.toDate() >= today);
       if (todaysEntries.length > 0) {
         setLastEntry(todaysEntries[0]);
       } else {
         setLastEntry(null);
       }
-      
-      setLoadingData(false);
     }, (err: any) => {
       console.error("Error fetching history", err);
       setLoadingData(false);
@@ -406,11 +412,6 @@ const Ponto: React.FC = () => {
         setSuccessMessage(`${nextAction.label} REGISTRADA!`);
         setProcessing(false);
         stopCamera();
-
-        // Refresh Data with Delay
-        console.log('7. Atualizando histórico...');
-        await new Promise(resolve => setTimeout(resolve, 500));
-        // await fetchHistory(); // Removed as it is now real-time
 
         // Auto-reset after 3s
         setTimeout(() => {
