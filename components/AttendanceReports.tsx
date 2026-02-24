@@ -3,7 +3,7 @@ import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTi
 import { db } from '../firebase';
 import { CollectionName, TimeEntry, UserProfile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { Calendar, User, Search, AlertCircle, CheckCircle, Clock, AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, FileText, FileSpreadsheet } from 'lucide-react';
+import { Calendar, User, Search, AlertCircle, CheckCircle, Clock, AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, FileText, FileSpreadsheet, MapPin } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -751,11 +751,29 @@ const AttendanceReports: React.FC = () => {
                                             {worked ? worked.display : '--'}
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            {!day.hasEntries && !isWeekend ? (
-                                                <span className="text-red-400 text-xs flex items-center justify-center gap-1"><AlertCircle size={12}/> Falta</span>
-                                            ) : day.hasEntries ? (
-                                                <span className="text-green-500 text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> OK</span>
-                                            ) : '-'}
+                                            <div className="flex flex-col items-center gap-1">
+                                                {!day.hasEntries && !isWeekend ? (
+                                                    <span className="text-red-400 text-xs flex items-center justify-center gap-1"><AlertCircle size={12}/> Falta</span>
+                                                ) : day.hasEntries ? (
+                                                    <span className="text-green-500 text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> OK</span>
+                                                ) : '-'}
+                                                
+                                                {/* Map Links for Lunch Entries */}
+                                                {(day.lunchStart?.mapsUrl || day.lunchEnd?.mapsUrl) && (
+                                                    <div className="flex flex-col gap-0.5 mt-1">
+                                                        {day.lunchStart?.mapsUrl && (
+                                                            <a href={day.lunchStart.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                                                <MapPin size={10} /> Mapa (Ida Almoço)
+                                                            </a>
+                                                        )}
+                                                        {day.lunchEnd?.mapsUrl && (
+                                                            <a href={day.lunchEnd.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                                                <MapPin size={10} /> Mapa (Volta Almoço)
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );

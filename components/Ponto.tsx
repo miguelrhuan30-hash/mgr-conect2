@@ -37,7 +37,7 @@ const Ponto: React.FC = () => {
   
   // Data State
   const [allowedLocations, setAllowedLocations] = useState<WorkLocation[]>([]);
-  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number, accuracy?: number | null} | null>(null);
   const [detectedLocation, setDetectedLocation] = useState<WorkLocation | null>(null);
   const [history, setHistory] = useState<TimeEntry[]>([]);
   const [lastEntry, setLastEntry] = useState<TimeEntry | null>(null);
@@ -102,8 +102,8 @@ const Ponto: React.FC = () => {
      
      navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
-        setCurrentLocation({ lat: latitude, lng: longitude });
+        const { latitude, longitude, accuracy } = position.coords;
+        setCurrentLocation({ lat: latitude, lng: longitude, accuracy: accuracy });
 
         // Admin Global Bypass
         if (userProfile?.role === 'admin' && (!userProfile.allowedLocationIds || userProfile.allowedLocationIds.length === 0)) {
@@ -316,8 +316,11 @@ const Ponto: React.FC = () => {
         setErrorMessage("Câmera desconectada. Recarregue a página.");
         return;
     }
-    if (!detectedLocation && userProfile?.role !== 'admin') {
-        setErrorMessage("Você está fora do perímetro permitido.");
+
+    const requiresLocation = nextAction.type === 'entry' || nextAction.type === 'exit';
+
+    if (requiresLocation && !detectedLocation && userProfile?.role !== 'admin') {
+        setErrorMessage("Você está fora do perímetro permitido. Entrada e Saída exigem localização autorizada.");
         return;
     }
     
@@ -399,8 +402,15 @@ const Ponto: React.FC = () => {
             userId: currentUser.uid,
             type: nextAction.type,
             timestamp: serverTimestamp(),
-            locationId: detectedLocation?.id || 'unknown',
-            location: currentLocation,
+            locationId: detectedLocation?.id || null,
+            locationName: detectedLocation?.name || null,
+            coordinates: currentLocation ? {
+                lat: currentLocation.lat,
+                lng: currentLocation.lng,
+                accuracy: currentLocation.accuracy || null
+            } : null,
+            mapsUrl: currentLocation ? `https://www.google.com/maps?q=${currentLocation.lat},${currentLocation.lng}` : null,
+            locationVerified: !!detectedLocation,
             photoEvidenceUrl: photoUrl,
             userAgent: navigator.userAgent,
             isManual: false,
@@ -437,8 +447,46 @@ const Ponto: React.FC = () => {
     }
   };
 
+  const LocationBadge = ({ entry }: { entry: TimeEntry }) => {
+    const isLunch = entry.type === 'lunch_start' || entry.type === 'lunch_end';
+    
+    if (isLunch && entry.mapsUrl) {
+      return (
+        <a 
+          href={entry.mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-[10px] text-blue-600 font-bold hover:text-blue-800 hover:underline"
+          onClick={e => e.stopPropagation()}
+        >
+          <MapPin size={10} />
+          Ver no Mapa
+        </a>
+      );
+    }
+    
+    if (entry.locationVerified) {
+      return (
+        <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold">
+          <ShieldCheck size={10} />
+          {entry.locationName || 'Verificado'}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex items-center gap-1 text-[10px] text-orange-500 font-bold">
+        <AlertTriangle size={10} />
+        Fora do Perímetro
+      </div>
+    );
+  };
+
   // --- RENDER ---
   const nextAction = getNextAction();
+  const isLunchAction = nextAction.type === 'lunch_start' || nextAction.type === 'lunch_end';
+  const requiresLocation = nextAction.type === 'entry' || nextAction.type === 'exit';
+  const isBlocked = processing || !!successMessage || !!errorMessage || (requiresLocation && !detectedLocation);
 
   return (
     <div className="max-w-xl mx-auto space-y-4 animate-in fade-in duration-500 pb-20">
@@ -455,11 +503,16 @@ const Ponto: React.FC = () => {
             <span className="text-xs text-gray-500 uppercase font-bold tracking-wider flex items-center gap-1">
                <MapPin size={10} /> Localização
             </span>
-            <div className={`text-sm font-bold flex items-center gap-1 ${detectedLocation ? 'text-green-600' : 'text-red-500'}`}>
-               {detectedLocation ? (
-                 <>{detectedLocation.name} <ShieldCheck size={14} /></>
-               ) : 'Fora do Perímetro'}
-            </div>
+            {isLunchAction ? (
+              <div className={`text-sm font-bold flex items-center gap-1 ${currentLocation ? 'text-blue-600' : 'text-yellow-500'}`}>
+                <MapPin size={14} />
+                {currentLocation ? 'GPS Ativo' : 'GPS não disponível'}
+              </div>
+            ) : (
+              <div className={`text-sm font-bold flex items-center gap-1 ${detectedLocation ? 'text-green-600' : 'text-red-500'}`}>
+                {detectedLocation ? <><ShieldCheck size={14}/> {detectedLocation.name}</> : 'Fora do Perímetro'}
+              </div>
+            )}
          </div>
       </div>
 
@@ -533,7 +586,7 @@ const Ponto: React.FC = () => {
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                 <button
                     onClick={handleRegister}
-                    disabled={processing || !!successMessage || !!errorMessage || !detectedLocation}
+                    disabled={isBlocked}
                     className={`
                         w-full py-4 rounded-xl font-bold text-lg text-white shadow-lg
                         flex items-center justify-center gap-3 transition-all active:scale-95
@@ -589,9 +642,7 @@ const Ponto: React.FC = () => {
                                          <p className={`font-bold text-sm ${style.color}`}>
                                              {style.text}
                                          </p>
-                                         <p className="text-xs text-gray-400">
-                                             {entry.location?.lat ? 'Via GPS/Mobile' : 'Manual'}
-                                         </p>
+                                         <LocationBadge entry={entry} />
                                      </div>
                                  </div>
                                  

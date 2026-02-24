@@ -141,11 +141,19 @@ export interface TimeEntry {
   userId: string;
   type: 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
   timestamp: Timestamp;
-  locationId?: string; // Where they clocked in
+  locationId?: string | null; // Where they clocked in
+  locationName?: string | null;
   location?: {
     lat: number;
     lng: number;
   };
+  coordinates?: {
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+  } | null;
+  mapsUrl?: string | null;
+  locationVerified?: boolean;
   
   photoEvidenceUrl?: string; // Legacy/System use
   photoUrl?: string; // Identidade Visual do Registro (Foto do Ponto)
