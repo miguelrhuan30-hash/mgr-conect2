@@ -12,7 +12,7 @@ const AttendanceReports: React.FC = () => {
   const { userProfile, currentUser } = useAuth();
   
   // Tabs
-  const [activeTab, setActiveTab] = useState<'report' | 'monitoring'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'report' | 'monitoring' | 'adjustments'>('monitoring');
 
   // Report State
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -29,6 +29,13 @@ const AttendanceReports: React.FC = () => {
   const [exitTime, setExitTime] = useState('');
   const [exitReason, setExitReason] = useState('');
   const [isSavingExit, setIsSavingExit] = useState(false);
+
+  // Adjustments State
+  const [adjUser, setAdjUser] = useState('');
+  const [adjType, setAdjType] = useState<'entry' | 'lunch_start' | 'lunch_end' | 'exit'>('entry');
+  const [adjTime, setAdjTime] = useState('');
+  const [adjReason, setAdjReason] = useState('');
+  const [isSavingAdj, setIsSavingAdj] = useState(false);
 
   // Correct authorization check using specific permission
   const isAuthorized = 
@@ -205,6 +212,41 @@ const AttendanceReports: React.FC = () => {
           alert("Erro ao encerrar turno.");
       } finally {
           setIsSavingExit(false);
+      }
+  };
+
+  const submitAdjustment = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!adjUser || !adjType || !adjTime || !adjReason || !isAuthorized) return;
+      setIsSavingAdj(true);
+
+      try {
+          const timestamp = new Date(adjTime);
+          
+          await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
+              userId: adjUser,
+              type: adjType,
+              timestamp: Timestamp.fromDate(timestamp),
+              locationId: 'manual_adjustment',
+              isManual: true,
+              editedBy: currentUser?.uid,
+              editReason: adjReason,
+              userAgent: 'Manager Dashboard - Manual Adjustment'
+          });
+
+          alert("Registro manual adicionado com sucesso.");
+          // Reset form
+          setAdjType('entry');
+          setAdjTime('');
+          setAdjReason('');
+          
+          // Refresh if needed
+          if (activeTab === 'monitoring') fetchOpenShifts();
+      } catch (error) {
+          console.error(error);
+          alert("Erro ao adicionar registro manual.");
+      } finally {
+          setIsSavingAdj(false);
       }
   };
 
@@ -560,18 +602,24 @@ const AttendanceReports: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200">
+      <div className="flex border-b border-gray-200 overflow-x-auto">
           <button 
              onClick={() => setActiveTab('monitoring')}
-             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'monitoring' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'monitoring' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
              Monitoramento de Turnos
           </button>
           <button 
              onClick={() => setActiveTab('report')}
-             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'report' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'report' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
              Espelho de Ponto (Mensal)
+          </button>
+          <button 
+             onClick={() => setActiveTab('adjustments')}
+             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'adjustments' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+             Ajustes Manuais
           </button>
       </div>
 
@@ -794,6 +842,81 @@ const AttendanceReports: React.FC = () => {
                     </table>
                 </div>
              )}
+          </div>
+      )}
+
+      {/* --- ADJUSTMENTS TAB --- */}
+      {activeTab === 'adjustments' && (
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm max-w-2xl mx-auto">
+              <div className="mb-6">
+                  <h2 className="text-lg font-bold text-gray-900">Lançamento Manual de Ponto</h2>
+                  <p className="text-sm text-gray-500">Utilize esta ferramenta para corrigir esquecimentos ou erros no registro de ponto dos colaboradores.</p>
+              </div>
+
+              <form onSubmit={submitAdjustment} className="space-y-4">
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Colaborador</label>
+                      <select 
+                          value={adjUser} 
+                          onChange={e => setAdjUser(e.target.value)}
+                          className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                          required
+                      >
+                          <option value="">Selecione o colaborador...</option>
+                          {users.map(u => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+                      </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Registro</label>
+                          <select 
+                              value={adjType} 
+                              onChange={e => setAdjType(e.target.value as any)}
+                              className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                              required
+                          >
+                              <option value="entry">Entrada</option>
+                              <option value="lunch_start">Início Almoço</option>
+                              <option value="lunch_end">Fim Almoço</option>
+                              <option value="exit">Saída</option>
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Data e Hora</label>
+                          <input 
+                              type="datetime-local" 
+                              value={adjTime} 
+                              onChange={e => setAdjTime(e.target.value)}
+                              className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                              required
+                          />
+                      </div>
+                  </div>
+
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Motivo / Justificativa</label>
+                      <textarea 
+                          value={adjReason} 
+                          onChange={e => setAdjReason(e.target.value)}
+                          className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                          rows={3}
+                          placeholder="Ex: Colaborador esqueceu de bater o ponto na volta do almoço."
+                          required
+                      />
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-100 flex justify-end">
+                      <button 
+                          type="submit"
+                          disabled={isSavingAdj || !adjUser || !adjTime || !adjReason}
+                          className="px-6 py-2 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-70 flex items-center gap-2"
+                      >
+                          {isSavingAdj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                          Salvar Registro Manual
+                      </button>
+                  </div>
+              </form>
           </div>
       )}
 

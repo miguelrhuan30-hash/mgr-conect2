@@ -41,10 +41,12 @@ const Ponto: React.FC = () => {
   const [detectedLocation, setDetectedLocation] = useState<WorkLocation | null>(null);
   const [history, setHistory] = useState<TimeEntry[]>([]);
   const [lastEntry, setLastEntry] = useState<TimeEntry | null>(null);
+  const [lunchCountdown, setLunchCountdown] = useState<string | null>(null);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- CLOCK TICKER ---
   useEffect(() => {
@@ -174,6 +176,71 @@ const Ponto: React.FC = () => {
 
     return () => unsubscribe();
   }, [currentUser]);
+
+  // --- LUNCH COUNTDOWN LOGIC ---
+  useEffect(() => {
+    // Limpar intervalo anterior
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+
+    const nextAction = getNextAction();
+    if (nextAction?.type !== 'lunch_end') {
+      setLunchCountdown(null);
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const lunchStart = history
+      .filter(e => 
+        e.type === 'lunch_start' && 
+        e.timestamp?.toDate &&
+        e.timestamp.toDate() >= today
+      )
+      .sort((a, b) => 
+        b.timestamp.toDate().getTime() - 
+        a.timestamp.toDate().getTime()
+      )[0];
+
+    if (!lunchStart?.timestamp) {
+      setLunchCountdown(null);
+      return;
+    }
+
+    const tick = () => {
+      const now = new Date();
+      const diffMs = now.getTime() - lunchStart.timestamp.toDate().getTime();
+      const minMinutes = 60; // 1 hora
+      const remainingMs = (minMinutes * 60 * 1000) - diffMs;
+
+      if (remainingMs <= 0) {
+        setLunchCountdown(null);
+        if (countdownRef.current) {
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
+        }
+        return;
+      }
+
+      const remainingMin = Math.floor(remainingMs / 1000 / 60);
+      const remainingSec = Math.floor((remainingMs / 1000) % 60);
+      setLunchCountdown(
+        `${String(remainingMin).padStart(2,'0')}:${String(remainingSec).padStart(2,'0')}`
+      );
+    };
+
+    tick(); // executar imediatamente
+    countdownRef.current = setInterval(tick, 1000);
+
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
+  }, [history, lastEntry]);
 
   // DETERMINISTIC NEXT ACTION (Problem 3 & 6)
   const getNextAction = (): ActionState => {
@@ -306,12 +373,60 @@ const Ponto: React.FC = () => {
   };
 
   // --- REGISTRATION LOGIC ---
+  const validateLunchMinTime = (): { valid: boolean; remaining?: string } => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const lunchStart = history
+      .filter(e => 
+        e.type === 'lunch_start' && 
+        e.timestamp?.toDate &&
+        e.timestamp.toDate() >= today
+      )
+      .sort((a, b) => 
+        b.timestamp.toDate().getTime() - 
+        a.timestamp.toDate().getTime()
+      )[0];
+
+    if (!lunchStart?.timestamp) return { valid: true };
+
+    const lunchStartTime = lunchStart.timestamp.toDate();
+    const now = new Date();
+    const diffMs = now.getTime() - lunchStartTime.getTime();
+    const diffMinutes = diffMs / 1000 / 60;
+    const minMinutes = 60; // 1 hora
+
+    if (diffMinutes < minMinutes) {
+      const remainingMs = (minMinutes * 60 * 1000) - diffMs;
+      const remainingMin = Math.floor(remainingMs / 1000 / 60);
+      const remainingSec = Math.floor((remainingMs / 1000) % 60);
+      return {
+        valid: false,
+        remaining: `${String(remainingMin).padStart(2,'0')}:${String(remainingSec).padStart(2,'0')}`
+      };
+    }
+
+    return { valid: true };
+  };
+
   const handleRegister = async () => {
     const nextAction = getNextAction();
 
     // 1. Pre-checks
     console.log('1. Iniciando registro...');
     if (!currentUser || !videoRef.current) return;
+
+    if (nextAction.type === 'lunch_end') {
+      const lunchCheck = validateLunchMinTime();
+      if (!lunchCheck.valid) {
+        setErrorMessage(
+          `⏱ Almoço mínimo de 1 hora não cumprido.\n` +
+          `Tempo restante: ${lunchCheck.remaining}`
+        );
+        return;
+      }
+    }
+
     if (!streamRef.current || !streamRef.current.active) {
         setErrorMessage("Câmera desconectada. Recarregue a página.");
         return;
@@ -486,7 +601,8 @@ const Ponto: React.FC = () => {
   const nextAction = getNextAction();
   const isLunchAction = nextAction.type === 'lunch_start' || nextAction.type === 'lunch_end';
   const requiresLocation = nextAction.type === 'entry' || nextAction.type === 'exit';
-  const isBlocked = processing || !!successMessage || !!errorMessage || (requiresLocation && !detectedLocation);
+  const isLunchBlocked = lunchCountdown !== null && nextAction?.type === 'lunch_end';
+  const isBlocked = processing || !!successMessage || !!errorMessage || (requiresLocation && !detectedLocation) || isLunchBlocked;
 
   return (
     <div className="max-w-xl mx-auto space-y-4 animate-in fade-in duration-500 pb-20">
@@ -582,8 +698,22 @@ const Ponto: React.FC = () => {
                  )}
             </div>
 
-            {/* 3. Action Button (Bottom) */}
+             {/* 3. Action Button (Bottom) */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                {lunchCountdown && nextAction?.type === 'lunch_end' && (
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center mb-4 animate-in slide-in-from-top duration-300">
+                        <div className="text-[10px] text-orange-600 font-bold uppercase tracking-wider mb-2">
+                            ⏱ AGUARDE PARA RETORNAR DO ALMOÇO
+                        </div>
+                        <div className="text-4xl font-black text-orange-600 font-mono leading-none">
+                            {lunchCountdown}
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-2">
+                            Almoço mínimo de 1 hora obrigatório
+                        </div>
+                    </div>
+                )}
+
                 <button
                     onClick={handleRegister}
                     disabled={isBlocked}
@@ -599,7 +729,12 @@ const Ponto: React.FC = () => {
                     ) : (
                        <nextAction.icon size={24} />
                     )}
-                    {processing ? 'PROCESSANDO...' : nextAction.label}
+                    {processing 
+                        ? 'PROCESSANDO...' 
+                        : isLunchBlocked 
+                            ? `🍽️ Retornar em ${lunchCountdown}`
+                            : nextAction.label
+                    }
                 </button>
                 <p className="text-center text-xs text-gray-500 mt-2">
                     {nextAction.description}
