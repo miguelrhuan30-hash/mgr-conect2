@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+npm run devimport React, { useState, useEffect, useRef } from 'react';
 import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -427,6 +427,24 @@ const Ponto: React.FC = () => {
       }
     }
 
+    if (nextAction.type === 'lunch_start' || nextAction.type === 'lunch_end') {
+      const gpsOk = await new Promise<boolean>((resolve) => {
+        if (!navigator.geolocation) { resolve(false); return; }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setCurrentLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+            resolve(true);
+          },
+          () => resolve(false),
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+      if (!gpsOk) {
+        setErrorMessage("GPS necessário para registrar almoço. Ative a localização e tente novamente.");
+        return;
+      }
+    }
+
     if (!streamRef.current || !streamRef.current.active) {
         setErrorMessage("Câmera desconectada. Recarregue a página.");
         return;
@@ -602,7 +620,8 @@ const Ponto: React.FC = () => {
   const isLunchAction = nextAction.type === 'lunch_start' || nextAction.type === 'lunch_end';
   const requiresLocation = nextAction.type === 'entry' || nextAction.type === 'exit';
   const isLunchBlocked = lunchCountdown !== null && nextAction?.type === 'lunch_end';
-  const isBlocked = processing || !!successMessage || !!errorMessage || (requiresLocation && !detectedLocation) || isLunchBlocked;
+  const isLunchWithoutGPS = isLunchAction && !currentLocation;
+  const isBlocked = processing || !!successMessage || !!errorMessage || (requiresLocation && !detectedLocation) || isLunchBlocked || isLunchWithoutGPS;
 
   return (
     <div className="max-w-xl mx-auto space-y-4 animate-in fade-in duration-500 pb-20">
