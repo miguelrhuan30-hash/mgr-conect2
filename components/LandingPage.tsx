@@ -272,7 +272,7 @@ const LandingPage: React.FC = () => {
           <div className="max-w-3xl">
             {/* ELEMENTO DE TESTE DE DEPLOY - QUADRADO VERDE */}
             <div className="w-16 h-16 bg-green-500 mb-6 rounded-lg shadow-xl flex items-center justify-center text-white font-bold text-[10px] animate-bounce">
-              GH-OK
+              DEPLOY-v4
             </div>
 
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-100 text-brand-700 text-sm font-bold mb-6">
