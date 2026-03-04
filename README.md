@@ -149,4 +149,4 @@ npm run preview
 *   **Deploy:** Google Cloud Run (Container Dockerizado/Estático).
 
 ---
-**MGR Refrigeração** - Todos os direitos reservados.
+**MGR Refrigeração** - Todos os direitos reservados..
