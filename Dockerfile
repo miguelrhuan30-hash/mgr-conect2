@@ -1,25 +1,19 @@
-# Build stage
-FROM node:18-alpine as build
-
+FROM node:20-alpine AS builder
 WORKDIR /app
-
 COPY package*.json ./
 RUN npm install
-
 COPY . .
-
-# Pass build arguments for environment variables
 ARG VITE_GEMINI_API_KEY
+ARG VITE_FIREBASE_API_KEY  
+ARG VITE_FIREBASE_PROJECT_ID
 ENV VITE_GEMINI_API_KEY=$VITE_GEMINI_API_KEY
-
+ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
+ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
-
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
+FROM node:20-alpine
+WORKDIR /app
+RUN npm install -g serve
+COPY --from=builder /app/dist ./dist
 EXPOSE 8080
-
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["serve", "-s", "dist", "-l", "8080"]
