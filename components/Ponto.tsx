@@ -1,4 +1,4 @@
-npm run devimport React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
