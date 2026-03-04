@@ -485,7 +485,7 @@ const Ponto: React.FC = () => {
         const refData = refBase64.split(',')[1];
 
         const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+            model: "gemini-2.0-flash-exp",
             contents: {
               parts: [
                  { inlineData: { mimeType: 'image/jpeg', data: currentData } },
