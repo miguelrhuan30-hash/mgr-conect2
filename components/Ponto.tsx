@@ -9,6 +9,7 @@ import {
   Clock, MapPin, ShieldCheck, Loader2, AlertTriangle, 
   History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2 
 } from 'lucide-react';
+import { logEvent } from '../utils/logger';
 
 // Tipos de Ação do Ponto
 type ActionType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
@@ -423,6 +424,14 @@ const Ponto: React.FC = () => {
           `⏱ Almoço mínimo de 1 hora não cumprido.\n` +
           `Tempo restante: ${lunchCheck.remaining}`
         );
+        logEvent(
+          currentUser.uid,
+          userProfile?.displayName,
+          'ponto_lunch_time_blocked',
+          'warning',
+          `Almoço bloqueado — tempo restante: ${lunchCheck.remaining}`,
+          { lunchRemaining: lunchCheck.remaining }
+        );
         return;
       }
     }
@@ -441,6 +450,13 @@ const Ponto: React.FC = () => {
       });
       if (!gpsOk) {
         setErrorMessage("GPS necessário para registrar almoço. Ative a localização e tente novamente.");
+        logEvent(
+          currentUser.uid,
+          userProfile?.displayName,
+          'ponto_lunch_gps_blocked',
+          'warning',
+          'Bloqueado: GPS não disponível para almoço'
+        );
         return;
       }
     }
@@ -454,6 +470,18 @@ const Ponto: React.FC = () => {
 
     if (requiresLocation && !detectedLocation && userProfile?.role !== 'admin') {
         setErrorMessage("Você está fora do perímetro permitido. Entrada e Saída exigem localização autorizada.");
+        logEvent(
+          currentUser.uid,
+          userProfile?.displayName,
+          'ponto_location_blocked',
+          'warning',
+          'Bloqueado: fora do perímetro para entrada/saída',
+          {
+            gpsCoords: currentLocation
+              ? { lat: currentLocation.lat, lng: currentLocation.lng, accuracy: currentLocation.accuracy }
+              : undefined
+          }
+        );
         return;
     }
     
@@ -529,6 +557,7 @@ const Ponto: React.FC = () => {
         await uploadString(storageRef, photoBase64, 'data_url');
         const photoUrl = await getDownloadURL(storageRef);
         console.log('4. Upload foto concluído:', photoUrl);
+        logEvent(currentUser.uid, userProfile?.displayName, 'ponto_upload_photo', 'info', 'Foto de evidência enviada');
 
         console.log('5. Salvando no Firestore...');
         const docRef = await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
@@ -550,6 +579,23 @@ const Ponto: React.FC = () => {
             biometricVerified: true
         });
         console.log('6. Firestore salvo com sucesso, ID:', docRef.id);
+        logEvent(
+          currentUser.uid,
+          userProfile?.displayName,
+          'ponto_register_success',
+          'success',
+          `Ponto registrado com sucesso: ${nextAction.label}`,
+          {
+            actionType: nextAction.type,
+            locationName: detectedLocation?.name,
+            locationId: detectedLocation?.id,
+            gpsCoords: currentLocation
+              ? { lat: currentLocation.lat, lng: currentLocation.lng, accuracy: currentLocation.accuracy }
+              : undefined,
+            biometricConfidence: result.confidence,
+            biometricMatch: true,
+          }
+        );
 
         // D. Success State
         setSuccessMessage(`${nextAction.label} REGISTRADA!`);
@@ -566,6 +612,18 @@ const Ponto: React.FC = () => {
         console.error("Register Error:", error);
         setErrorMessage(error.message || "Erro técnico ao registrar ponto.");
         setProcessing(false);
+        logEvent(
+          currentUser.uid,
+          userProfile?.displayName,
+          'ponto_register_error',
+          'error',
+          `Erro ao registrar ponto: ${error?.message ?? 'Erro desconhecido'}`,
+          {
+            errorMessage: error?.message,
+            errorStack: error?.stack?.substring(0, 500),
+            actionType: nextAction.type,
+          }
+        );
     }
   };
 

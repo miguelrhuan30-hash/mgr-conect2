@@ -6,6 +6,7 @@ import { auth, db } from '../firebase';
 import { CollectionName } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { Loader2, Lock, Mail, Hexagon, AlertCircle, ArrowLeft } from 'lucide-react';
+import { logEvent } from '../utils/logger';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -55,6 +56,8 @@ const Login: React.FC = () => {
     }
 
     setLoading(true);
+
+    logEvent('anon', email, 'login_attempt', 'info', `Tentativa de login: ${email}`);
 
     try {
       let userCredential;
@@ -134,12 +137,16 @@ const Login: React.FC = () => {
           });
         }
         
+        logEvent(user.uid, user.email, 'login_success', 'success', `Login efetuado: ${user.email}`);
         navigate('/app'); // Force redirect on success
       }
 
     } catch (err: any) {
       console.error("Authentication error:", err);
       setError(getErrorMessage(err));
+      logEvent('anon', email, 'login_error', 'error', `Falha no login: ${email}`, {
+        errorMessage: err?.message || err?.code || 'Erro desconhecido'
+      });
       
       if (err.code === 'auth/email-already-in-use' || (!isLogin && err.code === 'auth/wrong-password')) {
          setIsLogin(true); 

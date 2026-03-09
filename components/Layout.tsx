@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { logEvent } from '../utils/logger';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,7 +23,8 @@ import {
   Shield,
   Menu,
   X,
-  CalendarDays
+  CalendarDays,
+  Activity
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -32,6 +34,42 @@ const Layout: React.FC = () => {
   
   // Mobile Menu State
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+
+  const prevPath = useRef('');
+
+  useEffect(() => {
+    if (!userProfile || !currentUser) return;
+    if (location.pathname === prevPath.current) return;
+    prevPath.current = location.pathname;
+
+    const PAGE_TITLES: Record<string, string> = {
+      '/app':                  'Dashboard',
+      '/app/ponto':            'Registro de Ponto',
+      '/app/tarefas':          'Tarefas (OS)',
+      '/app/agenda':           'Agenda (Gantt)',
+      '/app/clientes':         'Clientes',
+      '/app/projetos':         'Projetos',
+      '/app/estoque':          'Almoxarifado',
+      '/app/modelos':          'Modelos',
+      '/app/relatorios-ponto': 'Espelho de Ponto',
+      '/app/usuarios':         'Equipe & RH',
+      '/app/setores':          'Cargos & Acessos',
+      '/app/locais':           'Locais de Trabalho',
+      '/app/logs':             'Log do Sistema',
+      '/app/perfil':           'Meu Perfil',
+    };
+
+    const pageTitle = PAGE_TITLES[location.pathname] ?? location.pathname;
+
+    logEvent(
+      currentUser.uid,
+      userProfile.displayName,
+      'page_view',
+      'info',
+      `Acessou: ${pageTitle}`,
+      { page: location.pathname, pageTitle }
+    );
+  }, [location.pathname, userProfile, currentUser]);
 
   const handleLogout = async () => {
     try {
@@ -64,6 +102,7 @@ const Layout: React.FC = () => {
     // Management Section
     { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') },
     { to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto', visible: can('canViewAttendanceReports') },
+    { to: '/app/logs', icon: Activity, label: 'Log do Sistema', visible: can('canManageSettings') },
     
     // Admin Section
     { to: '/app/usuarios', icon: Users, label: 'Equipe & RH', visible: can('canManageUsers') },
