@@ -253,4 +253,5 @@ export enum CollectionName {
   TASK_TEMPLATES = 'task_templates',
   SYSTEM_SETTINGS = 'system_settings',
   CONTACT_MESSAGES = 'contact_messages',
+  SYSTEM_LOGS = 'system_logs',
 }
