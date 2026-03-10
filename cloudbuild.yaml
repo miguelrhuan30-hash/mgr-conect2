@@ -1,5 +1,4 @@
 steps:
-  # Build da imagem Docker
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -7,16 +6,14 @@ steps:
       - '-t'
       - 'gcr.io/$PROJECT_ID/mgr-conect-2'
       - '--build-arg'
-      - 'VITE_GEMINI_API_KEY=$_VITE_GEMINI_API_KEY'
+      - 'VITE_GEMINI_API_KEY=AIzaSyAs_GeZwN_cuO43rfyZ8mhwyaQ-6dXLkhg'
       - '--build-arg'
       - 'VITE_FIREBASE_API_KEY=$_VITE_FIREBASE_API_KEY'
       - '--build-arg'
       - 'VITE_FIREBASE_PROJECT_ID=$_VITE_FIREBASE_PROJECT_ID'
       - '.'
-  # Push da imagem para o Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/mgr-conect-2']
-  # Deploy no Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -33,6 +30,5 @@ steps:
 images:
   - 'gcr.io/$PROJECT_ID/mgr-conect-2'
 substitutions:
-  _VITE_GEMINI_API_KEY: ''
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_PROJECT_ID: ''
