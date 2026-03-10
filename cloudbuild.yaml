@@ -4,7 +4,7 @@ steps:
       - 'build'
       - '--no-cache'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/mgr-conect-2'
+      - 'us-west1-docker.pkg.dev/mgr-conect2/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
       - '--build-arg'
       - 'VITE_GEMINI_API_KEY=AIzaSyAs_GeZwN_cuO43rfyZ8mhwyaQ-6dXLkhg'
       - '--build-arg'
@@ -13,7 +13,7 @@ steps:
       - 'VITE_FIREBASE_PROJECT_ID=$_VITE_FIREBASE_PROJECT_ID'
       - '.'
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/mgr-conect-2']
+    args: ['push', 'us-west1-docker.pkg.dev/mgr-conect2/cloud-run-source-deploy/mgr-conect2/mgr-conect-2']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -21,14 +21,14 @@ steps:
       - 'deploy'
       - 'mgr-conect-2'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/mgr-conect-2'
+      - 'us-west1-docker.pkg.dev/mgr-conect2/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
       - '--region'
       - 'us-west1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
 images:
-  - 'gcr.io/$PROJECT_ID/mgr-conect-2'
+  - 'us-west1-docker.pkg.dev/mgr-conect2/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
 substitutions:
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_PROJECT_ID: ''
