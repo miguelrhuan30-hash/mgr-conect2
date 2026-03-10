@@ -3,6 +3,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--no-cache'
       - '-t'
       - 'gcr.io/$PROJECT_ID/mgr-conect-2'
       - '--build-arg'
@@ -12,12 +13,10 @@ steps:
       - '--build-arg'
       - 'VITE_FIREBASE_PROJECT_ID=$_VITE_FIREBASE_PROJECT_ID'
       - '.'
-
   # Push da imagem para o Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/mgr-conect-2']
-
-  # Deploy no Cloud Run — região corrigida para us-west1
+  # Deploy no Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -31,11 +30,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-
 images:
   - 'gcr.io/$PROJECT_ID/mgr-conect-2'
-
-# Variáveis substituíveis (definir no gatilho do Cloud Build)
 substitutions:
   _VITE_GEMINI_API_KEY: ''
   _VITE_FIREBASE_API_KEY: ''
