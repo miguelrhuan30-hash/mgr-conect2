@@ -547,20 +547,27 @@ const Ponto: React.FC = () => {
         const ai = new GoogleGenAI({ apiKey });
         const refBase64 = await getBase64FromUrl(profilePhotoUrl);
         
-        const currentData = photoBase64.split(',')[1];
-        const refData = refBase64.split(',')[1];
-
-        const response = await ai.models.generateContent({
-            model: "gemini-1.5-flash",
-            contents: {
-              parts: [
-                 { inlineData: { mimeType: 'image/jpeg', data: currentData } },
-                 { inlineData: { mimeType: 'image/jpeg', data: refData } },
-                 { text: "Analyze these two faces. Are they the same person? Reply with strictly valid JSON: { \"match\": boolean, \"confidence\": number } where confidence is 0.0 to 1.0." }
-              ]
-            },
-            config: { responseMimeType: "application/json" }
-        });
+        let response;
+        try {
+            response = await ai.models.generateContent({
+                model: "gemini-1.5-flash",
+                contents: {
+                  parts: [
+                     { inlineData: { mimeType: 'image/jpeg', data: currentData } },
+                     { inlineData: { mimeType: 'image/jpeg', data: refData } },
+                     { text: "Analyze these two faces. Are they the same person? Reply with strictly valid JSON: { \"match\": boolean, \"confidence\": number } where confidence is 0.0 to 1.0." }
+                  ]
+                },
+                config: { responseMimeType: "application/json" }
+            });
+        } catch (apiError: any) {
+            console.error("Gemini API Error:", apiError);
+            const errMsg = apiError.message?.toLowerCase() || "";
+            if (errMsg.includes("403") || errMsg.includes("api key") || errMsg.includes("permission denied")) {
+                throw new Error("Erro de Autenticação: A chave de segurança da Biometria é inválida ou foi bloqueada. Contate o suporte.");
+            }
+            throw new Error(`Erro na API de biometria: ${apiError.message}`);
+        }
 
         const text = response.text;
         if (!text) throw new Error("No response from AI");
