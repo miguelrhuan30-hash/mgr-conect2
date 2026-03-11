@@ -6,7 +6,7 @@ steps:
       - '-t'
       - 'us-west1-docker.pkg.dev/mgr-conect2/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
       - '--build-arg'
-      - 'VITE_GEMINI_API_KEY=AIzaSyAs_GeZwN_cuO43rfyZ8mhwyaQ-6dXLkhg'
+      - 'VITE_GEMINI_API_KEY=AIzaSyDMWUW1tXVLy2YdgcKh0PzeXfueBdkxXqg'
       - '--build-arg'
       - 'VITE_FIREBASE_API_KEY=$_VITE_FIREBASE_API_KEY'
       - '--build-arg'
