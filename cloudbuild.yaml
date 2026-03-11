@@ -32,3 +32,6 @@ images:
 substitutions:
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_PROJECT_ID: ''
+
+options:
+  logging: CLOUD_LOGGING_ONLY
