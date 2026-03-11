@@ -1,4 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -519,7 +539,7 @@ const Ponto: React.FC = () => {
         // B. Gemini Validation
         setProcessMessage('Validando biometria com IA...');
         
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyAs_GeZwN_cuO43rfyZ8mhwyaQ-6dXLkhg";
         if (!apiKey) {
             throw new Error('Chave da API Gemini não configurada (VITE_GEMINI_API_KEY).');
         }
