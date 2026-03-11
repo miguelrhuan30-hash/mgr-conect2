@@ -539,7 +539,7 @@ const Ponto: React.FC = () => {
         // B. Gemini Validation
         setProcessMessage('Validando biometria com IA...');
         
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyDEtLkIHcQgMsByiJ7LtDHL4Uk3e9nNoqQ";
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
         if (!apiKey) {
             throw new Error('Chave da API Gemini não configurada (VITE_GEMINI_API_KEY).');
         }
