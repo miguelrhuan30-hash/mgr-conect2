@@ -547,6 +547,9 @@ const Ponto: React.FC = () => {
         const ai = new GoogleGenAI({ apiKey });
         const refBase64 = await getBase64FromUrl(profilePhotoUrl);
         
+        const currentData = photoBase64.split(',')[1];
+        const refData = refBase64.split(',')[1];
+
         let response;
         try {
             response = await ai.models.generateContent({
