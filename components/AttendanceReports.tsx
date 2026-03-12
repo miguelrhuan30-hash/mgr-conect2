@@ -107,7 +107,8 @@ const AttendanceReports: React.FC = () => {
           lunchStart: dayEntries.find(e => e.type === 'lunch_start'),
           lunchEnd: dayEntries.find(e => e.type === 'lunch_end'),
           exit: dayEntries.find(e => e.type === 'exit'),
-          userSchedule: user?.workSchedule
+          userSchedule: user?.workSchedule,
+          userScheduleType: user?.scheduleType || 'FIXED'
         };
         dailyReport.push(row);
       }
@@ -258,13 +259,75 @@ const AttendanceReports: React.FC = () => {
     return entry.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
   };
 
-  const isLate = (entry?: TimeEntry, targetTime?: string) => {
-    if (!entry || !targetTime) return false;
-    const entryDate = entry.timestamp.toDate();
-    const [targetH, targetM] = targetTime.split(':').map(Number);
-    const targetDate = new Date(entryDate);
-    targetDate.setHours(targetH, targetM + 10, 0); 
-    return entryDate > targetDate;
+  const getDailySchedule = (dayRow: any) => {
+    const { userSchedule, userScheduleType, date } = dayRow;
+    const dateObj = new Date(date + 'T12:00:00');
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const weekDay = days[dateObj.getDay()];
+    
+    if (userScheduleType === 'FLEXIBLE' && userSchedule && userSchedule[weekDay]) {
+      return userSchedule[weekDay];
+    }
+    
+    if (userSchedule) {
+      const isWeekend = weekDay === 'saturday' || weekDay === 'sunday';
+      return {
+        active: !isWeekend,
+        startTime: userSchedule.startTime || '08:00',
+        lunchDuration: userSchedule.lunchDuration || 60,
+        endTime: userSchedule.endTime || '17:00'
+      };
+    }
+    
+    const isWeekend = weekDay === 'saturday' || weekDay === 'sunday';
+    return {
+      active: !isWeekend,
+      startTime: '08:00',
+      lunchDuration: 60,
+      endTime: '17:00'
+    };
+  };
+
+  const getDayStatus = (dayRow: any) => {
+    const schedule = getDailySchedule(dayRow);
+    
+    if (!schedule.active) {
+       if (!dayRow.hasEntries) return { color: 'text-gray-400 bg-gray-100', label: 'Folga', type: 'off' };
+       return { color: 'text-purple-700 bg-purple-100', label: 'Extra (Folga)', type: 'extra-off' };
+    }
+    
+    if (!dayRow.hasEntries) {
+       return { color: 'text-red-700 bg-red-100', label: 'Falta', type: 'missing' };
+    }
+    
+    let isLateEntry = false;
+    if (dayRow.entry && schedule.startTime) {
+       const entryDate = dayRow.entry.timestamp.toDate();
+       const [targetH, targetM] = schedule.startTime.split(':').map(Number);
+       const targetDate = new Date(entryDate);
+       targetDate.setHours(targetH, targetM + 10, 0); 
+       if (entryDate > targetDate) isLateEntry = true;
+    }
+    
+    let isExtra = false;
+    if (dayRow.exit && schedule.endTime) {
+       const exitDate = dayRow.exit.timestamp.toDate();
+       const [endH, endM] = schedule.endTime.split(':').map(Number);
+       const endDate = new Date(exitDate);
+       endDate.setHours(endH, endM, 0);
+       if ((exitDate.getTime() - endDate.getTime()) > 15 * 60000) {
+         isExtra = true;
+       }
+    }
+    
+    if (!dayRow.exit) {
+       return { color: 'text-orange-700 bg-orange-100', label: 'Incompleto', type: 'incomplete' };
+    }
+    
+    if (isLateEntry) return { color: 'text-yellow-700 bg-yellow-100', label: 'Atraso', type: 'late' };
+    if (isExtra) return { color: 'text-blue-700 bg-blue-100', label: 'Hora Extra', type: 'extra' };
+    
+    return { color: 'text-green-700 bg-green-100', label: 'No Horário', type: 'on-time' };
   };
 
   const getShiftDuration = (entry: TimeEntry) => {
@@ -293,10 +356,43 @@ const AttendanceReports: React.FC = () => {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     
+    const schedule = getDailySchedule(day);
+    let plannedMinutes = 0;
+    if (schedule.active && schedule.startTime && schedule.endTime) {
+        const [sh, sm] = schedule.startTime.split(':').map(Number);
+        const [eh, em] = schedule.endTime.split(':').map(Number);
+        plannedMinutes = ((eh * 60) + em) - ((sh * 60) + sm) - (schedule.lunchDuration || 0);
+    }
+    
+    const diffMinutes = totalMinutes - plannedMinutes;
+    let diffStr = '';
+    
+    if (schedule.active && plannedMinutes > 0) {
+        const plannedH = Math.floor(plannedMinutes / 60);
+        const plannedM = plannedMinutes % 60;
+        const pDisp = `${plannedH}h${plannedM > 0 ? ` ${plannedM}m` : ''}`;
+        
+        if (diffMinutes > 10) { 
+            const dH = Math.floor(diffMinutes / 60);
+            const dM = diffMinutes % 60;
+            diffStr = ` / ${pDisp} (+${dH}h${dM > 0 ? ` ${dM}m` : ''})`;
+        } else if (diffMinutes < -10) {
+            const absDiff = Math.abs(diffMinutes);
+            const dH = Math.floor(absDiff / 60);
+            const dM = absDiff % 60;
+            diffStr = ` / ${pDisp} (-${dH}h${dM > 0 ? ` ${dM}m` : ''})`;
+        } else {
+            diffStr = ` / ${pDisp}`;
+        }
+    } else if (!schedule.active) {
+        diffStr = ` (Extra)`; 
+    }
+    
     return { 
-      display: `${hours}h ${String(minutes).padStart(2,'0')}m`,
+      display: `${hours}h ${String(minutes).padStart(2,'0')}m${diffStr}`,
       totalMinutes,
-      hours
+      hours,
+      diffMinutes
     };
   };
 
@@ -312,9 +408,8 @@ const AttendanceReports: React.FC = () => {
             daysWorked++;
         }
 
-        const date = new Date(day.date + 'T12:00:00');
-        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-        if (!day.hasEntries && !isWeekend) {
+        const schedule = getDailySchedule(day);
+        if (!day.hasEntries && schedule.active) {
             absences++;
         }
     });
@@ -392,14 +487,14 @@ const AttendanceReports: React.FC = () => {
     // === TABELA DE REGISTROS ===
     const rows = reportData.map(day => {
       const dateObj = new Date(day.date + 'T12:00:00');
-      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+      const schedule = getDailySchedule(day);
+      const isWeekend = !schedule.active;
       const weekDay = dateObj.toLocaleString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase();
       const worked = calcWorkedHours(day);
+      const dayStatus = getDayStatus(day);
       
-      let ocorrencia = '';
-      if (isWeekend) ocorrencia = 'Final de Semana';
-      else if (!day.hasEntries) ocorrencia = 'FALTA';
-      else if (day.exit?.forcedClose) ocorrencia = 'Saída Forçada';
+      let ocorrencia = dayStatus.label;
+      if (day.exit?.forcedClose) ocorrencia += ' (Forçada)';
       
       return {
         data: [
@@ -470,9 +565,8 @@ const AttendanceReports: React.FC = () => {
     const totalM = totalMinutes % 60;
     const workedDays = reportData.filter(d => d.hasEntries).length;
     const faltaDays = reportData.filter(d => {
-      const dateObj = new Date(d.date + 'T12:00:00');
-      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-      return !d.hasEntries && !isWeekend;
+      const schedule = getDailySchedule(d);
+      return !d.hasEntries && schedule.active;
     }).length;
     
     let finalY = (doc as any).lastAutoTable.finalY + 5;
@@ -539,9 +633,14 @@ const AttendanceReports: React.FC = () => {
     
     reportData.forEach(day => {
       const dateObj = new Date(day.date + 'T12:00:00');
-      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+      const schedule = getDailySchedule(day);
+      const isWeekend = !schedule.active;
       const worked = calcWorkedHours(day);
+      const dayStatus = getDayStatus(day);
       
+      let obs = dayStatus.label;
+      if (day.exit?.forcedClose) obs += ' (Forçada)';
+
       wsData.push([
         dateObj.toLocaleDateString(),
         getTimeString(day.entry),
@@ -549,8 +648,7 @@ const AttendanceReports: React.FC = () => {
         getTimeString(day.lunchEnd),
         getTimeString(day.exit),
         worked ? worked.display : '--',
-        !day.hasEntries && !isWeekend ? 'Falta' :
-        day.exit?.forcedClose ? 'Saída Forçada' : ''
+        obs
       ]);
     });
     
@@ -759,32 +857,33 @@ const AttendanceReports: React.FC = () => {
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Almoço</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Volta</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Saída</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Obs.</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total / Carga Horária</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                             {reportData.map((day, idx) => {
                                 const dateObj = new Date(day.date + 'T12:00:00');
-                                const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                                const isLateEntry = isLate(day.entry, day.userSchedule?.startTime);
+                                const schedule = getDailySchedule(day);
+                                const dayStatus = getDayStatus(day);
+                                const inativo = !schedule.active;
                                 const worked = calcWorkedHours(day);
 
                                 let totalColor = "text-gray-400";
                                 if (worked) {
-                                  if (worked.hours < 6) totalColor = "text-red-600 font-bold";
-                                  else if (worked.hours < 8) totalColor = "text-yellow-600 font-bold";
+                                  if (worked.diffMinutes && worked.diffMinutes < -10) totalColor = "text-red-600 font-bold";
+                                  else if (worked.diffMinutes && worked.diffMinutes > 10) totalColor = "text-blue-600 font-bold";
                                   else totalColor = "text-green-600 font-bold";
                                 }
 
                                 return (
-                                    <tr key={idx} className={`${isWeekend ? 'bg-gray-50/50' : 'hover:bg-gray-50'}`}>
+                                    <tr key={idx} className={`${inativo ? 'bg-gray-50/50' : 'hover:bg-gray-50'}`}>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {dateObj.toLocaleDateString()} <span className="text-gray-400 font-normal text-xs ml-1">({dateObj.toLocaleDateString(undefined, {weekday: 'short'})})</span>
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             {day.entry ? (
-                                                <span className={`px-2 py-1 rounded text-sm font-bold ${isLateEntry ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                                <span className={`px-2 py-1 rounded text-sm font-bold ${dayStatus.type === 'late' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                                                     {getTimeString(day.entry)}
                                                 </span>
                                             ) : '-'}
@@ -795,16 +894,14 @@ const AttendanceReports: React.FC = () => {
                                             {getTimeString(day.exit)}
                                             {day.exit?.forcedClose && <span className="text-[10px] text-red-500 font-normal">Forçado</span>}
                                         </td>
-                                        <td className={`px-6 py-4 text-center text-sm ${totalColor}`}>
+                                        <td className={`px-6 py-4 text-center text-sm ${totalColor} whitespace-nowrap`}>
                                             {worked ? worked.display : '--'}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <div className="flex flex-col items-center gap-1">
-                                                {!day.hasEntries && !isWeekend ? (
-                                                    <span className="text-red-400 text-xs flex items-center justify-center gap-1"><AlertCircle size={12}/> Falta</span>
-                                                ) : day.hasEntries ? (
-                                                    <span className="text-green-500 text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> OK</span>
-                                                ) : '-'}
+                                                <span className={`text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${dayStatus.color}`}>
+                                                    {dayStatus.label}
+                                                </span>
                                                 
                                                 {/* Map Links for Lunch Entries */}
                                                 {(day.lunchStart?.mapsUrl || day.lunchEnd?.mapsUrl) && (
