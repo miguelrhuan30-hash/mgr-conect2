@@ -69,10 +69,20 @@ export interface UserProfile {
   permissions?: Partial<PermissionSet>; // Individual overrides (takes precedence over sector defaults)
 
   // New HR Fields
+  scheduleType?: 'FIXED' | 'FLEXIBLE';
   workSchedule?: {
-    startTime: string; // "08:00"
-    lunchDuration: number; // minutes, e.g., 60
-    endTime: string; // "17:00"
+    // Legacy mapping (fallback)
+    startTime?: string;
+    lunchDuration?: number;
+    endTime?: string;
+    // New flexible mapping
+    monday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
+    tuesday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
+    wednesday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
+    thursday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
+    friday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
+    saturday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
+    sunday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
   };
   allowedLocationIds?: string[]; // IDs of WorkLocations
 }

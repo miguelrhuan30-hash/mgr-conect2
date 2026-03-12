@@ -124,7 +124,17 @@ const Users: React.FC = () => {
 
   // Inline Editing State (Schedule/Locations)
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editScheduleType, setEditScheduleType] = useState<'FIXED' | 'FLEXIBLE'>('FIXED');
   const [editSchedule, setEditSchedule] = useState({ start: '08:00', lunch: 60, end: '17:00' });
+  const [editFlexibleSchedule, setEditFlexibleSchedule] = useState<any>({
+    monday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+    tuesday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+    wednesday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+    thursday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+    friday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+    saturday: { active: false, startTime: '08:00', lunchDuration: 60, endTime: '12:00' },
+    sunday: { active: false, startTime: '08:00', lunchDuration: 0, endTime: '12:00' },
+  });
   const [editLocations, setEditLocations] = useState<string[]>([]);
   
   // Permission Modal State
@@ -183,23 +193,69 @@ const Users: React.FC = () => {
   // --- INLINE EDITING LOGIC (SCHEDULE) ---
   const startEditing = (user: UserProfile) => {
     setEditingUserId(user.uid);
+    setEditScheduleType(user.scheduleType || 'FIXED');
     setEditSchedule({
       start: user.workSchedule?.startTime || '08:00',
       lunch: user.workSchedule?.lunchDuration || 60,
       end: user.workSchedule?.endTime || '17:00'
     });
+    
+    // Load flexible schedule if it exists, otherwise use defaults
+    const defaultFlex = {
+      monday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+      tuesday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+      wednesday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+      thursday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+      friday: { active: true, startTime: '08:00', lunchDuration: 60, endTime: '17:00' },
+      saturday: { active: false, startTime: '08:00', lunchDuration: 60, endTime: '12:00' },
+      sunday: { active: false, startTime: '08:00', lunchDuration: 0, endTime: '12:00' },
+    };
+    
+    if (user.workSchedule && (user.workSchedule.monday || user.workSchedule.tuesday)) {
+       setEditFlexibleSchedule({
+         monday: user.workSchedule.monday || defaultFlex.monday,
+         tuesday: user.workSchedule.tuesday || defaultFlex.tuesday,
+         wednesday: user.workSchedule.wednesday || defaultFlex.wednesday,
+         thursday: user.workSchedule.thursday || defaultFlex.thursday,
+         friday: user.workSchedule.friday || defaultFlex.friday,
+         saturday: user.workSchedule.saturday || defaultFlex.saturday,
+         sunday: user.workSchedule.sunday || defaultFlex.sunday,
+       });
+    } else {
+       // Auto-fill flexible schedule based on legacy fixed schedule
+       setEditFlexibleSchedule({
+         monday: { active: true, startTime: editSchedule.start, lunchDuration: editSchedule.lunch, endTime: editSchedule.end },
+         tuesday: { active: true, startTime: editSchedule.start, lunchDuration: editSchedule.lunch, endTime: editSchedule.end },
+         wednesday: { active: true, startTime: editSchedule.start, lunchDuration: editSchedule.lunch, endTime: editSchedule.end },
+         thursday: { active: true, startTime: editSchedule.start, lunchDuration: editSchedule.lunch, endTime: editSchedule.end },
+         friday: { active: true, startTime: editSchedule.start, lunchDuration: editSchedule.lunch, endTime: editSchedule.end },
+         saturday: { active: false, startTime: editSchedule.start, lunchDuration: editSchedule.lunch, endTime: editSchedule.end },
+         sunday: { active: false, startTime: editSchedule.start, lunchDuration: 0, endTime: editSchedule.end },
+       });
+    }
+
     setEditLocations(user.allowedLocationIds || []);
   };
 
   const saveEdits = async (uid: string) => {
     setIsSaving(true);
     try {
+      
+      const updatedWorkSchedule = editScheduleType === 'FIXED' ? {
+        startTime: editSchedule.start,
+        lunchDuration: editSchedule.lunch,
+        endTime: editSchedule.end
+      } : {
+        ...editFlexibleSchedule,
+        // Keep fallback values for compatibility
+        startTime: editSchedule.start,
+        lunchDuration: editSchedule.lunch,
+        endTime: editSchedule.end
+      };
+
       await updateDoc(doc(db, CollectionName.USERS, uid), {
-        workSchedule: {
-          startTime: editSchedule.start,
-          lunchDuration: editSchedule.lunch,
-          endTime: editSchedule.end
-        },
+        scheduleType: editScheduleType,
+        workSchedule: updatedWorkSchedule,
         allowedLocationIds: editLocations
       });
       setEditingUserId(null);
@@ -369,17 +425,66 @@ const Users: React.FC = () => {
                     
                     <td className="px-6 py-4">
                        {editingUserId === user.uid ? (
-                         <div className="space-y-2 bg-gray-50 p-3 rounded border border-gray-200 min-w-[200px]">
-                           <div className="flex items-center gap-2">
-                             <Clock size={14} className="text-gray-500"/>
-                             <input type="time" value={editSchedule.start} onChange={e => setEditSchedule({...editSchedule, start: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
-                             <span className="text-xs">às</span>
-                             <input type="time" value={editSchedule.end} onChange={e => setEditSchedule({...editSchedule, end: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
+                         <div className="space-y-3 bg-gray-50 p-3 rounded border border-gray-200 min-w-[300px]">
+                           {/* Tipo de Jornada */}
+                           <div className="flex bg-white rounded border border-gray-200 p-1">
+                             <button
+                               onClick={() => setEditScheduleType('FIXED')}
+                               className={`flex-1 text-xs py-1 rounded text-center ${editScheduleType === 'FIXED' ? 'bg-brand-100 text-brand-700 font-bold' : 'text-gray-500 hover:bg-gray-50'}`}
+                             >
+                               Fixa
+                             </button>
+                             <button
+                               onClick={() => setEditScheduleType('FLEXIBLE')}
+                               className={`flex-1 text-xs py-1 rounded text-center ${editScheduleType === 'FLEXIBLE' ? 'bg-brand-100 text-brand-700 font-bold' : 'text-gray-500 hover:bg-gray-50'}`}
+                             >
+                               Flexível
+                             </button>
                            </div>
-                           <div className="flex items-center gap-2">
-                             <span className="text-xs text-gray-500">Almoço (min):</span>
-                             <input type="number" value={editSchedule.lunch} onChange={e => setEditSchedule({...editSchedule, lunch: parseInt(e.target.value)})} className="text-xs border rounded w-16 px-1 py-0.5 bg-white text-gray-900" />
-                           </div>
+
+                           {editScheduleType === 'FIXED' ? (
+                             <>
+                               <div className="flex items-center gap-2">
+                                 <Clock size={14} className="text-gray-500"/>
+                                 <input type="time" value={editSchedule.start} onChange={e => setEditSchedule({...editSchedule, start: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
+                                 <span className="text-xs">às</span>
+                                 <input type="time" value={editSchedule.end} onChange={e => setEditSchedule({...editSchedule, end: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
+                               </div>
+                               <div className="flex items-center gap-2">
+                                 <span className="text-xs text-gray-500">Almoço (min):</span>
+                                 <input type="number" value={editSchedule.lunch} onChange={e => setEditSchedule({...editSchedule, lunch: parseInt(e.target.value)})} className="text-xs border rounded w-16 px-1 py-0.5 bg-white text-gray-900" />
+                               </div>
+                             </>
+                           ) : (
+                             <div className="space-y-2 border-t border-gray-200 pt-2">
+                               {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
+                                 const dayNames: any = { monday: 'Seg', tuesday: 'Ter', wednesday: 'Qua', thursday: 'Qui', friday: 'Sex', saturday: 'Sáb', sunday: 'Dom' };
+                                 const dayData = editFlexibleSchedule[day];
+                                 return (
+                                   <div key={day} className={`flex items-center justify-between gap-2 p-1 rounded ${dayData.active ? 'bg-white border text-gray-900' : 'bg-transparent text-gray-400 opacity-60'}`}>
+                                     <label className="flex items-center gap-2 min-w-[45px] cursor-pointer">
+                                       <input 
+                                         type="checkbox" 
+                                         checked={dayData.active} 
+                                         onChange={e => setEditFlexibleSchedule({ ...editFlexibleSchedule, [day]: { ...dayData, active: e.target.checked } })}
+                                         className="rounded border-gray-300 text-brand-600 focus:ring-brand-500 w-3 h-3"
+                                       />
+                                       <span className="text-xs font-medium">{dayNames[day]}</span>
+                                     </label>
+                                     <div className="flex items-center gap-1 flex-1">
+                                       <input disabled={!dayData.active} type="time" value={dayData.startTime} onChange={e => setEditFlexibleSchedule({ ...editFlexibleSchedule, [day]: { ...dayData, startTime: e.target.value } })} className="text-xs border rounded px-1 py-0.5 w-[65px] bg-white text-gray-900" />
+                                       <span className="text-[10px]">-</span>
+                                       <input disabled={!dayData.active} type="time" value={dayData.endTime} onChange={e => setEditFlexibleSchedule({ ...editFlexibleSchedule, [day]: { ...dayData, endTime: e.target.value } })} className="text-xs border rounded px-1 py-0.5 w-[65px] bg-white text-gray-900" />
+                                     </div>
+                                     <div className="flex items-center gap-1">
+                                       <Clock size={10} className="text-gray-400"/>
+                                       <input disabled={!dayData.active} type="number" title="Minutos de Almoço" value={dayData.lunchDuration} onChange={e => setEditFlexibleSchedule({ ...editFlexibleSchedule, [day]: { ...dayData, lunchDuration: parseInt(e.target.value) } })} className="text-xs border rounded w-12 px-1 py-0.5 bg-white text-gray-900" />
+                                     </div>
+                                   </div>
+                                 );
+                               })}
+                             </div>
+                           )}
                            <div className="space-y-1">
                              <p className="text-xs font-bold text-gray-700 flex items-center gap-1"><MapPin size={12}/> Locais Permitidos:</p>
                              <div className="flex flex-wrap gap-1">
@@ -400,7 +505,12 @@ const Users: React.FC = () => {
                            {user.workSchedule ? (
                              <div className="flex flex-col gap-1">
                                <span className="text-xs flex items-center gap-1 text-gray-600">
-                                 <Clock size={12}/> {user.workSchedule.startTime} - {user.workSchedule.endTime} ({user.workSchedule.lunchDuration}m)
+                                 <Clock size={12}/> 
+                                 {user.scheduleType === 'FLEXIBLE' ? (
+                                   <span className="text-brand-600 font-medium">Escala Flexível (ver detalhes)</span>
+                                 ) : (
+                                   <span>{user.workSchedule.startTime} - {user.workSchedule.endTime} ({user.workSchedule.lunchDuration}m)</span>
+                                 )}
                                </span>
                                <span className="text-xs flex items-center gap-1 text-gray-500">
                                  <MapPin size={12}/> {user.allowedLocationIds?.length || 0} locais
