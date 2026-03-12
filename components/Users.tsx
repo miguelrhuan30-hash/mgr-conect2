@@ -15,6 +15,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canManageUsers: false,
   canManageSettings: false,
   canManageSectors: false,
+  canViewLogs: false,
   canViewTasks: true,
   canCreateTasks: false,
   canEditTasks: false,
@@ -44,6 +45,7 @@ const PERMISSION_GROUPS = [
       { key: 'canManageUsers', label: 'Gerenciar Usuários' },
       { key: 'canManageSectors', label: 'Gerenciar Cargos e Setores' },
       { key: 'canManageSettings', label: 'Configurações do Sistema' },
+      { key: 'canViewLogs', label: 'Acesso aos Logs do Sistema' },
     ]
   },
   {

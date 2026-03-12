@@ -102,7 +102,7 @@ const Layout: React.FC = () => {
     // Management Section
     { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') },
     { to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto', visible: can('canViewAttendanceReports') },
-    { to: '/app/logs', icon: Activity, label: 'Log do Sistema', visible: can('canManageSettings') },
+    { to: '/app/logs', icon: Activity, label: 'Log do Sistema', visible: userProfile?.permissions?.canViewLogs === true || userProfile?.role === 'admin' },
     
     // Admin Section
     { to: '/app/usuarios', icon: Users, label: 'Equipe & RH', visible: can('canManageUsers') },

@@ -122,11 +122,13 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
     try {
       const clientName = clients.find(c => c.id === clientId)?.name || 'Cliente N/A';
       const projectName = projects.find(p => p.id === projectId)?.name || 'Projeto Geral';
-      const assigneeName = users.find(u => u.id === assigneeId)?.displayName || 'Não Atribuído';
+      const assigneeUser = users.find(u => u.id === assigneeId);
+      const assigneeName = assigneeUser?.displayName || assigneeUser?.email || 'Não Atribuído';
       
-      const assignedUserNames = assignedUsers.map(uid => 
-        users.find(u => u.id === uid)?.displayName || 'Desconhecido'
-      );
+      const assignedUserNames = assignedUsers.map(uid => {
+        const u = users.find(usr => usr.id === uid);
+        return u?.displayName || u?.email || 'Desconhecido';
+      });
 
       const taskPayload = {
         title,
@@ -297,7 +299,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                     >
                       <option value="">Selecione...</option>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.displayName}</option>)}
+                      {users.map(u => <option key={u.id} value={u.id}>{u.displayName || u.email}</option>)}
                     </select>
                   </div>
                 </div>
@@ -328,9 +330,9 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                            {u.photoURL ? (
                              <img src={u.photoURL} className="w-4 h-4 rounded-full object-cover" alt="" />
                            ) : (
-                             <div className="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold">{u.displayName.charAt(0)}</div>
+                             <div className="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold">{(u.displayName || u.email || 'U').charAt(0).toUpperCase()}</div>
                            )}
-                           {u.displayName.split(' ')[0]}
+                           {(u.displayName || u.email || 'Usuário').split(' ')[0]}
                         </label>
                       ))}
                    </div>

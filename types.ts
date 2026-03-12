@@ -11,6 +11,7 @@ export interface PermissionSet {
   canManageUsers: boolean;      // Create, edit, delete users, change sectors
   canManageSettings: boolean;   // CMS, Landing Page, System Configs
   canManageSectors: boolean;    // Create/Edit Sectors (Roles)
+  canViewLogs?: boolean;
 
   // Operational (Tasks/OS)
   canViewTasks: boolean;
