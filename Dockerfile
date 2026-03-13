@@ -15,6 +15,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
+COPY routes ./routes
+COPY firebase-admin.js ./firebase-admin.js
 COPY server.js ./server.js
 EXPOSE 8080
 CMD ["node", "server.js"]
