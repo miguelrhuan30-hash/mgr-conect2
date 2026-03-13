@@ -387,6 +387,7 @@ const Users: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Setor & Acesso</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jornada/Locais</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Papel (Role)</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cofre 🏆</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
                 </tr>
               </thead>
@@ -560,7 +561,22 @@ const Users: React.FC = () => {
                       </select>
                     </td>
 
-                    <td className="px-6 py-4 text-right">
+                                         <td className="px-6 py-4">
+                        {typeof user.accumulatedPrize === 'number' ? (
+                          <div className="flex flex-col items-start">
+                            <span className="text-sm font-bold text-yellow-700 bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-200">
+                              R$ {user.accumulatedPrize.toFixed(2)}
+                            </span>
+                            {user.currentPoints ? (
+                              <span className="text-[10px] text-gray-400 mt-1">{user.currentPoints} pts</span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">Sem saldo</span>
+                        )}
+                     </td>
+
+                     <td className="px-6 py-4 text-right">
                        {editingUserId === user.uid ? (
                          <div className="flex gap-2 justify-end">
                             <button onClick={() => setEditingUserId(null)} className="text-xs text-gray-500 hover:text-gray-700">Cancelar</button>

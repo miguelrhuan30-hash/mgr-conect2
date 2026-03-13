@@ -29,6 +29,7 @@ const LandingPage = lazy(() => import('./components/LandingPage'));
 const LandingPageEditor = lazy(() => import('./components/LandingPageEditor'));
 const SystemLogs = lazy(() => import('./components/SystemLogs'));
 const TechnicianStats = lazy(() => import('./components/TechnicianStats')); // SPRINT 5
+const CampaignManagement = lazy(() => import('./components/CampaignManagement')); // SPRINT 9
 
 // Extracted EnforceShiftLock Component
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean, children?: React.ReactNode }) => {
@@ -240,6 +241,10 @@ const AppContent: React.FC = () => {
             
             <Route path="relatorios-ponto" element={
               hasPermission('canViewAttendanceReports') ? <AttendanceReports /> : <Navigate to="/app" />
+            } />
+
+            <Route path="campanhas" element={
+              hasPermission('canManageSettings') ? <CampaignManagement /> : <Navigate to="/app" />
             } />
 
             {/* ← ROTA NOVA */}

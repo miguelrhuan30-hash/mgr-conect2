@@ -4,6 +4,7 @@ export { Timestamp };
 
 // --- CAMPAIGN CONFIG ---
 export interface CampaignConfig {
+  name?: string;
   prizeValue: number;
   startDate: Timestamp;
   endDate: Timestamp;

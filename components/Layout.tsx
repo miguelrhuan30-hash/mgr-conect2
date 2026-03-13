@@ -27,7 +27,8 @@ import {
   Activity,
   Trophy,
   Download,
-  RefreshCcw
+  RefreshCcw,
+  Target
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -77,6 +78,7 @@ const Layout: React.FC = () => {
       '/app/locais':           'Locais de Trabalho',
       '/app/logs':             'Log do Sistema',
       '/app/ranking':          'Ranking da Equipe',
+      '/app/campanhas':        'Gestão de Campanhas',
       '/app/perfil':           'Meu Perfil',
     };
 
@@ -157,6 +159,7 @@ const Layout: React.FC = () => {
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') }, // Renomeado
     
     // Management Section
+    { to: '/app/campanhas', icon: Target, label: 'Campanhas (MGR Coins)', visible: can('canManageSettings') },
     { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') },
     { to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto', visible: can('canViewAttendanceReports') },
     { to: '/app/logs', icon: Activity, label: 'Log do Sistema', visible: userProfile?.permissions?.canViewLogs === true || userProfile?.role === 'admin' },
