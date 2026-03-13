@@ -7,7 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { compressImage } from '../utils/compressor';
 import { 
   Users as UsersIcon, ShieldCheck, Loader2, Camera, MapPin, Clock, 
-  Settings, FileText, Briefcase, Package, DollarSign, X, Save, Shield
+  Settings, FileText, Briefcase, Package, DollarSign, X, Save, Shield,
+  AlertTriangle
 } from 'lucide-react';
 
 // Default permissions structure (same as SectorManagement for consistency)
@@ -537,7 +538,22 @@ const Users: React.FC = () => {
                                  {user.scheduleType === 'FLEXIBLE' ? (
                                    <span className="text-brand-600 font-medium">Escala FlexÃ­vel (ver detalhes)</span>
                                  ) : (
-                                   <span>{user.workSchedule.startTime} - {user.workSchedule.endTime} ({user.workSchedule.lunchDuration}m)</span>
+                                   <div className="flex items-center gap-1">
+                                     <span>{user.workSchedule.startTime} - {user.workSchedule.endTime} ({user.workSchedule.lunchDuration}m)</span>
+                                     {(() => {
+                                       const [sh, sm] = (user.workSchedule.startTime || "00:00").split(':').map(Number);
+                                       const [eh, em] = (user.workSchedule.endTime || "00:00").split(':').map(Number);
+                                       const diffHrs = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+                                       if (diffHrs > 6 && (user.workSchedule.lunchDuration || 0) < 60) {
+                                         return (
+                                           <span title="Risco de Não Conformidade (Art. 71 CLT)">
+                                             <AlertTriangle size={12} className="text-yellow-500" />
+                                           </span>
+                                         );
+                                       }
+                                       return null;
+                                     })()}
+                                   </div>
                                  )}
                                </span>
                                <span className="text-xs flex items-center gap-1 text-gray-500">

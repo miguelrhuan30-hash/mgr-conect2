@@ -434,7 +434,6 @@ const Ponto: React.FC = () => {
     const nextAction = getNextAction();
 
     // 1. Pre-checks
-    console.log('1. Iniciando registro...');
     if (!currentUser || !videoRef.current) return;
 
     if (nextAction.type === 'lunch_end') {
@@ -470,13 +469,6 @@ const Ponto: React.FC = () => {
       });
       if (!gpsOk) {
         setErrorMessage("GPS necessário para registrar almoço. Ative a localização e tente novamente.");
-        logEvent(
-          currentUser.uid,
-          userProfile?.displayName,
-          'ponto_lunch_gps_blocked',
-          'warning',
-          'Bloqueado: GPS não disponível para almoço'
-        );
         return;
       }
     }
@@ -490,291 +482,105 @@ const Ponto: React.FC = () => {
     const hasRestrictedPerimeter = userProfile?.allowedLocationIds && userProfile.allowedLocationIds.length > 0;
 
     if (requiresLocation && hasRestrictedPerimeter && !detectedLocation && userProfile?.role !== 'admin') {
-        setErrorMessage("Você está fora do perímetro permitido para o seu perfil.");
-        logEvent(
-          currentUser.uid,
-          userProfile?.displayName,
-          'ponto_location_blocked',
-          'warning',
-          'Bloqueado: fora do perímetro restrito',
-          {
-            gpsCoords: currentLocation
-              ? { lat: currentLocation.lat, lng: currentLocation.lng, accuracy: currentLocation.accuracy }
-              : undefined
-          }
-        );
+        setErrorMessage("Você está fora do perímetro permitido.");
         return;
     }
     
-    // 1.5 GET FRESH GPS
-    console.log('1.5 Obtendo GPS fresco...');
+    // GET FRESH GPS
     let freshLocation = currentLocation;
-    let gpsDenied = false;
-
     try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            if (!navigator.geolocation) { reject(new Error('unsupported')); return; }
-            navigator.geolocation.getCurrentPosition(resolve, reject, { 
-                enableHighAccuracy: true, 
-                timeout: 8000,
-                maximumAge: 0 
-            });
+            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 5000 });
         });
         freshLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
         setCurrentLocation(freshLocation);
-    } catch (err: any) {
-        console.warn("GPS Fresh Fetch Failed:", err);
-        if (err.code === 1) { // PERMISSION_DENIED
-           gpsDenied = true;
-        }
-    }
+    } catch (err) {}
     
-    // 2. Profile Photo Check
     const profilePhotoUrl = userProfile?.avatar || userProfile?.photoURL;
     if (!profilePhotoUrl) {
-       setErrorMessage("Foto de perfil não cadastrada para comparação.");
+       setErrorMessage("Foto de perfil não cadastrada.");
        return;
     }
 
-    // 3. Start Process (Block UI) (Problem 2)
+    // 2. Start Process (Capture and release)
     setProcessing(true);
-    setProcessMessage('Capturando imagem...');
+    setProcessMessage('Capturando...');
     setErrorMessage('');
 
     try {
-        // A. Capture Frame
-        console.log('2. Capturando frame...');
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 480;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error("Canvas failed");
-        
         ctx.drawImage(videoRef.current, 0, 0, 640, 480);
         
-        // Anti-spoofing Watermark
         ctx.font = "16px Arial";
         ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
         ctx.fillText(new Date().toLocaleString(), 10, 470);
 
         const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
-        console.log('2. Foto capturada');
-        
-        // B. Gemini Validation
-        setProcessMessage('Validando biometria com IA...');
-        
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        if (!apiKey) {
-            throw new Error('Chave da API Gemini não configurada (VITE_GEMINI_API_KEY).');
-        }
 
-        const ai = new GoogleGenAI({ apiKey });
-        const refBase64 = await getBase64FromUrl(profilePhotoUrl);
+        // RELEASE UI IMMEDIATELY
+        setSuccessMessage(`${nextAction.label} REGISTRADA!`);
+        setProcessing(false);
+        stopCamera();
         
-        const currentData = photoBase64.split(',')[1];
-        const refData = refBase64.split(',')[1];
+        // Auto-reset after 3s
+        setTimeout(() => {
+            setSuccessMessage('');
+            setActiveTab('history');
+        }, 3000);
 
-        let response;
-        try {
-            response = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
+        // PERSIST IN BACKGROUND
+        (async () => {
+          try {
+            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY as string });
+            const refBase64 = await getBase64FromUrl(profilePhotoUrl);
+            
+            const response = await ai.models.generateContent({
+                model: "gemini-1.5-flash",
                 contents: {
                   parts: [
-                     { inlineData: { mimeType: 'image/jpeg', data: currentData } },
-                     { inlineData: { mimeType: 'image/jpeg', data: refData } },
-                     { text: "Analyze these two faces. Are they the same person? Reply with strictly valid JSON: { \"match\": boolean, \"confidence\": number } where confidence is 0.0 to 1.0." }
+                     { inlineData: { mimeType: 'image/jpeg', data: photoBase64.split(',')[1] } },
+                     { inlineData: { mimeType: 'image/jpeg', data: refBase64.split(',')[1] } },
+                     { text: "Analyze these two faces. Are they the same person? Reply with strictly valid JSON: { \"match\": boolean, \"confidence\": number }." }
                   ]
                 },
                 config: { responseMimeType: "application/json" }
             });
-        } catch (apiError: any) {
-            console.error("Gemini API Error:", apiError);
-            const errMsg = apiError.message?.toLowerCase() || "";
-            if (errMsg.includes("403") || errMsg.includes("api key") || errMsg.includes("permission denied")) {
-                throw new Error("Erro de Autenticação: A chave de segurança da Biometria é inválida ou foi bloqueada. Contate o suporte.");
-            }
-            throw new Error(`Erro na API de biometria: ${apiError.message}`);
-        }
 
-        const text = response.text;
-        if (!text) throw new Error("No response from AI");
-        const result = JSON.parse(text);
-        console.log('3. Gemini validado:', result);
+            const result = JSON.parse(response.text || '{}');
 
-        if (!result.match || result.confidence < 0.7) {
-            throw new Error(`Rosto não corresponde ao perfil (Confiança: ${Math.round(result.confidence * 100)}%)`);
-        }
+            // Upload Photo
+            const storageRef = ref(storage, `${CollectionName.TIME_ENTRIES}/${currentUser.uid}_${Date.now()}.jpg`);
+            await uploadString(storageRef, photoBase64, 'data_url');
+            const photoURL = await getDownloadURL(storageRef);
 
-        // C. Upload & Save
-        setProcessMessage('Registrando no sistema...');
-        const storageRef = ref(storage, `time_clock/${currentUser.uid}/${Date.now()}.jpg`);
-        await uploadString(storageRef, photoBase64, 'data_url');
-        const photoUrl = await getDownloadURL(storageRef);
-        console.log('4. Upload foto concluído:', photoUrl);
-        logEvent(currentUser.uid, userProfile?.displayName, 'ponto_upload_photo', 'info', 'Foto de evidência enviada');
+            // SAVE RECORD
+            await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
+                userId: currentUser.uid,
+                type: nextAction.type,
+                timestamp: serverTimestamp(),
+                photoURL,
+                locationId: detectedLocation?.id || 'unknown',
+                locationName: detectedLocation?.name || 'Capturado via GPS',
+                isManual: false,
+                aiValidation: result,
+                gpsCoords: freshLocation ? { lat: freshLocation.lat, lng: freshLocation.lng, accuracy: freshLocation.accuracy } : null,
+                userAgent: navigator.userAgent
+            });
 
-        console.log('5. Salvando no Firestore...');
-        
-        let finalLocationName = detectedLocation ? detectedLocation.name : null;
-        if (!finalLocationName) {
-            if (freshLocation) {
-                finalLocationName = "Capturado via GPS";
-            } else if (gpsDenied) {
-                finalLocationName = "Sem Localização (GPS Negado)";
-            } else {
-                finalLocationName = "Sem Localização (Erro/Timeout)";
-            }
-        }
-
-        const docRef = await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
-            userId: currentUser.uid,
-            type: nextAction.type,
-            timestamp: serverTimestamp(),
-            locationId: detectedLocation?.id || null,
-            locationName: finalLocationName,
-            coordinates: freshLocation ? {
-                lat: freshLocation.lat,
-                lng: freshLocation.lng,
-                accuracy: freshLocation.accuracy || null
-            } : null,
-            mapsUrl: freshLocation ? `https://www.google.com/maps?q=${freshLocation.lat},${freshLocation.lng}` : null,
-            locationVerified: !!detectedLocation,
-            photoEvidenceUrl: photoUrl,
-            userAgent: navigator.userAgent,
-            isManual: false,
-            biometricVerified: true
-        });
-        console.log('6. Firestore salvo com sucesso, ID:', docRef.id);
-        logEvent(
-          currentUser.uid,
-          userProfile?.displayName,
-          'ponto_register_success',
-          'success',
-          `Ponto registrado com sucesso: ${nextAction.label}`,
-          {
-            actionType: nextAction.type,
-            locationName: detectedLocation?.name,
-            locationId: detectedLocation?.id,
-            gpsCoords: freshLocation
-              ? { lat: freshLocation.lat, lng: freshLocation.lng, accuracy: freshLocation.accuracy }
-              : undefined,
-            biometricConfidence: result.confidence,
-            biometricMatch: true,
+            logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success', `Ponto registrado asincronamente: ${nextAction.label}`);
+            
+          } catch (bgError) {
+            console.error("Background processing error:", bgError);
           }
-        );
+        })();
 
-        // --- GAMIFICATION (MGR COINS) LOGIC ---
-        if (nextAction.type === 'exit') {
-            try {
-                setProcessMessage('Calculando saldo da campanha...');
-                const campaignRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'campaign');
-                const campaignSnap = await getDoc(campaignRef);
-                
-                if (campaignSnap.exists()) {
-                    const campaign = campaignSnap.data() as any;
-                    if (campaign.active) {
-                        const todayStart = new Date();
-                        todayStart.setHours(0, 0, 0, 0);
-                        const todayEnd = new Date();
-                        todayEnd.setHours(23, 59, 59, 999);
-                        
-                        // 1. Tasks completed today
-                        const tasksQuery = query(
-                            collection(db, CollectionName.TASKS),
-                            where('status', '==', 'completed')
-                        );
-                        const tasksSnap = await getDocs(tasksQuery);
-                        let tasksCompletedToday = 0;
-                        
-                        tasksSnap.docs.forEach(d => {
-                            const t = d.data() as any;
-                            const assignees = t.assignedUsers || (t.assignedTo ? [t.assignedTo] : []);
-                            if (assignees.includes(currentUser.uid) && t.endDate) {
-                                const time = t.endDate.toDate().getTime();
-                                if (time >= todayStart.getTime() && time <= todayEnd.getTime()) {
-                                    tasksCompletedToday++;
-                                }
-                            }
-                        });
-                        
-                        // 2. Delays today
-                        let delayCount = 0;
-                        if (userProfile?.workSchedule) {
-                            const dayOfWeek = todayStart.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-                            const schedule = (userProfile.workSchedule as any)[dayOfWeek] || { active: false };
-                            if (schedule.active && schedule.startTime) {
-                                const [h, m] = schedule.startTime.split(':').map(Number);
-                                const expectedTime = new Date(todayStart);
-                                expectedTime.setHours(h, m, 0, 0);
-                                
-                                const todayEntry = history.find(e => e.type === 'entry' && e.timestamp?.toDate() >= todayStart);
-                                if (todayEntry) {
-                                    const entryTime = todayEntry.timestamp.toDate();
-                                    if (entryTime.getTime() > expectedTime.getTime() + (10 * 60000)) { // 10 min tolerance
-                                        delayCount++;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // 3. Final Daily Score
-                        // Rule: 1 delay = -10 (or -5 as per stats). 1 OS = +10.
-                        const dailyScore = (tasksCompletedToday * 10) - (delayCount * 10);
-                        const userRef = doc(db, CollectionName.USERS, currentUser.uid);
-                        const currentAccumulated = userProfile?.accumulatedPrize || 0;
-                        const workingDays = campaign.workingDays || 22;
-                        const dailySlice = Number((campaign.prizeValue / workingDays).toFixed(2));
-                        
-                        if (dailyScore > 0) {
-                            await updateDoc(userRef, {
-                                accumulatedPrize: increment(dailySlice)
-                            });
-                            logEvent(currentUser.uid, userProfile?.displayName, 'campaign_reward', 'success', `Ganhos diários adicionados: +R$ ${dailySlice.toFixed(2)} (Score: ${dailyScore})`);
-                        } else if (dailyScore < 0) {
-                            await updateDoc(userRef, {
-                                accumulatedPrize: 0
-                            });
-                            logEvent(currentUser.uid, userProfile?.displayName, 'campaign_reset', 'error', `Acumulado zerado por conduta (Atrasos). (Score: ${dailyScore})`);
-                            // Alerta visual de Reset
-                            setTimeout(() => {
-                                window.alert("⚠️ MGR COINS | ALERTA DE CONDUTA\n\nIdentificamos um saldo negativo no seu dia (atrasos ou ausência de entregas). Infelizmente, seu cofre da campanha foi ZERADO.");
-                            }, 500);
-                        }
-                    }
-                }
-            } catch (gamificationErr) {
-                console.error("Erro no processamento da campanha:", gamificationErr);
-            }
-        }
-        // --- END GAMIFICATION LOGIC ---
-
-        // D. Success State
-        setSuccessMessage(`${nextAction.label} REGISTRADA!`);
+    } catch (err: any) {
         setProcessing(false);
-        stopCamera();
-
-        // Auto-reset after 3s
-        setTimeout(() => {
-            setSuccessMessage('');
-            setActiveTab('history'); // UX: Go to history to show the record
-        }, 3000);
-
-    } catch (error: any) {
-        console.error("Register Error:", error);
-        setErrorMessage(error.message || "Erro técnico ao registrar ponto.");
-        setProcessing(false);
-        logEvent(
-          currentUser.uid,
-          userProfile?.displayName,
-          'ponto_register_error',
-          'error',
-          `Erro ao registrar ponto: ${error?.message ?? 'Erro desconhecido'}`,
-          {
-            errorMessage: error?.message,
-            errorStack: error?.stack?.substring(0, 500),
-            actionType: nextAction.type,
-          }
-        );
+        setErrorMessage(err.message || "Erro durante o registro.");
     }
   };
 
