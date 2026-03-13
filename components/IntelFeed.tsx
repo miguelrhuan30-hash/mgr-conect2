@@ -5,9 +5,10 @@ import { IntelNote } from '../types';
 
 interface IntelFeedProps {
     notes: IntelNote[];
+    onApply?: (noteId: string) => Promise<void>;
 }
 
-const IntelFeed: React.FC<IntelFeedProps> = ({ notes }) => {
+const IntelFeed: React.FC<IntelFeedProps> = ({ notes, onApply }) => {
     if (notes.length === 0) {
         return (
             <div className="bg-white rounded-xl border border-gray-100 p-12 flex flex-col items-center text-center">
@@ -33,7 +34,7 @@ const IntelFeed: React.FC<IntelFeedProps> = ({ notes }) => {
             
             <div className="grid grid-cols-1 gap-6">
                 {notes.map((note) => (
-                    <IntelCard key={note.id} note={note} />
+                    <IntelCard key={note.id} note={note} onApply={onApply} />
                 ))}
             </div>
         </div>

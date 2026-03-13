@@ -80,6 +80,135 @@ router.post('/notas', async (req, res) => {
 });
 
 /**
+ * @route   POST /api/intel/apply
+ * @desc    Aplica uma sugestão da IA criando o card correspondente no Hub
+ */
+router.post('/apply', async (req, res) => {
+    const { noteId } = req.body;
+
+    if (!noteId) {
+        return res.status(400).json({ error: 'O ID da nota é obrigatório.' });
+    }
+
+    try {
+        const noteRef = dbAdmin.collection('notas_intel').doc(noteId);
+        const noteDoc = await noteRef.get();
+
+        if (!noteDoc.exists) {
+            return res.status(404).json({ error: 'Nota não encontrada.' });
+        }
+
+        const noteData = noteDoc.data();
+        const { analysis, text, userId, createdBy } = noteData;
+
+        if (!analysis) {
+            return res.status(400).json({ error: 'Esta nota não possui uma análise válida para aplicação.' });
+        }
+
+        // Mapeamento de Coleção baseado na Categoria/Metodologia
+        let collectionName = 'hub_eisenhower'; // Default
+        const category = (analysis.category || '').toLowerCase();
+
+        if (category.includes('ishikawa')) collectionName = 'hub_ishikawa';
+        else if (category.includes('canvas')) collectionName = 'hub_canvas';
+        else if (category.includes('roadmap')) collectionName = 'hub_roadmap';
+        else if (category.includes('eisenhower')) collectionName = 'hub_eisenhower';
+
+        // Criar o documento no Hub
+        const hubDocRef = await dbAdmin.collection(collectionName).add({
+            content: analysis.suggestion,
+            originalNote: text,
+            urgency: analysis.urgency,
+            userId,
+            createdBy,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'pending',
+            metadata: analysis
+        });
+
+        // Atualizar a nota original
+        await noteRef.update({
+            applied: true,
+            hub_sync: true,
+            hub_reference: hubDocRef.id,
+            hub_collection: collectionName
+        });
+
+        res.json({ 
+            success: true, 
+            hubId: hubDocRef.id, 
+            collection: collectionName 
+        });
+
+    } catch (error) {
+        console.error("Erro ao aplicar sugestão:", error);
+        res.status(500).json({ error: 'Falha na injeção de dados no Hub.' });
+    }
+});
+
+/**
+ * @route   GET /api/intel/summary
+ * @desc    Gera um resumo estratégico semanal das últimas 50 notas
+ */
+router.get('/summary', async (req, res) => {
+    try {
+        const snapshot = await dbAdmin.collection('notas_intel')
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get();
+
+        const notes = snapshot.docs.map(doc => doc.data().text);
+
+        if (notes.length === 0) {
+            return res.json({ summary: "Ainda não há dados suficientes para um resumo estratégico." });
+        }
+
+        const prompt = `
+            Analise as seguintes ${notes.length} observações operacionais e gere um "Resumo Estratégico Semanal" curto e direto (máx 3 parágrafos).
+            Identifique padrões de falha, gargalos ou oportunidades de melhoria.
+            
+            Observações:
+            ${notes.join('\n- ')}
+        `;
+
+        const message = await anthropic.messages.create({
+            model: "claude-3-5-sonnet-20240620",
+            max_tokens: 1000,
+            system: "Você é um consultor de estratégia sênior. Responda em Português de forma profissional.",
+            messages: [{ role: "user", content: prompt }],
+        });
+
+        res.json({ summary: message.content[0].text });
+
+    } catch (error) {
+        console.error("Erro ao gerar resumo estratégico:", error);
+        res.status(500).json({ error: 'Falha ao processar resumo estratégico.' });
+    }
+});
+
+/**
+ * @route   GET /api/intel/stats
+ * @desc    Busca métricas rápidas do módulo Intel
+ */
+router.get('/stats', async (req, res) => {
+    try {
+        const snapshot = await dbAdmin.collection('notas_intel').get();
+        const docs = snapshot.docs.map(d => d.data());
+
+        const stats = {
+            total: docs.length,
+            critical: docs.filter(d => d.analysis?.urgency === 'critical').length,
+            applied: docs.filter(d => d.applied).length,
+            opportunities: docs.filter(d => d.analysis?.sentiment === 'positive').length
+        };
+
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar estatísticas.' });
+    }
+});
+
+/**
  * @route   GET /api/intel/config
 
 export default router;

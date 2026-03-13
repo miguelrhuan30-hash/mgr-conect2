@@ -10,7 +10,8 @@ import {
     ShieldAlert, 
     Clock, 
     User,
-    Check
+    Check,
+    Loader2
 } from 'lucide-react';
 import { IntelNote } from '../types';
 import { format } from 'date-fns';
@@ -18,10 +19,22 @@ import { ptBR } from 'date-fns/locale';
 
 interface IntelCardProps {
     note: IntelNote;
+    onApply?: (noteId: string) => Promise<void>;
 }
 
-const IntelCard: React.FC<IntelCardProps> = ({ note }) => {
+const IntelCard: React.FC<IntelCardProps> = ({ note, onApply }) => {
     const { analysis } = note;
+    const [applying, setApplying] = React.useState(false);
+
+    const handleApply = async () => {
+        if (!onApply || !note.id || applying) return;
+        setApplying(true);
+        try {
+            await onApply(note.id);
+        } finally {
+            setApplying(false);
+        }
+    };
 
     const getUrgencyStyles = (urgency: string = 'low') => {
         switch (urgency) {
@@ -105,8 +118,24 @@ const IntelCard: React.FC<IntelCardProps> = ({ note }) => {
                             </span>
                         </div>
 
-                        <button className="flex items-center gap-1.5 text-xs font-bold text-brand-700 hover:text-brand-800 bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-200 transition-colors">
-                            Aplicar Sugestão <ArrowUpRight size={14} />
+                        <button 
+                            onClick={handleApply}
+                            disabled={note.applied || applying}
+                            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all
+                                ${note.applied 
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default' 
+                                    : 'text-brand-700 hover:text-brand-800 bg-brand-50 border-brand-200 active:scale-95'}
+                                ${applying ? 'opacity-50 cursor-wait' : ''}
+                            `}
+                        >
+                            {note.applied ? (
+                                <><Check size={14} /> Aplicado</>
+                            ) : (
+                                <>
+                                    {applying ? <Loader2 size={14} className="animate-spin" /> : 'Aplicar Sugestão'} 
+                                    <ArrowUpRight size={14} />
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>

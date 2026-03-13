@@ -323,4 +323,8 @@ export enum CollectionName {
   TIME_BANK = 'time_bank',
   NOTAS_INTEL = 'notas_intel',
   INTEL_CONFIG = 'intel_config',
+  EISENHOWER = 'hub_eisenhower',
+  ISHIKAWA = 'hub_ishikawa',
+  CANVAS = 'hub_canvas',
+  ROADMAP = 'hub_roadmap',
 }
