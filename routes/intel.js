@@ -3,9 +3,19 @@ import Anthropic from '@anthropic-ai/sdk';
 import { dbAdmin, admin } from '../firebase-admin.js';
 
 const router = express.Router();
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+
+let anthropic = null;
+try {
+    if (process.env.ANTHROPIC_API_KEY) {
+        anthropic = new Anthropic({
+            apiKey: process.env.ANTHROPIC_API_KEY,
+        });
+    } else {
+        console.warn("Módulo Intel: ANTHROPIC_API_KEY ausente. SDK não inicializada.");
+    }
+} catch (error) {
+    console.error("Erro ao inicializar SDK Anthropic:", error);
+}
 
 const MGR_INTEL_PROMPT = `
 Você é o "Cérebro" do MGR Conect, um assistente de Business Intelligence especializado em gestão operacional e estratégica para empresas de manutenção e serviços.
@@ -35,6 +45,12 @@ router.post('/notas', async (req, res) => {
 
     if (!text || !userId) {
         return res.status(400).json({ error: 'Texto e ID do usuário são obrigatórios.' });
+    }
+
+    if (!anthropic) {
+        return res.status(503).json({ 
+            error: 'Serviço de Inteligência temporariamente indisponível (SDK não inicializada).' 
+        });
     }
 
     try {
@@ -163,6 +179,12 @@ router.get('/summary', async (req, res) => {
             return res.json({ summary: "Ainda não há dados suficientes para um resumo estratégico." });
         }
 
+        if (!anthropic) {
+            return res.status(503).json({ 
+                error: 'Serviço de Inteligência temporariamente indisponível (SDK não inicializada).' 
+            });
+        }
+
         const prompt = `
             Analise as seguintes ${notes.length} observações operacionais e gere um "Resumo Estratégico Semanal" curto e direto (máx 3 parágrafos).
             Identifique padrões de falha, gargalos ou oportunidades de melhoria.
@@ -210,5 +232,6 @@ router.get('/stats', async (req, res) => {
 
 /**
  * @route   GET /api/intel/config
+ */
 
 export default router;

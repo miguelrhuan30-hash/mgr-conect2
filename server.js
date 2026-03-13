@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,6 +16,13 @@ app.use(express.json()); // Suporte a JSON no body
 const PORT = process.env.PORT || 8080;
 
 // Rotas da API
+console.log("🚀 Verificando chaves de API...");
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.warn("⚠️ AVISO: ANTHROPIC_API_KEY não detectada. O módulo Intel funcionará em modo limitado.");
+} else {
+  console.log("✅ ANTHROPIC_API_KEY detectada.");
+}
+
 app.use('/api/intel', intelRoutes);
 
 // 1. IMPORTANTE: Serve APENAS os arquivos estáticos da pasta 'dist'
