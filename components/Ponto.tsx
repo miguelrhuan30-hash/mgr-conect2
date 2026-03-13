@@ -19,7 +19,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 
 
-import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, WorkLocation, TimeEntry } from '../types';
@@ -662,6 +662,92 @@ const Ponto: React.FC = () => {
             biometricMatch: true,
           }
         );
+
+        // --- GAMIFICATION (MGR COINS) LOGIC ---
+        if (nextAction.type === 'exit') {
+            try {
+                setProcessMessage('Calculando saldo da campanha...');
+                const campaignRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'campaign');
+                const campaignSnap = await getDoc(campaignRef);
+                
+                if (campaignSnap.exists()) {
+                    const campaign = campaignSnap.data() as any;
+                    if (campaign.active) {
+                        const todayStart = new Date();
+                        todayStart.setHours(0, 0, 0, 0);
+                        const todayEnd = new Date();
+                        todayEnd.setHours(23, 59, 59, 999);
+                        
+                        // 1. Tasks completed today
+                        const tasksQuery = query(
+                            collection(db, CollectionName.TASKS),
+                            where('status', '==', 'completed')
+                        );
+                        const tasksSnap = await getDocs(tasksQuery);
+                        let tasksCompletedToday = 0;
+                        
+                        tasksSnap.docs.forEach(d => {
+                            const t = d.data() as any;
+                            const assignees = t.assignedUsers || (t.assignedTo ? [t.assignedTo] : []);
+                            if (assignees.includes(currentUser.uid) && t.endDate) {
+                                const time = t.endDate.toDate().getTime();
+                                if (time >= todayStart.getTime() && time <= todayEnd.getTime()) {
+                                    tasksCompletedToday++;
+                                }
+                            }
+                        });
+                        
+                        // 2. Delays today
+                        let delayCount = 0;
+                        if (userProfile?.workSchedule) {
+                            const dayOfWeek = todayStart.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+                            const schedule = (userProfile.workSchedule as any)[dayOfWeek] || { active: false };
+                            if (schedule.active && schedule.startTime) {
+                                const [h, m] = schedule.startTime.split(':').map(Number);
+                                const expectedTime = new Date(todayStart);
+                                expectedTime.setHours(h, m, 0, 0);
+                                
+                                const todayEntry = history.find(e => e.type === 'entry' && e.timestamp?.toDate() >= todayStart);
+                                if (todayEntry) {
+                                    const entryTime = todayEntry.timestamp.toDate();
+                                    if (entryTime.getTime() > expectedTime.getTime() + (10 * 60000)) { // 10 min tolerance
+                                        delayCount++;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 3. Final Daily Score
+                        // Rule: 1 delay = -10 (or -5 as per stats). 1 OS = +10.
+                        const dailyScore = (tasksCompletedToday * 10) - (delayCount * 10);
+                        const userRef = doc(db, CollectionName.USERS, currentUser.uid);
+                        const currentAccumulated = userProfile?.accumulatedPrize || 0;
+                        const workingDays = campaign.workingDays || 22;
+                        const dailySlice = Number((campaign.prizeValue / workingDays).toFixed(2));
+                        
+                        if (dailyScore > 0) {
+                            const newPrize = currentAccumulated + dailySlice;
+                            await updateDoc(userRef, {
+                                accumulatedPrize: Number(newPrize.toFixed(2))
+                            });
+                            logEvent(currentUser.uid, userProfile?.displayName, 'campaign_reward', 'success', `Ganhos diários adicionados: +R$ ${dailySlice.toFixed(2)} (Score: ${dailyScore})`);
+                        } else if (dailyScore < 0) {
+                            await updateDoc(userRef, {
+                                accumulatedPrize: 0
+                            });
+                            logEvent(currentUser.uid, userProfile?.displayName, 'campaign_reset', 'error', `Acumulado zerado por conduta (Atrasos). (Score: ${dailyScore})`);
+                            // Alerta visual de Reset
+                            setTimeout(() => {
+                                window.alert("⚠️ MGR COINS | ALERTA DE CONDUTA\n\nIdentificamos um saldo negativo no seu dia (atrasos ou ausência de entregas). Infelizmente, seu cofre da campanha foi ZERADO.");
+                            }, 500);
+                        }
+                    }
+                }
+            } catch (gamificationErr) {
+                console.error("Erro no processamento da campanha:", gamificationErr);
+            }
+        }
+        // --- END GAMIFICATION LOGIC ---
 
         // D. Success State
         setSuccessMessage(`${nextAction.label} REGISTRADA!`);

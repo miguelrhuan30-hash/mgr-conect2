@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp, doc, getDoc, setDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, UserProfile, Task, TimeEntry } from '../types';
+import { CollectionName, UserProfile, Task, TimeEntry, CampaignConfig } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Zap, Shield, Loader2, Medal, User, Clock } from 'lucide-react';
+import { Trophy, Zap, Shield, Loader2, Medal, User, Clock, Wallet, TrendingUp, AlertCircle, CalendarRange } from 'lucide-react';
 
 interface TechStats {
   uid: string;
@@ -20,6 +20,10 @@ const TechnicianStats: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<TechStats[]>([]);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  
+  // Gamification State
+  const [campaignConfig, setCampaignConfig] = useState<CampaignConfig | null>(null);
+  const [campaignLogs, setCampaignLogs] = useState<any[]>([]);
 
   useEffect(() => {
     loadStats();
@@ -140,6 +144,41 @@ const TechnicianStats: React.FC = () => {
       finalStats.sort((a, b) => b.score - a.score);
       setStats(finalStats);
 
+      // 7. Load Campaign Config & Logs (if technician)
+      if (userProfile?.role === 'technician' || userProfile?.role === 'employee') {
+          try {
+              const capRef = doc(db, CollectionName.SYSTEM_SETTINGS, 'campaign');
+              const capSnap = await getDoc(capRef);
+              if (capSnap.exists()) {
+                  setCampaignConfig(capSnap.data() as CampaignConfig);
+              } else {
+                  // Seed inicial do Firestore (valores de teste)
+                  const newCampaign: CampaignConfig = {
+                      prizeValue: 500,
+                      startDate: Timestamp.fromDate(new Date('2026-03-01T00:00:00')),
+                      endDate: Timestamp.fromDate(new Date('2026-03-31T23:59:59')),
+                      active: true,
+                      workingDays: 22
+                  } as any;
+                  await setDoc(capRef, newCampaign);
+                  setCampaignConfig(newCampaign);
+              }
+              
+              const logsQuery = query(
+                  collection(db, CollectionName.SYSTEM_LOGS),
+                  where('userId', '==', userProfile.uid),
+                  orderBy('timestamp', 'desc'),
+                  limit(50)
+              );
+              const logsSnap = await getDocs(logsQuery);
+              const fetchedLogs = logsSnap.docs.map(d => ({id: d.id, ...(d.data() as any)}));
+              const filteredLogs = fetchedLogs.filter((l: any) => l.action === 'campaign_reward' || l.action === 'campaign_reset');
+              setCampaignLogs(filteredLogs.slice(0, 10));
+          } catch (e) {
+              console.error("Erro ao carregar cofre:", e);
+          }
+      }
+
     } catch (err) {
       console.error("Erro ao carregar estatísticas", err);
     } finally {
@@ -173,12 +212,89 @@ const TechnicianStats: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Medal className="text-brand-600" /> Ranking da Equipe
+              <Medal className="text-brand-600" /> Estatísticas e Desempenho
            </h1>
            <p className="text-gray-500">Acompanhe o desempenho, ordens de serviço e pontualidade no mês.</p>
         </div>
       </div>
 
+      {/* --- MEU FUNDO DE BÔNUS (GAMIFICATION) --- */}
+      {campaignConfig && campaignConfig.active && (userProfile?.role === 'technician' || userProfile?.role === 'employee') && (
+        <div className="bg-gradient-to-br from-indigo-900 to-brand-800 rounded-2xl shadow-xl border border-indigo-700 overflow-hidden text-white mb-8">
+            <div className="p-6 md:p-8">
+                <div className="flex justify-between items-start mb-6">
+                    <div>
+                        <div className="flex items-center gap-2 text-indigo-200 mb-1">
+                            <Wallet className="w-5 h-5" />
+                            <h2 className="font-semibold uppercase tracking-wider text-sm">Meu Fundo de Bônus</h2>
+                            <span className="bg-brand-500/30 text-brand-100 text-[10px] px-2 py-0.5 rounded-full border border-brand-400/30 ml-2">MGR COINS</span>
+                        </div>
+                        <h3 className="text-4xl md:text-5xl font-black tracking-tight mt-2">
+                            R$ {(userProfile?.accumulatedPrize || 0).toFixed(2).replace('.', ',')}
+                        </h3>
+                        <p className="text-indigo-200 text-sm mt-2 flex items-center gap-1">
+                            <AlertCircle className="w-4 h-4" /> 
+                            Valor provisório condicionado às regras de conduta
+                        </p>
+                    </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="bg-black/20 rounded-xl p-4 mb-6 backdrop-blur-sm">
+                    <div className="flex justify-between text-sm mb-2 font-medium">
+                        <span className="text-indigo-100">Progresso da Campanha</span>
+                        <span className="text-white">R$ {campaignConfig.prizeValue.toFixed(2).replace('.', ',')} (Alvo)</span>
+                    </div>
+                    <div className="h-4 bg-black/40 rounded-full overflow-hidden">
+                        <div 
+                            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-300 rounded-full transition-all duration-1000 relative"
+                            style={{ width: `${Math.min(100, Math.max(0, ((userProfile?.accumulatedPrize || 0) / campaignConfig.prizeValue) * 100))}%` }}
+                        >
+                            <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                        </div>
+                    </div>
+                    <div className="flex justify-between text-xs mt-2 text-indigo-300">
+                        <span className="flex items-center gap-1"><CalendarRange className="w-3 h-3"/> Início: {campaignConfig.startDate?.toDate().toLocaleDateString()}</span>
+                        <span>Fim: {campaignConfig.endDate?.toDate().toLocaleDateString()}</span>
+                    </div>
+                </div>
+
+                {/* History */}
+                <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+                    <h4 className="flex items-center gap-2 font-semibold text-lg border-b border-white/10 pb-3 mb-3">
+                        <TrendingUp className="w-5 h-5 text-indigo-300" /> Extrato de Ganhos
+                    </h4>
+                    
+                    {campaignLogs.length === 0 ? (
+                        <p className="text-indigo-300 text-sm italic text-center py-4">Nenhum registro de ganho ainda. Complete chamados com pontualidade para acumular.</p>
+                    ) : (
+                        <div className="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                            {campaignLogs.map(log => {
+                                const isReset = log.action === 'campaign_reset';
+                                return (
+                                    <div key={log.id} className="flex justify-between items-center bg-black/10 p-3 rounded-lg hover:bg-black/20 transition-colors">
+                                        <div>
+                                            <p className={`font-semibold text-sm ${isReset ? 'text-red-400' : 'text-emerald-400'}`}>
+                                                {isReset ? 'SALDO ZERADO' : 'GANHO DIÁRIO'}
+                                            </p>
+                                            <p className="text-xs text-indigo-200 mt-0.5">{log.description}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs text-indigo-300">
+                                                {log.timestamp?.toDate().toLocaleDateString()} {log.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* --- DASHBOARD E MANTENEDORES --- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           {/* Card: Top 1 do Mês */}
           <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-5 shadow-sm relative overflow-hidden">

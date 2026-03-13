@@ -1,7 +1,15 @@
-
 import { Timestamp } from 'firebase/firestore';
 
 export { Timestamp };
+
+// --- CAMPAIGN CONFIG ---
+export interface CampaignConfig {
+  prizeValue: number;
+  startDate: Timestamp;
+  endDate: Timestamp;
+  active: boolean;
+}
+
 
 // --- ACCESS CONTROL & PERMISSIONS ---
 export type UserRole = 'admin' | 'manager' | 'employee' | 'technician' | 'pending' | 'developer';
@@ -91,6 +99,10 @@ export interface UserProfile {
     rate50?: number;
     rate100?: number;
   };
+  
+  // Gamification & Campaign
+  accumulatedPrize?: number;
+  currentPoints?: number;
 }
 
 export interface WorkLocation {
