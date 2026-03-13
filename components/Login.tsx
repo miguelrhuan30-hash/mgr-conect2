@@ -119,8 +119,7 @@ const Login: React.FC = () => {
                 canViewAttendanceReports: true,
                 canManageAttendance: true,
                 requiresTimeClock: false, // CRÍTICO: Mestre não precisa bater ponto
-                canViewFinancial: true,
-                canManageFinancial: true,
+                canViewFinancials: true,
               }
           }, { merge: true });
         } 

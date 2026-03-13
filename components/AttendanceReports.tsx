@@ -37,11 +37,14 @@ const AttendanceReports: React.FC = () => {
   const [adjReason, setAdjReason] = useState('');
   const [isSavingAdj, setIsSavingAdj] = useState(false);
 
-  // Correct authorization check using specific permission
   const isAuthorized = 
     userProfile?.role === 'admin' || 
     userProfile?.role === 'developer' || 
     !!userProfile?.permissions?.canViewAttendanceReports;
+
+  const canViewFinancials = 
+    userProfile?.role === 'admin' || 
+    !!userProfile?.permissions?.canViewFinancials;
 
   useEffect(() => {
     // Load Users
@@ -424,6 +427,100 @@ const AttendanceReports: React.FC = () => {
     };
   }, [reportData]);
 
+  // --- FINANCIAL CALCULATIONS ---
+  const calcFinancials = (day: any) => {
+    const worked = calcWorkedHours(day);
+    if (!worked) return null;
+
+    const user = users.find(u => u.uid === selectedUser);
+    const hourlyRate = user?.hourlyRate || 0;
+    const rate50 = user?.overtimeRules?.rate50 || 1.5;
+    const rate100 = user?.overtimeRules?.rate100 || 2.0;
+
+    let normalHours = 0;
+    let extra50Hours = 0;
+    let extra100Hours = 0;
+    let nightPremiumHours = 0; // 20% on these hours
+
+    const entryTime = day.entry.timestamp.toDate().getTime();
+    const exitTime = day.exit.timestamp.toDate().getTime();
+    
+    let nightMillis = 0;
+    for (let t = entryTime; t < exitTime; t += 60000) {
+      if (day.lunchStart && day.lunchEnd) {
+        const ls = day.lunchStart.timestamp.toDate().getTime();
+        const le = day.lunchEnd.timestamp.toDate().getTime();
+        if (t >= ls && t < le) continue;
+      }
+      const d = new Date(t);
+      const h = d.getHours();
+      // Night shift in Brazil: 22:00 to 05:00
+      if (h >= 22 || h < 5) {
+        nightMillis += 60000;
+      }
+    }
+    nightPremiumHours = nightMillis / 3600000;
+
+    const schedule = getDailySchedule(day);
+    if (schedule.active) { // working day
+       const totalWorkedHrs = worked.totalMinutes / 60;
+       
+       let plannedMinutes = 0;
+       if (schedule.startTime && schedule.endTime) {
+         const [sh, sm] = schedule.startTime.split(':').map(Number);
+         const [eh, em] = schedule.endTime.split(':').map(Number);
+         plannedMinutes = ((eh * 60) + em) - ((sh * 60) + sm) - (schedule.lunchDuration || 0);
+       }
+       const plannedHrs = plannedMinutes / 60;
+
+       if (totalWorkedHrs > plannedHrs) {
+         normalHours = plannedHrs;
+         extra50Hours = totalWorkedHrs - plannedHrs;
+       } else {
+         normalHours = totalWorkedHrs;
+       }
+    } else { // Inactive day (Sunday/Holiday)
+       const totalWorkedHrs = worked.totalMinutes / 60;
+       extra100Hours = totalWorkedHrs;
+    }
+
+    const valueNormal = normalHours * hourlyRate;
+    const valueExtra50 = extra50Hours * (hourlyRate * rate50);
+    const valueExtra100 = extra100Hours * (hourlyRate * rate100);
+    const valueNight = nightPremiumHours * (hourlyRate * 0.2); 
+
+    const totalValue = valueNormal + valueExtra50 + valueExtra100 + valueNight;
+
+    return {
+      normalHours, valueNormal,
+      extra50Hours, valueExtra50,
+      extra100Hours, valueExtra100,
+      nightPremiumHours, valueNight,
+      totalValue
+    };
+  };
+
+  const financialSummary = useMemo(() => {
+     let totals = {
+       normalHours: 0, valueNormal: 0,
+       extra50Hours: 0, valueExtra50: 0,
+       extra100Hours: 0, valueExtra100: 0,
+       nightPremiumHours: 0, valueNight: 0,
+       totalValue: 0
+     };
+     reportData.forEach(day => {
+        const f = calcFinancials(day);
+        if (f) {
+           totals.normalHours += f.normalHours; totals.valueNormal += f.valueNormal;
+           totals.extra50Hours += f.extra50Hours; totals.valueExtra50 += f.valueExtra50;
+           totals.extra100Hours += f.extra100Hours; totals.valueExtra100 += f.valueExtra100;
+           totals.nightPremiumHours += f.nightPremiumHours; totals.valueNight += f.valueNight;
+           totals.totalValue += f.totalValue;
+        }
+     });
+     return totals;
+  }, [reportData, selectedUser, users]);
+
   // --- EXPORT FUNCTIONS ---
 
   const exportPDF = () => {
@@ -681,6 +778,60 @@ const AttendanceReports: React.FC = () => {
     XLSX.writeFile(wb, `ponto_${userName}_${selectedMonth}.xlsx`);
   };
 
+  const exportFinancialPDF = () => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const user = users.find(u => u.uid === selectedUser);
+    const userName = user?.displayName || 'Colaborador';
+    const hourlyRate = user?.hourlyRate || 0;
+    
+    // Parse month
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const monthDate = new Date(year, month - 1, 1);
+    const monthNameRaw = monthDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+    const monthName = monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+    
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('EXTRATO DE HORAS E CUSTOS - MGR', 105, 18, { align: 'center' });
+    
+    doc.setLineWidth(0.5);
+    doc.line(14, 25, 196, 25);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Colaborador: ${userName}`, 14, 33);
+    doc.text(`Período: ${monthName}`, 14, 39);
+    doc.text(`Valor Hora Padrão: R$ ${hourlyRate.toFixed(2).replace('.', ',')}`, 14, 45);
+
+    autoTable(doc, {
+      head: [['Venda / Evento', 'Horas', 'Valor R$']],
+      body: [
+        ['Horas Normais (Base)', `${financialSummary.normalHours.toFixed(1)}h`, `R$ ${financialSummary.valueNormal.toFixed(2).replace('.', ',')}`],
+        ['Horas Extras (50%) - Dias Úteis', `${financialSummary.extra50Hours.toFixed(1)}h`, `R$ ${financialSummary.valueExtra50.toFixed(2).replace('.', ',')}`],
+        ['Horas Extras (100%) - Domingos/Feriados', `${financialSummary.extra100Hours.toFixed(1)}h`, `R$ ${financialSummary.valueExtra100.toFixed(2).replace('.', ',')}`],
+        ['Adicional Noturno (20%) - 22h às 05h', `${financialSummary.nightPremiumHours.toFixed(1)}h`, `R$ ${financialSummary.valueNight.toFixed(2).replace('.', ',')}`],
+      ],
+      startY: 55,
+      theme: 'grid',
+      headStyles: { fillColor: [40, 100, 40] }
+    });
+
+    const finalY = (doc as any).lastAutoTable.finalY + 15;
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TOTAL BRUTO A ESTIMAR:', 14, finalY);
+    doc.setFontSize(20);
+    doc.text(`R$ ${financialSummary.totalValue.toFixed(2).replace('.', ',')}`, 14, finalY + 10);
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    const msg = "Documento apenas para conferencia de metricas de horas. Nao tem valor como holerite provisorio sem os devidos descontos legais (INSS, IRRF, VT/VR).";
+    doc.text(msg, 105, finalY + 30, { align: 'center', maxWidth: 160 });
+
+    doc.save(`extrato_financeiro_${userName.replace(/ /g,'_')}_${selectedMonth}.pdf`);
+  };
+
   if (!isAuthorized) {
     return (
       <div className="text-center py-12">
@@ -787,6 +938,8 @@ const AttendanceReports: React.FC = () => {
                       })}
                   </div>
               )}
+
+
           </div>
       )}
 
@@ -938,6 +1091,50 @@ const AttendanceReports: React.FC = () => {
                         </tfoot>
                     </table>
                 </div>
+             )}
+
+             {/* Financial Summary */}
+             {reportData.length > 0 && canViewFinancials && (
+                 <div className="mt-8 bg-gray-50 p-6 rounded-xl border border-gray-200">
+                     <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                       <Calculator size={20} className="text-brand-600"/>
+                       Resumo Financeiro Mensal (CLT)
+                     </h3>
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                             <p className="text-sm text-gray-500">Horas Normais</p>
+                             <p className="text-lg font-bold text-gray-900">{financialSummary.normalHours.toFixed(1)}h</p>
+                             <p className="text-sm text-green-600 font-medium">R$ {financialSummary.valueNormal.toFixed(2)}</p>
+                         </div>
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                             <p className="text-sm text-gray-500">Horas Extras (50%)</p>
+                             <p className="text-lg font-bold text-gray-900">{financialSummary.extra50Hours.toFixed(1)}h</p>
+                             <p className="text-sm text-green-600 font-medium">R$ {financialSummary.valueExtra50.toFixed(2)}</p>
+                         </div>
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                             <p className="text-sm text-gray-500">Horas Extras (100%)</p>
+                             <p className="text-lg font-bold text-gray-900">{financialSummary.extra100Hours.toFixed(1)}h</p>
+                             <p className="text-sm text-green-600 font-medium">R$ {financialSummary.valueExtra100.toFixed(2)}</p>
+                         </div>
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                             <p className="text-sm text-gray-500">Adicional Noturno (20%)</p>
+                             <p className="text-lg font-bold text-gray-900">{financialSummary.nightPremiumHours.toFixed(1)}h</p>
+                             <p className="text-sm text-green-600 font-medium">R$ {financialSummary.valueNight.toFixed(2)}</p>
+                         </div>
+                     </div>
+                     <div className="mt-6 p-4 bg-brand-50 border border-brand-200 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
+                         <div>
+                             <p className="text-sm text-brand-700 font-bold uppercase tracking-wide">Salário Bruto Calculado</p>
+                             <p className="text-3xl font-black text-brand-900">R$ {financialSummary.totalValue.toFixed(2)}</p>
+                         </div>
+                         <button 
+                            onClick={exportFinancialPDF}
+                            className="flex items-center gap-2 px-6 py-3 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors shadow-sm"
+                         >
+                            <FileText size={18} /> Gerar Extrato (PDF)
+                         </button>
+                     </div>
+                 </div>
              )}
           </div>
       )}

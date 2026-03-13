@@ -31,8 +31,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canViewAttendanceReports: false,
   canManageAttendance: false,
   requiresTimeClock: false,
-  canViewFinancial: false,
-  canManageFinancial: false,
+  canViewFinancials: false,
 };
 
 const PERMISSION_GROUPS = [
@@ -109,8 +108,7 @@ const PERMISSION_GROUPS = [
     icon: DollarSign,
     color: 'text-green-600 bg-green-100',
     perms: [
-      { key: 'canViewFinancial', label: 'Visualizar Financeiro' },
-      { key: 'canManageFinancial', label: 'Gerenciar Financeiro' },
+      { key: 'canViewFinancials', label: 'Acesso a Dados Financeiros', description: 'Visualizar custos, salários e gerar extratos financeiros.' },
     ]
   }
 ];
@@ -136,6 +134,9 @@ const Users: React.FC = () => {
     sunday: { active: false, startTime: '08:00', lunchDuration: 0, endTime: '12:00' },
   });
   const [editLocations, setEditLocations] = useState<string[]>([]);
+  const [editHourlyRate, setEditHourlyRate] = useState<number>(0);
+  const [editRate50, setEditRate50] = useState<number>(1.5);
+  const [editRate100, setEditRate100] = useState<number>(2.0);
   
   // Permission Modal State
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
@@ -235,6 +236,9 @@ const Users: React.FC = () => {
     }
 
     setEditLocations(user.allowedLocationIds || []);
+    setEditHourlyRate(user.hourlyRate || 0);
+    setEditRate50(user.overtimeRules?.rate50 || 1.5);
+    setEditRate100(user.overtimeRules?.rate100 || 2.0);
   };
 
   const saveEdits = async (uid: string) => {
@@ -256,7 +260,9 @@ const Users: React.FC = () => {
       await updateDoc(doc(db, CollectionName.USERS, uid), {
         scheduleType: editScheduleType,
         workSchedule: updatedWorkSchedule,
-        allowedLocationIds: editLocations
+        allowedLocationIds: editLocations,
+        hourlyRate: editHourlyRate,
+        overtimeRules: { rate50: editRate50, rate100: editRate100 }
       });
       setEditingUserId(null);
     } catch (e) {
@@ -497,6 +503,24 @@ const Users: React.FC = () => {
                                    {loc.name}
                                  </button>
                                ))}
+                             </div>
+                           </div>
+                           
+                           <div className="space-y-1 pt-3 border-t border-gray-200 mt-3">
+                             <p className="text-xs font-bold text-gray-700 flex items-center gap-1"><DollarSign size={12}/> Dados Financeiros (CLT):</p>
+                             <div className="flex items-center gap-2">
+                               <div className="flex flex-col">
+                                 <span className="text-[10px] text-gray-500">Valor Hora (R$)</span>
+                                 <input type="number" step="0.01" min="0" value={editHourlyRate} onChange={e => setEditHourlyRate(parseFloat(e.target.value) || 0)} className="text-xs border rounded px-1 py-0.5 w-20 bg-white text-gray-900" />
+                               </div>
+                               <div className="flex flex-col">
+                                 <span className="text-[10px] text-gray-500">Extra (50%) - Ex: 1.5</span>
+                                 <input type="number" step="0.1" min="1" value={editRate50} onChange={e => setEditRate50(parseFloat(e.target.value) || 1.5)} className="text-xs border rounded px-1 py-0.5 w-20 bg-white text-gray-900" />
+                               </div>
+                               <div className="flex flex-col">
+                                 <span className="text-[10px] text-gray-500">Extra (100%) - Ex: 2.0</span>
+                                 <input type="number" step="0.1" min="1" value={editRate100} onChange={e => setEditRate100(parseFloat(e.target.value) || 2.0)} className="text-xs border rounded px-1 py-0.5 w-20 bg-white text-gray-900" />
+                               </div>
                              </div>
                            </div>
                          </div>

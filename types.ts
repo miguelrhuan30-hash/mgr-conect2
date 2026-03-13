@@ -36,9 +36,8 @@ export interface PermissionSet {
   canManageAttendance: boolean;         // Edit entries, close shifts manually
   requiresTimeClock: boolean;           // If true, system access is blocked until user clocks in
 
-  // Financial (Future Proofing)
-  canViewFinancial: boolean;
-  canManageFinancial: boolean;
+  // Financial
+  canViewFinancials?: boolean;
 }
 
 export interface Sector {
@@ -85,6 +84,13 @@ export interface UserProfile {
     sunday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
   };
   allowedLocationIds?: string[]; // IDs of WorkLocations
+  
+  // Financial Rules
+  hourlyRate?: number;
+  overtimeRules?: {
+    rate50?: number;
+    rate100?: number;
+  };
 }
 
 export interface WorkLocation {

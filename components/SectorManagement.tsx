@@ -27,8 +27,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canViewAttendanceReports: false,
   canManageAttendance: false,
   requiresTimeClock: false,
-  canViewFinancial: false,
-  canManageFinancial: false,
+  canViewFinancials: false,
 };
 
 // Grouping permissions for better UI UX
@@ -101,8 +100,7 @@ const PERMISSION_GROUPS = [
     icon: DollarSign,
     color: 'text-green-600 bg-green-100',
     perms: [
-      { key: 'canViewFinancial', label: 'Visualizar Financeiro' },
-      { key: 'canManageFinancial', label: 'Gerenciar Financeiro' },
+      { key: 'canViewFinancials', label: 'Acesso a Dados Financeiros', description: 'Visualizar custos, salários e gerar extratos financeiros.' },
     ]
   }
 ];
@@ -264,7 +262,7 @@ const SectorManagement: React.FC = () => {
                  <div className="flex flex-wrap gap-1.5">
                     {/* Permission Pills Preview */}
                     {sector.defaultPermissions.canManageUsers && <span className="text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100">Gestão Usuários</span>}
-                    {sector.defaultPermissions.canViewFinancial && <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100">Financeiro</span>}
+                    {sector.defaultPermissions.canViewFinancials && <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100">Financeiro</span>}
                     {sector.defaultPermissions.requiresTimeClock && <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">Exige Ponto</span>}
                  </div>
                </div>
