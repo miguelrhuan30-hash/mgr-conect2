@@ -222,21 +222,33 @@ const TechnicianStats: React.FC = () => {
       {campaignConfig && campaignConfig.active && (userProfile?.role === 'technician' || userProfile?.role === 'employee') && (
         <div className="bg-gradient-to-br from-indigo-900 to-brand-800 rounded-2xl shadow-xl border border-indigo-700 overflow-hidden text-white mb-8">
             <div className="p-6 md:p-8">
-                <div className="flex justify-between items-start mb-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                     <div>
                         <div className="flex items-center gap-2 text-indigo-200 mb-1">
-                            <Wallet className="w-5 h-5" />
-                            <h2 className="font-semibold uppercase tracking-wider text-sm">Meu Fundo de Bônus</h2>
-                            <span className="bg-brand-500/30 text-brand-100 text-[10px] px-2 py-0.5 rounded-full border border-brand-400/30 ml-2">MGR COINS</span>
+                            <Trophy className="w-5 h-5 text-emerald-400" />
+                            <h2 className="font-semibold uppercase tracking-wider text-xs">Saldo MGR Coins (Cofre)</h2>
                         </div>
-                        <h3 className="text-4xl md:text-5xl font-black tracking-tight mt-2">
+                        <h3 className="text-4xl md:text-5xl font-black tracking-tight text-emerald-400">
                             R$ {(userProfile?.accumulatedPrize || 0).toFixed(2).replace('.', ',')}
                         </h3>
-                        <p className="text-indigo-200 text-sm mt-2 flex items-center gap-1">
-                            <AlertCircle className="w-4 h-4" /> 
-                            Valor provisório condicionado às regras de conduta
-                        </p>
                     </div>
+
+                    {typeof userProfile?.timeBankBalance === 'number' && (
+                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 shadow-inner">
+                            <div className="flex items-center gap-2 text-indigo-200 mb-1">
+                                <Clock className="w-4 h-4 text-indigo-300" />
+                                <h2 className="font-semibold uppercase tracking-wider text-[10px]">Banco de Horas</h2>
+                            </div>
+                            <h3 className="text-2xl font-bold text-white">
+                                {Math.floor(userProfile.timeBankBalance / 60)}h {Math.abs(userProfile.timeBankBalance % 60)}min
+                            </h3>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2 text-indigo-200 text-sm mb-6 bg-black/20 w-fit px-3 py-1.5 rounded-full">
+                    <AlertCircle className="w-4 h-4 text-brand-400" /> 
+                    <span>Valor provisório condicionado às regras de conduta</span>
                 </div>
 
                 {/* Progress Bar */}

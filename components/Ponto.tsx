@@ -19,7 +19,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 
 
-import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, WorkLocation, TimeEntry } from '../types';
@@ -726,9 +726,8 @@ const Ponto: React.FC = () => {
                         const dailySlice = Number((campaign.prizeValue / workingDays).toFixed(2));
                         
                         if (dailyScore > 0) {
-                            const newPrize = currentAccumulated + dailySlice;
                             await updateDoc(userRef, {
-                                accumulatedPrize: Number(newPrize.toFixed(2))
+                                accumulatedPrize: increment(dailySlice)
                             });
                             logEvent(currentUser.uid, userProfile?.displayName, 'campaign_reward', 'success', `Ganhos diários adicionados: +R$ ${dailySlice.toFixed(2)} (Score: ${dailyScore})`);
                         } else if (dailyScore < 0) {

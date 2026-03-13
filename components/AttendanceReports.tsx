@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, doc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, TimeEntry, UserProfile, TimeBankEntry } from '../types';
@@ -40,6 +40,7 @@ const AttendanceReports: React.FC = () => {
   // Time Bank State
   const [dayDestinations, setDayDestinations] = useState<Record<string, 'pay' | 'bank'>>({});
   const [isSavingBank, setIsSavingBank] = useState(false);
+  const [processedDates, setProcessedDates] = useState<Set<string>>(new Set());
   // Bank Compensation State
   const [bankCompUser, setBankCompUser] = useState('');
   const [bankCompMinutes, setBankCompMinutes] = useState<number>(60);
@@ -133,6 +134,7 @@ const AttendanceReports: React.FC = () => {
       }
       setReportData(dailyReport);
       setDayDestinations({}); // Reset destinations when new report is generated
+      setProcessedDates(new Set()); // Reset processed feedback
     } catch (error: any) {
       if (error?.code !== 'permission-denied') {
          console.error("Error generating report:", error);
@@ -304,6 +306,10 @@ const AttendanceReports: React.FC = () => {
       }
       const hh = Math.floor(totalMinutesCredit / 60);
       const mm = totalMinutesCredit % 60;
+      const newProcessed = new Set(processedDates);
+      bankedDays.forEach(day => newProcessed.add(day.date));
+      setProcessedDates(newProcessed);
+
       alert(`${hh}h ${mm}min creditados no Banco de Horas do colaborador com sucesso!`);
     } catch (error) {
       console.error(error);
@@ -587,6 +593,8 @@ const AttendanceReports: React.FC = () => {
     nightPremiumHours = nightMillis / 3600000;
 
     const schedule = getDailySchedule(day);
+    const isBanked = dayDestinations[day.date] === 'bank';
+
     if (schedule.active) { // working day
        const totalWorkedHrs = worked.totalMinutes / 60;
        
@@ -600,13 +608,13 @@ const AttendanceReports: React.FC = () => {
 
        if (totalWorkedHrs > plannedHrs) {
          normalHours = plannedHrs;
-         extra50Hours = totalWorkedHrs - plannedHrs;
+         extra50Hours = isBanked ? 0 : totalWorkedHrs - plannedHrs;
        } else {
          normalHours = totalWorkedHrs;
        }
     } else { // Inactive day (Sunday/Holiday)
        const totalWorkedHrs = worked.totalMinutes / 60;
-       extra100Hours = totalWorkedHrs;
+       extra100Hours = isBanked ? 0 : totalWorkedHrs;
     }
 
     const valueNormal = normalHours * hourlyRate;
@@ -1102,8 +1110,26 @@ const AttendanceReports: React.FC = () => {
                 disabled={!selectedUser || loading}
                 className="w-full md:w-auto px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-70 flex items-center justify-center gap-2"
                 >
-                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar RelatÃ³rio</>}
+                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar Relatório</>}
                 </button>
+
+                {reportData.length > 0 && (
+                    <button 
+                        onClick={applyToBank}
+                        disabled={isSavingBank || !reportData.some(day => dayDestinations[day.date] === 'bank')}
+                        className={`w-full md:w-auto px-6 py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
+                            isSavingBank 
+                            ? 'bg-gray-400 text-white cursor-not-allowed' 
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md hover:shadow-lg active:scale-95'
+                        }`}
+                    >
+                        {isSavingBank ? (
+                            <><Loader2 className="animate-spin" size={18}/> Processando...</>
+                        ) : (
+                            <><PiggyBank size={18}/> Aplicar ao Banco</>
+                        )}
+                    </button>
+                )}
              </div>
 
              {/* Export Actions */}
@@ -1137,7 +1163,8 @@ const AttendanceReports: React.FC = () => {
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">SaÃ­da</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total / Carga HorÃ¡ria</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
-                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Destino Extra</th>
+                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Destino Extra</th>
+                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Destino Extra</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -1159,6 +1186,26 @@ const AttendanceReports: React.FC = () => {
                                     <tr key={idx} className={`${inativo ? 'bg-gray-50/50' : 'hover:bg-gray-50'}`}>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {dateObj.toLocaleDateString()} <span className="text-gray-400 font-normal text-xs ml-1">({dateObj.toLocaleDateString(undefined, {weekday: 'short'})})</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            {worked && worked.diffMinutes > 10 && !processedDates.has(day.date) && (
+                                                <select
+                                                    value={dayDestinations[day.date] || 'pay'}
+                                                    onChange={(e) => setDayDestinations({
+                                                        ...dayDestinations,
+                                                        [day.date]: e.target.value as 'pay' | 'bank'
+                                                    })}
+                                                    className="text-xs border rounded px-1 py-0.5 bg-white text-gray-900"
+                                                >
+                                                    <option value="pay">💰 Pagar</option>
+                                                    <option value="bank">🏦 Banco</option>
+                                                </select>
+                                            )}
+                                            {processedDates.has(day.date) && (
+                                                <span className="text-[10px] font-bold text-green-600 flex items-center justify-center gap-1">
+                                                    <CheckCircle size={10} /> Processado
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             {day.entry ? (

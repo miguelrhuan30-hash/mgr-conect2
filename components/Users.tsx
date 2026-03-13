@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -390,7 +390,7 @@ const Users: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Setor & Acesso</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jornada/Locais</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Papel (Role)</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cofre ðŸ†</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Saldos & PrÃªmios</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">AÃ§Ãµes</th>
                 </tr>
               </thead>
@@ -463,7 +463,7 @@ const Users: React.FC = () => {
                                <div className="flex items-center gap-2">
                                  <span className="text-xs text-gray-500">AlmoÃ§o (min):</span>
                                  <input type="number" value={editSchedule.lunch} onChange={e => setEditSchedule({...editSchedule, lunch: parseInt(e.target.value)})} className="text-xs border rounded w-16 px-1 py-0.5 bg-white text-gray-900" />
-                               </div>
+                                </div>
                              </>
                            ) : (
                              <div className="space-y-2 border-t border-gray-200 pt-2">
@@ -564,35 +564,40 @@ const Users: React.FC = () => {
                       </select>
                     </td>
 
-                                         <td className="px-6 py-4">
-                        {typeof user.accumulatedPrize === 'number' ? (
-                          <div className="flex flex-col items-start gap-1">
-                            <span className="text-sm font-bold text-yellow-700 bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-200">
-                              R$ {user.accumulatedPrize.toFixed(2)}
-                            </span>
-                            {user.currentPoints ? (
-                              <span className="text-[10px] text-gray-400 mt-0">{user.currentPoints} pts</span>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400 italic">Sem saldo</span>
-                        )}
-                        {/* Time Bank Badge */}
-                        {typeof user.timeBankBalance === 'number' && user.timeBankBalance > 0 ? (
-                          <div className="mt-1">
-                            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-200 flex items-center gap-1">
-                              â±ï¸ {Math.floor(user.timeBankBalance / 60)}h {user.timeBankBalance % 60}min
-                            </span>
-                          </div>
-                        ) : null}
-                     </td>
+                    <td className="px-6 py-4">
+                        <div className="flex flex-col gap-2">
+                          {typeof user.accumulatedPrize === 'number' && (
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">Saldo Bônus</span>
+                              <div className="flex items-center gap-1 text-sm font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 shadow-sm leading-tight">
+                                <DollarSign size={14} />
+                                <span>R$ {user.accumulatedPrize.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {typeof user.timeBankBalance === 'number' && user.timeBankBalance !== 0 && (
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">Banco de Horas</span>
+                              <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 shadow-sm leading-tight">
+                                <Clock size={14} />
+                                <span>{Math.floor(user.timeBankBalance / 60)}h {Math.abs(user.timeBankBalance % 60)}min</span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {!(typeof user.accumulatedPrize === 'number') && !(typeof user.timeBankBalance === 'number' && user.timeBankBalance !== 0) && (
+                            <span className="text-xs text-gray-400 italic">Sem saldos</span>
+                          )}
+                        </div>
+                      </td>
 
                      <td className="px-6 py-4 text-right">
                        {editingUserId === user.uid ? (
                          <div className="flex gap-2 justify-end">
                             <button onClick={() => setEditingUserId(null)} className="text-xs text-gray-500 hover:text-gray-700">Cancelar</button>
                             <button onClick={() => saveEdits(user.uid)} disabled={isSaving} className="text-xs bg-brand-600 text-white px-3 py-1 rounded hover:bg-brand-700">
-                              {isSaving ? 'Salvant...' : 'Salvar'}
+                              {isSaving ? 'Salvando...' : 'Salvar'}
                             </button>
                          </div>
                        ) : (
