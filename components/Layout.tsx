@@ -25,7 +25,9 @@ import {
   X,
   CalendarDays,
   Activity,
-  Trophy
+  Trophy,
+  Download,
+  RefreshCcw
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -35,8 +37,25 @@ const Layout: React.FC = () => {
   
   // Mobile Menu State
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null); // PWA Install Prompt
+  const [isClearingCache, setIsClearingCache] = useState(false);
 
   const prevPath = useRef('');
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Stash the event so it can be triggered later.
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
 
   useEffect(() => {
     if (!userProfile || !currentUser) return;
@@ -79,6 +98,41 @@ const Layout: React.FC = () => {
       navigate('/login');
     } catch (error) {
       console.error("Logout failed", error);
+    }
+  };
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+       console.log('User accepted the install prompt');
+       setDeferredPrompt(null);
+    }
+  };
+
+  const handleClearCache = async () => {
+    if (confirm('Atenção: Isso forçará o aplicativo a baixar a versão mais recente do servidor. Deseja continuar?')) {
+      setIsClearingCache(true);
+      try {
+        // 1. Unregister Service Workers
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (const registration of registrations) {
+            await registration.unregister();
+          }
+        }
+        // 2. Clear all Caches
+        if ('caches' in window) {
+          const cacheKeys = await caches.keys();
+          await Promise.all(cacheKeys.map(key => caches.delete(key)));
+        }
+        // 3. Force Reload
+        window.location.reload();
+      } catch (err) {
+        console.error("Erro ao limpar cache: ", err);
+        setIsClearingCache(false);
+      }
     }
   };
 
@@ -266,6 +320,28 @@ const Layout: React.FC = () => {
               <LogOut size={16} className="mr-2" />
               Sair
             </button>
+            
+            {/* SPRINT 6: Ferramentas do PWA */}
+            <div className="mt-4 space-y-2 border-t border-gray-100 pt-4">
+               {deferredPrompt && (
+                   <button
+                     onClick={handleInstallPWA}
+                     className="w-full flex items-center justify-center px-4 py-2 text-sm font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors border border-brand-200"
+                   >
+                     <Download size={16} className="mr-2" />
+                     Instalar App no Celular
+                   </button>
+               )}
+               
+               <button
+                 onClick={handleClearCache}
+                 disabled={isClearingCache}
+                 className="w-full flex items-center justify-center px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
+               >
+                 <RefreshCcw size={14} className={`mr-2 ${isClearingCache ? 'animate-spin' : ''}`} />
+                 {isClearingCache ? 'Limpando...' : 'Limpar Cache e Atualizar'}
+               </button>
+            </div>
           </div>
         </div>
       </aside>
