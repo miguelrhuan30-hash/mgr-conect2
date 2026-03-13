@@ -102,45 +102,65 @@ const AttendanceReports: React.FC = () => {
       const [year, month] = selectedMonth.split('-').map(Number);
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0, 23, 59, 59);
+      
+      // Estender busca em 12h para capturar saídas de turnos noturnos do último dia
+      const queryEndDate = new Date(endDate.getTime() + 12 * 60 * 60 * 1000);
 
       const q = query(
         collection(db, CollectionName.TIME_ENTRIES),
         where('userId', '==', selectedUser),
         where('timestamp', '>=', Timestamp.fromDate(startDate)),
-        where('timestamp', '<=', Timestamp.fromDate(endDate)),
+        where('timestamp', '<=', Timestamp.fromDate(queryEndDate)),
         orderBy('timestamp', 'asc')
       );
 
       const snap = await getDocs(q);
-      const entries = snap.docs.map(d => d.data() as TimeEntry);
+      const entries = snap.docs.map(d => ({ id: d.id, ...d.data() } as TimeEntry));
 
       // Group by Day
       const daysInMonth = endDate.getDate();
       const dailyReport: any[] = [];
       const user = users.find(u => u.uid === selectedUser);
+      const processedIds = new Set<string>();
 
       for (let d = 1; d <= daysInMonth; d++) {
         const currentDateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dayRef = new Date(year, month - 1, d);
         
-        // Find the FIRST 'entry' of this specific calendar day
+        // Busca o primeiro 'entry' deste dia que ainda não foi processado
         const primaryEntry = entries.find(e => {
+          if (processedIds.has(e.id!)) return false;
           const date = e.timestamp.toDate();
-          return date.getDate() === d && e.type === 'entry';
+          return date.getDate() === d && 
+                 date.getMonth() === (month - 1) && 
+                 date.getFullYear() === year &&
+                 e.type === 'entry';
         });
 
         let dayEntries: TimeEntry[] = [];
         if (primaryEntry) {
-          // If we have an entry, look ahead up to 24 hours for related events
+          // Busca eventos relacionados nas próximas 18 horas (limite seguro para jornada)
           const entryTime = primaryEntry.timestamp.toDate().getTime();
-          const limitTime = entryTime + (24 * 60 * 60 * 1000);
+          const limitTime = entryTime + (18 * 60 * 60 * 1000); 
           
           dayEntries = entries.filter(e => {
+            if (processedIds.has(e.id!)) return false;
             const t = e.timestamp.toDate().getTime();
             return t >= entryTime && t <= limitTime;
           });
+
+          // Marcar como processados
+          dayEntries.forEach(e => processedIds.add(e.id!));
         } else {
-          // Fallback: entries that happened on this day but aren't linked to a primary entry
-          dayEntries = entries.filter(e => e.timestamp.toDate().getDate() === d);
+          // Fallback: registros avulsos do dia que sobraram
+          dayEntries = entries.filter(e => {
+            if (processedIds.has(e.id!)) return false;
+            const date = e.timestamp.toDate();
+            return date.getDate() === d && 
+                   date.getMonth() === (month - 1) && 
+                   date.getFullYear() === year;
+          });
+          dayEntries.forEach(e => processedIds.add(e.id!));
         }
 
         const row = {
@@ -624,22 +644,43 @@ const AttendanceReports: React.FC = () => {
     const exitTime = day.exit.timestamp.toDate().getTime();
     
     let nightMillis = 0;
+    const hasRegisteredLunch = !!(day.lunchStart && day.lunchEnd);
+    const schedule = getDailySchedule(day);
+
     for (let t = entryTime; t < exitTime; t += 60000) {
-      if (day.lunchStart && day.lunchEnd) {
-        const ls = day.lunchStart.timestamp.toDate().getTime();
-        const le = day.lunchEnd.timestamp.toDate().getTime();
-        if (t >= ls && t < le) continue;
-      }
       const d = new Date(t);
       const h = d.getHours();
-      // Night shift in Brazil: 22:00 to 05:00
-      if (h >= 22 || h < 5) {
+      
+      // Verifica se está no intervalo de adicional noturno (22:00 - 05:00)
+      const isNight = h >= 22 || h < 5;
+      
+      if (isNight) {
+        if (hasRegisteredLunch) {
+          const ls = day.lunchStart.timestamp.toDate().getTime();
+          const le = day.lunchEnd.timestamp.toDate().getTime();
+          if (t >= ls && t < le) continue;
+        } else if (worked.totalMinutes > 360) {
+          // Se for almoço automático (jornada > 6h), descontamos o tempo de almoço proporcionalmente ou ignoramos parte das horas
+          // Uma abordagem comum é não pagar adicional sobre o período de descanso.
+          // Como o almoço é automático, não sabemos o horário exato. Vamos assumir que ocorreu no meio do turno.
+          // Se o minuto atual está próximo do meio do turno, e é turno noturno, descontamos.
+          // Simplificação: Descontar os minutos de almoço do total de nightMillis proporcionalmente ao tempo noturno vs total
+          // Mas aqui faremos algo mais simples: se for automático, o loop de minutos vai rodar por todo o tempo,
+          // então precisamos subtrair o lunchDuration proporcionalmente no final.
+        }
         nightMillis += 60000;
       }
     }
-    nightPremiumHours = nightMillis / 3600000;
 
-    const schedule = getDailySchedule(day);
+    // Ajuste proporcional para almoço automático nas horas noturnas
+    if (!hasRegisteredLunch && worked.totalMinutes > 360 && nightMillis > 0) {
+        const totalDuration = (exitTime - entryTime) / 60000;
+        const lunchMin = (schedule.lunchDuration || 60);
+        const nightRatio = nightMillis / (exitTime - entryTime); // erro aqui: nightMillis Ã© ms, divisao por ms ok
+        nightMillis -= (lunchMin * 60000 * nightRatio);
+    }
+
+    nightPremiumHours = Math.max(0, nightMillis / 3600000);
     const isBanked = dayDestinations[day.date] === 'bank';
 
     if (schedule.active) { // working day

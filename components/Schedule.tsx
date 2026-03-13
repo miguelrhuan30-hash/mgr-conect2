@@ -279,6 +279,22 @@ const Schedule: React.FC = () => {
     };
   };
 
+  const checkCLTCompliance = (uid: string) => {
+    const user = users.find(u => u.uid === uid);
+    if (!user || !user.workSchedule || user.scheduleType === 'FLEXIBLE') return false;
+    
+    const schedule = user.workSchedule;
+    if (!schedule.startTime || !schedule.endTime) return false;
+
+    const [sh, sm] = schedule.startTime.split(':').map(Number);
+    const [eh, em] = schedule.endTime.split(':').map(Number);
+    const durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
+    const lunchDuration = schedule.lunchDuration || 0;
+
+    // CLT Art 71: Jornada > 6h => Intervalo min 1h (60 min)
+    return (durationMinutes > 360 && lunchDuration < 60);
+  };
+
   // Generate Date Headers
   const renderDateHeaders = () => {
     const headers = [];
@@ -676,7 +692,14 @@ const Schedule: React.FC = () => {
                   </div>
 
                   <div>
-                     <label className="block text-sm font-medium text-gray-700 mb-1">Responsável</label>
+                     <label className="flex items-center justify-between text-sm font-medium text-gray-700 mb-1">
+                        Responsável
+                        {editFormAssignee && checkCLTCompliance(editFormAssignee) && (
+                          <span className="flex items-center gap-1 text-[10px] text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100 animate-pulse">
+                            <AlertCircle size={10} /> Risco CLT (Art. 71)
+                          </span>
+                        )}
+                     </label>
                      <select 
                         value={editFormAssignee}
                         onChange={e => setEditFormAssignee(e.target.value)}
@@ -687,6 +710,11 @@ const Schedule: React.FC = () => {
                            <option key={u.uid} value={u.uid}>{u.displayName}</option>
                         ))}
                      </select>
+                      {editFormAssignee && checkCLTCompliance(editFormAssignee) && (
+                         <p className="mt-1 text-[10px] text-orange-500 italic">
+                           O intervalo de almoço configurado é inferior a 1h para uma jornada &gt; 6h.
+                         </p>
+                      )}
                   </div>
 
                   {/* Multi-Assignee Selection */}
@@ -718,6 +746,7 @@ const Schedule: React.FC = () => {
                                <div className="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold">{u.displayName.charAt(0)}</div>
                              )}
                              {u.displayName.split(' ')[0]}
+                             {checkCLTCompliance(u.uid) && <AlertCircle size={10} className="text-orange-500" />}
                           </label>
                         ))}
                      </div>
