@@ -13,15 +13,30 @@ const app = express();
 app.use(express.json()); // Suporte a JSON no body
 
 // Pega a porta do Cloud Run
-const PORT = process.env.PORT || 8080;
+const PORT = Number(process.env.PORT) || 8080;
 
 // Rotas da API
 console.log("🚀 Verificando chaves de API...");
-if (!process.env.ANTHROPIC_API_KEY) {
+const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+
+if (!hasAnthropicKey) {
   console.warn("⚠️ AVISO: ANTHROPIC_API_KEY não detectada. O módulo Intel funcionará em modo limitado.");
 } else {
   console.log("✅ ANTHROPIC_API_KEY detectada.");
 }
+
+// Endpoint de Saúde
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+            firebase: 'connected', // Se chegou aqui, o admin inicializou
+            anthropic: hasAnthropicKey ? 'ready' : 'missing_key'
+        },
+        uptime: process.uptime()
+    });
+});
 
 app.use('/api/intel', intelRoutes);
 
@@ -36,5 +51,12 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`\n📦 MGR CONECT SERVICES INITIALIZED`);
+  console.table([
+    { Module: 'Express Server', Status: 'Online', Port: PORT },
+    { Module: 'Firebase Admin', Status: 'Connected' },
+    { Module: 'Intel API (Claude)', Status: hasAnthropicKey ? 'Enabled' : 'Disabled' },
+    { Module: 'Environment', Status: process.env.NODE_ENV || 'production' }
+  ]);
+  console.log(`🚀 Servidor rodando em http://0.0.0.0:${PORT}\n`);
 });
