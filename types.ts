@@ -104,6 +104,9 @@ export interface UserProfile {
   // Gamification & Campaign
   accumulatedPrize?: number;
   currentPoints?: number;
+
+  // Time Bank (Banco de Horas)
+  timeBankBalance?: number; // in minutes (positive = credit)
 }
 
 export interface WorkLocation {
@@ -163,6 +166,18 @@ export interface LandingPageContent {
     whatsappFloat: boolean;
     contactForm: boolean;
   };
+}
+
+// --- BANCO DE HORAS ---
+export interface TimeBankEntry {
+  id: string;
+  userId: string;
+  type: 'credit' | 'debit';   // credit = horas enviadas; debit = compensação usada
+  minutes: number;
+  reason: string;
+  referenceMonth?: string;    // YYYY-MM
+  createdBy: string;          // UID do gestor
+  createdAt: Timestamp;
 }
 
 // --- HR & TIME TRACKING ---
@@ -284,4 +299,5 @@ export enum CollectionName {
   SYSTEM_SETTINGS = 'system_settings',
   CONTACT_MESSAGES = 'contact_messages',
   SYSTEM_LOGS = 'system_logs',
+  TIME_BANK = 'time_bank',
 }

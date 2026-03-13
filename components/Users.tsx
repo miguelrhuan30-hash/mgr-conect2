@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+﻿import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -41,9 +41,9 @@ const PERMISSION_GROUPS = [
     icon: Settings,
     color: 'text-gray-600 bg-gray-100',
     perms: [
-      { key: 'canManageUsers', label: 'Gerenciar Usuários' },
+      { key: 'canManageUsers', label: 'Gerenciar UsuÃ¡rios' },
       { key: 'canManageSectors', label: 'Gerenciar Cargos e Setores' },
-      { key: 'canManageSettings', label: 'Configurações do Sistema' },
+      { key: 'canManageSettings', label: 'ConfiguraÃ§Ãµes do Sistema' },
       { key: 'canViewLogs', label: 'Acesso aos Logs do Sistema' },
     ]
   },
@@ -56,14 +56,14 @@ const PERMISSION_GROUPS = [
       { key: 'canRegisterAttendance', label: 'Registrar Ponto' },
       { 
         key: 'canViewAttendanceReports', 
-        label: 'Visualizar Relatórios de Ponto',
-        description: 'Permite acessar e gerar relatórios de frequência e ponto dos colaboradores'
+        label: 'Visualizar RelatÃ³rios de Ponto',
+        description: 'Permite acessar e gerar relatÃ³rios de frequÃªncia e ponto dos colaboradores'
       },
       { key: 'canManageAttendance', label: 'Gerenciar/Corrigir Ponto' },
       { 
         key: 'requiresTimeClock', 
         label: 'Exigir Ponto para Acesso ao Sistema?', 
-        description: 'Se desmarcado, o usuário poderá acessar o sistema mesmo sem registrar entrada.'
+        description: 'Se desmarcado, o usuÃ¡rio poderÃ¡ acessar o sistema mesmo sem registrar entrada.'
       },
     ]
   },
@@ -74,9 +74,9 @@ const PERMISSION_GROUPS = [
     color: 'text-orange-600 bg-orange-100',
     perms: [
       { key: 'canViewTasks', label: 'Visualizar Tarefas' },
-      { key: 'canViewSchedule', label: 'Acesso Básico à Agenda', description: 'Permite acessar a tela de agenda' },
-      { key: 'canViewFullSchedule', label: 'Agenda Completa (Gerencial)', description: 'Vê TODAS as OS de todos os colaboradores' },
-      { key: 'canViewMySchedule', label: 'Minha Agenda (Atividades Pessoais)', description: 'Vê APENAS as OS onde é responsável' },
+      { key: 'canViewSchedule', label: 'Acesso BÃ¡sico Ã  Agenda', description: 'Permite acessar a tela de agenda' },
+      { key: 'canViewFullSchedule', label: 'Agenda Completa (Gerencial)', description: 'VÃª TODAS as OS de todos os colaboradores' },
+      { key: 'canViewMySchedule', label: 'Minha Agenda (Atividades Pessoais)', description: 'VÃª APENAS as OS onde Ã© responsÃ¡vel' },
       { key: 'canCreateTasks', label: 'Criar Novas Tarefas' },
       { key: 'canEditTasks', label: 'Editar Tarefas' },
       { key: 'canDeleteTasks', label: 'Excluir Tarefas' },
@@ -108,7 +108,7 @@ const PERMISSION_GROUPS = [
     icon: DollarSign,
     color: 'text-green-600 bg-green-100',
     perms: [
-      { key: 'canViewFinancials', label: 'Acesso a Dados Financeiros', description: 'Visualizar custos, salários e gerar extratos financeiros.' },
+      { key: 'canViewFinancials', label: 'Acesso a Dados Financeiros', description: 'Visualizar custos, salÃ¡rios e gerar extratos financeiros.' },
     ]
   }
 ];
@@ -137,6 +137,7 @@ const Users: React.FC = () => {
   const [editHourlyRate, setEditHourlyRate] = useState<number>(0);
   const [editRate50, setEditRate50] = useState<number>(1.5);
   const [editRate100, setEditRate100] = useState<number>(2.0);
+  const [editTimeBankBalance, setEditTimeBankBalance] = useState<number>(0);
   
   // Permission Modal State
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
@@ -239,6 +240,7 @@ const Users: React.FC = () => {
     setEditHourlyRate(user.hourlyRate || 0);
     setEditRate50(user.overtimeRules?.rate50 || 1.5);
     setEditRate100(user.overtimeRules?.rate100 || 2.0);
+    setEditTimeBankBalance(user.timeBankBalance ?? 0);
   };
 
   const saveEdits = async (uid: string) => {
@@ -262,7 +264,8 @@ const Users: React.FC = () => {
         workSchedule: updatedWorkSchedule,
         allowedLocationIds: editLocations,
         hourlyRate: editHourlyRate,
-        overtimeRules: { rate50: editRate50, rate100: editRate100 }
+        overtimeRules: { rate50: editRate50, rate100: editRate100 },
+        timeBankBalance: editTimeBankBalance
       });
       setEditingUserId(null);
     } catch (e) {
@@ -331,7 +334,7 @@ const Users: React.FC = () => {
       setPermEditingUser(null);
     } catch (e) {
       console.error("Error saving permissions:", e);
-      alert("Erro ao salvar permissões.");
+      alert("Erro ao salvar permissÃµes.");
     } finally {
       setIsSaving(false);
     }
@@ -361,7 +364,7 @@ const Users: React.FC = () => {
     return (
       <div className="text-center py-12">
         <h2 className="text-2xl font-bold text-gray-900">Acesso Negado</h2>
-        <p className="text-gray-500">Apenas administradores podem gerenciar usuários.</p>
+        <p className="text-gray-500">Apenas administradores podem gerenciar usuÃ¡rios.</p>
       </div>
     );
   }
@@ -370,8 +373,8 @@ const Users: React.FC = () => {
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestão de Equipe & RH</h1>
-          <p className="text-gray-500">Defina jornadas, locais e níveis de acesso.</p>
+          <h1 className="text-2xl font-bold text-gray-900">GestÃ£o de Equipe & RH</h1>
+          <p className="text-gray-500">Defina jornadas, locais e nÃ­veis de acesso.</p>
         </div>
       </div>
 
@@ -387,8 +390,8 @@ const Users: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Setor & Acesso</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jornada/Locais</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Papel (Role)</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cofre 🏆</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cofre ðŸ†</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">AÃ§Ãµes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -445,7 +448,7 @@ const Users: React.FC = () => {
                                onClick={() => setEditScheduleType('FLEXIBLE')}
                                className={`flex-1 text-xs py-1 rounded text-center ${editScheduleType === 'FLEXIBLE' ? 'bg-brand-100 text-brand-700 font-bold' : 'text-gray-500 hover:bg-gray-50'}`}
                              >
-                               Flexível
+                               FlexÃ­vel
                              </button>
                            </div>
 
@@ -454,18 +457,18 @@ const Users: React.FC = () => {
                                <div className="flex items-center gap-2">
                                  <Clock size={14} className="text-gray-500"/>
                                  <input type="time" value={editSchedule.start} onChange={e => setEditSchedule({...editSchedule, start: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
-                                 <span className="text-xs">às</span>
+                                 <span className="text-xs">Ã s</span>
                                  <input type="time" value={editSchedule.end} onChange={e => setEditSchedule({...editSchedule, end: e.target.value})} className="text-xs border rounded px-1 py-0.5 w-full bg-white text-gray-900" />
                                </div>
                                <div className="flex items-center gap-2">
-                                 <span className="text-xs text-gray-500">Almoço (min):</span>
+                                 <span className="text-xs text-gray-500">AlmoÃ§o (min):</span>
                                  <input type="number" value={editSchedule.lunch} onChange={e => setEditSchedule({...editSchedule, lunch: parseInt(e.target.value)})} className="text-xs border rounded w-16 px-1 py-0.5 bg-white text-gray-900" />
                                </div>
                              </>
                            ) : (
                              <div className="space-y-2 border-t border-gray-200 pt-2">
                                {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
-                                 const dayNames: any = { monday: 'Seg', tuesday: 'Ter', wednesday: 'Qua', thursday: 'Qui', friday: 'Sex', saturday: 'Sáb', sunday: 'Dom' };
+                                 const dayNames: any = { monday: 'Seg', tuesday: 'Ter', wednesday: 'Qua', thursday: 'Qui', friday: 'Sex', saturday: 'SÃ¡b', sunday: 'Dom' };
                                  const dayData = editFlexibleSchedule[day];
                                  return (
                                    <div key={day} className={`flex items-center justify-between gap-2 p-1 rounded ${dayData.active ? 'bg-white border text-gray-900' : 'bg-transparent text-gray-400 opacity-60'}`}>
@@ -485,7 +488,7 @@ const Users: React.FC = () => {
                                      </div>
                                      <div className="flex items-center gap-1">
                                        <Clock size={10} className="text-gray-400"/>
-                                       <input disabled={!dayData.active} type="number" title="Minutos de Almoço" value={dayData.lunchDuration} onChange={e => setEditFlexibleSchedule({ ...editFlexibleSchedule, [day]: { ...dayData, lunchDuration: parseInt(e.target.value) } })} className="text-xs border rounded w-12 px-1 py-0.5 bg-white text-gray-900" />
+                                       <input disabled={!dayData.active} type="number" title="Minutos de AlmoÃ§o" value={dayData.lunchDuration} onChange={e => setEditFlexibleSchedule({ ...editFlexibleSchedule, [day]: { ...dayData, lunchDuration: parseInt(e.target.value) } })} className="text-xs border rounded w-12 px-1 py-0.5 bg-white text-gray-900" />
                                      </div>
                                    </div>
                                  );
@@ -532,7 +535,7 @@ const Users: React.FC = () => {
                                <span className="text-xs flex items-center gap-1 text-gray-600">
                                  <Clock size={12}/> 
                                  {user.scheduleType === 'FLEXIBLE' ? (
-                                   <span className="text-brand-600 font-medium">Escala Flexível (ver detalhes)</span>
+                                   <span className="text-brand-600 font-medium">Escala FlexÃ­vel (ver detalhes)</span>
                                  ) : (
                                    <span>{user.workSchedule.startTime} - {user.workSchedule.endTime} ({user.workSchedule.lunchDuration}m)</span>
                                  )}
@@ -555,7 +558,7 @@ const Users: React.FC = () => {
                       >
                         <option value="pending">Pendente</option>
                         <option value="employee">Colaborador</option>
-                        <option value="technician">Técnico</option>
+                        <option value="technician">TÃ©cnico</option>
                         <option value="manager">Gerente</option>
                         <option value="admin">Admin</option>
                       </select>
@@ -563,17 +566,25 @@ const Users: React.FC = () => {
 
                                          <td className="px-6 py-4">
                         {typeof user.accumulatedPrize === 'number' ? (
-                          <div className="flex flex-col items-start">
+                          <div className="flex flex-col items-start gap-1">
                             <span className="text-sm font-bold text-yellow-700 bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-200">
                               R$ {user.accumulatedPrize.toFixed(2)}
                             </span>
                             {user.currentPoints ? (
-                              <span className="text-[10px] text-gray-400 mt-1">{user.currentPoints} pts</span>
+                              <span className="text-[10px] text-gray-400 mt-0">{user.currentPoints} pts</span>
                             ) : null}
                           </div>
                         ) : (
                           <span className="text-xs text-gray-400 italic">Sem saldo</span>
                         )}
+                        {/* Time Bank Badge */}
+                        {typeof user.timeBankBalance === 'number' && user.timeBankBalance > 0 ? (
+                          <div className="mt-1">
+                            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-200 flex items-center gap-1">
+                              â±ï¸ {Math.floor(user.timeBankBalance / 60)}h {user.timeBankBalance % 60}min
+                            </span>
+                          </div>
+                        ) : null}
                      </td>
 
                      <td className="px-6 py-4 text-right">
@@ -603,7 +614,7 @@ const Users: React.FC = () => {
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50 rounded-t-2xl">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Acessos: {permEditingUser.displayName}</h2>
-                <p className="text-sm text-gray-500">Defina o setor e personalize as permissões individuais.</p>
+                <p className="text-sm text-gray-500">Defina o setor e personalize as permissÃµes individuais.</p>
               </div>
               <button onClick={() => setPermissionModalOpen(false)}><X className="w-6 h-6 text-gray-500" /></button>
             </div>
@@ -622,14 +633,14 @@ const Users: React.FC = () => {
                    {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                  </select>
                  <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                   <Shield size={12} /> Ao mudar o setor, as permissões abaixo serão redefinidas para o padrão daquele setor.
+                   <Shield size={12} /> Ao mudar o setor, as permissÃµes abaixo serÃ£o redefinidas para o padrÃ£o daquele setor.
                  </p>
               </div>
 
               {/* Granular Permissions */}
               <div className="space-y-4">
                   <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-brand-600"/> Permissões Individuais
+                    <ShieldCheck size={16} className="text-brand-600"/> PermissÃµes Individuais
                   </h3>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

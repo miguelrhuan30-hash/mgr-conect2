@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+﻿import React, { useState, useEffect, useMemo } from 'react';
+import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, doc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, TimeEntry, UserProfile } from '../types';
+import { CollectionName, TimeEntry, UserProfile, TimeBankEntry } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { Calendar, User, Search, AlertCircle, CheckCircle, Clock, AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, FileText, FileSpreadsheet, MapPin, Edit2 } from 'lucide-react';
+import { Calendar, User, Search, AlertCircle, CheckCircle, Clock, AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, FileText, FileSpreadsheet, MapPin, Edit2, Banknote, PiggyBank } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -36,6 +36,15 @@ const AttendanceReports: React.FC = () => {
   const [adjTime, setAdjTime] = useState('');
   const [adjReason, setAdjReason] = useState('');
   const [isSavingAdj, setIsSavingAdj] = useState(false);
+
+  // Time Bank State
+  const [dayDestinations, setDayDestinations] = useState<Record<string, 'pay' | 'bank'>>({});
+  const [isSavingBank, setIsSavingBank] = useState(false);
+  // Bank Compensation State
+  const [bankCompUser, setBankCompUser] = useState('');
+  const [bankCompMinutes, setBankCompMinutes] = useState<number>(60);
+  const [bankCompReason, setBankCompReason] = useState('');
+  const [isSavingComp, setIsSavingComp] = useState(false);
 
   // Edit Entry State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -123,14 +132,15 @@ const AttendanceReports: React.FC = () => {
         dailyReport.push(row);
       }
       setReportData(dailyReport);
+      setDayDestinations({}); // Reset destinations when new report is generated
     } catch (error: any) {
       if (error?.code !== 'permission-denied') {
          console.error("Error generating report:", error);
       }
       if (error?.code === 'permission-denied') {
-        alert("Acesso negado: Você não tem permissão para gerar este relatório.");
+        alert("Acesso negado: VocÃª nÃ£o tem permissÃ£o para gerar este relatÃ³rio.");
       } else {
-        alert("Erro ao gerar relatório. Verifique suas permissões.");
+        alert("Erro ao gerar relatÃ³rio. Verifique suas permissÃµes.");
       }
     } finally {
       setLoading(false);
@@ -261,6 +271,78 @@ const AttendanceReports: React.FC = () => {
       }
   };
 
+  // --- TIME BANK LOGIC ---
+
+  const applyToBank = async () => {
+    if (!selectedUser || !currentUser) return;
+    const bankedDays = reportData.filter(day => dayDestinations[day.date] === 'bank');
+    if (bankedDays.length === 0) { alert("Nenhum dia marcado como Enviar para Banco."); return; }
+    setIsSavingBank(true);
+    try {
+      let totalMinutesCredit = 0;
+      for (const day of bankedDays) {
+        const worked = calcWorkedHours(day);
+        if (worked && worked.diffMinutes > 10) {
+          totalMinutesCredit += worked.diffMinutes;
+          // Log each day as a credit entry in time_bank collection
+          await addDoc(collection(db, CollectionName.TIME_BANK), {
+            userId: selectedUser,
+            type: 'credit',
+            minutes: worked.diffMinutes,
+            reason: `Horas extras do dia ${day.date} enviadas ao banco (ref. ${selectedMonth})` ,
+            referenceMonth: selectedMonth,
+            createdBy: currentUser.uid,
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
+      // Increment timeBankBalance on user document
+      if (totalMinutesCredit > 0) {
+        await updateDoc(doc(db, CollectionName.USERS, selectedUser), {
+          timeBankBalance: increment(totalMinutesCredit)
+        });
+      }
+      const hh = Math.floor(totalMinutesCredit / 60);
+      const mm = totalMinutesCredit % 60;
+      alert(`${hh}h ${mm}min creditados no Banco de Horas do colaborador com sucesso!`);
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao enviar horas para o banco.");
+    } finally {
+      setIsSavingBank(false);
+    }
+  };
+
+  const submitBankCompensation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bankCompUser || bankCompMinutes <= 0 || !bankCompReason || !currentUser) return;
+    setIsSavingComp(true);
+    try {
+      await addDoc(collection(db, CollectionName.TIME_BANK), {
+        userId: bankCompUser,
+        type: 'debit',
+        minutes: bankCompMinutes,
+        reason: bankCompReason,
+        createdBy: currentUser.uid,
+        createdAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, CollectionName.USERS, bankCompUser), {
+        timeBankBalance: increment(-bankCompMinutes)
+      });
+      const hh = Math.floor(bankCompMinutes / 60);
+      const mm = bankCompMinutes % 60;
+      alert(`${hh}h ${mm}min de compensacao debitados do Banco de Horas.`);
+      setBankCompUser('');
+      setBankCompMinutes(60);
+      setBankCompReason('');
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao lancar compensacao.");
+    } finally {
+      setIsSavingComp(false);
+    }
+  };
+
   const openEditModal = (entry: TimeEntry) => {
     setEntryToEdit(entry);
     const date = entry.timestamp.toDate();
@@ -368,7 +450,7 @@ const AttendanceReports: React.FC = () => {
     if (isLateEntry) return { color: 'text-yellow-700 bg-yellow-100', label: 'Atraso', type: 'late' };
     if (isExtra) return { color: 'text-blue-700 bg-blue-100', label: 'Hora Extra', type: 'extra' };
     
-    return { color: 'text-green-700 bg-green-100', label: 'No Horário', type: 'on-time' };
+    return { color: 'text-green-700 bg-green-100', label: 'No HorÃ¡rio', type: 'on-time' };
   };
 
   const getShiftDuration = (entry: TimeEntry) => {
@@ -388,13 +470,13 @@ const AttendanceReports: React.FC = () => {
     
     const schedule = getDailySchedule(day);
     
-    // Desconta almoço se ambos registrados
+    // Desconta almoÃ§o se ambos registrados
     if (day.lunchStart && day.lunchEnd) {
       const lunchStartTime = day.lunchStart.timestamp.toDate().getTime();
       const lunchEndTime = day.lunchEnd.timestamp.toDate().getTime();
       totalMs -= (lunchEndTime - lunchStartTime);
     } else if (totalMs > 6 * 3600000) {
-      // SPRINT 9: Correção do Erro de Almoço. Se não registrou almoço e trabalhou mais de 6h, subtrai automaticamente
+      // SPRINT 9: CorreÃ§Ã£o do Erro de AlmoÃ§o. Se nÃ£o registrou almoÃ§o e trabalhou mais de 6h, subtrai automaticamente
       const autoLunchMs = (schedule.lunchDuration || 60) * 60000;
       totalMs -= autoLunchMs;
     }
@@ -592,16 +674,16 @@ const AttendanceReports: React.FC = () => {
         'admin': 'Gestor',
         'developer': 'Desenvolvedor',
         'manager': 'Gerente',
-        'technician': 'Técnico',
+        'technician': 'TÃ©cnico',
         'employee': 'Colaborador',
         'pending': 'Pendente'
     };
     const userRole = roleMap[user?.role || ''] || userAny?.jobTitle || 'Colaborador';
     
-    // === CABEÇALHO ===
+    // === CABEÃ‡ALHO ===
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
-    doc.text('MGR SERVIÇOS', 105, 18, { align: 'center' });
+    doc.text('MGR SERVIÃ‡OS', 105, 18, { align: 'center' });
     
     doc.setFontSize(13);
     doc.setFont('helvetica', 'normal');
@@ -610,7 +692,7 @@ const AttendanceReports: React.FC = () => {
     doc.setLineWidth(0.5);
     doc.line(14, 30, 196, 30);
     
-    // === DADOS DO FUNCIONÁRIO ===
+    // === DADOS DO FUNCIONÃRIO ===
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.rect(14, 33, 182, 28);
@@ -619,10 +701,10 @@ const AttendanceReports: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     
     doc.text(`Nome Completo: ${userName}`, 16, 46);
-    doc.text(`Nº Documento: ${userDocNum}`, 16, 52);
+    doc.text(`NÂº Documento: ${userDocNum}`, 16, 52);
     
-    doc.text(`Cargo/Função: ${userRole}`, 110, 46);
-    doc.text(`Competência: ${monthName}`, 110, 52);
+    doc.text(`Cargo/FunÃ§Ã£o: ${userRole}`, 110, 46);
+    doc.text(`CompetÃªncia: ${monthName}`, 110, 52);
     
     // === TABELA DE REGISTROS ===
     const rows = reportData.map(day => {
@@ -634,7 +716,7 @@ const AttendanceReports: React.FC = () => {
       const dayStatus = getDayStatus(day);
       
       let ocorrencia = dayStatus.label;
-      if (day.exit?.forcedClose) ocorrencia += ' (Forçada)';
+      if (day.exit?.forcedClose) ocorrencia += ' (ForÃ§ada)';
       
       return {
         data: [
@@ -653,7 +735,7 @@ const AttendanceReports: React.FC = () => {
     });
     
     autoTable(doc, {
-      head: [['Dia','Sem.','Entrada','Almoço','Volta','Saída','Total','Ocorrência']],
+      head: [['Dia','Sem.','Entrada','AlmoÃ§o','Volta','SaÃ­da','Total','OcorrÃªncia']],
       body: rows.map(r => r.data),
       startY: 65,
       styles: { 
@@ -696,7 +778,7 @@ const AttendanceReports: React.FC = () => {
       }
     });
     
-    // === RODAPÉ DE TOTAIS ===
+    // === RODAPÃ‰ DE TOTAIS ===
     const totalMinutes = reportData.reduce((acc, day) => {
       const w = calcWorkedHours(day);
       return acc + (w ? w.totalMinutes : 0);
@@ -724,7 +806,7 @@ const AttendanceReports: React.FC = () => {
     doc.text(`Total de Horas: ${totalH}h ${String(totalM).padStart(2,'0')}m`, 80, finalY + 9);
     doc.text(`Total de Faltas: ${faltaDays} dias`, 148, finalY + 9);
     
-    // === RODAPÉ DE ASSINATURA ===
+    // === RODAPÃ‰ DE ASSINATURA ===
     let signY = finalY + 25;
     if (signY + 40 > 285) {
         doc.addPage();
@@ -734,7 +816,7 @@ const AttendanceReports: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.text(
-      `Declaro estar ciente das informações registradas nesta folha de ponto referente ao período de ${monthName}.`,
+      `Declaro estar ciente das informaÃ§Ãµes registradas nesta folha de ponto referente ao perÃ­odo de ${monthName}.`,
       105, signY, { align: 'center' }
     );
     
@@ -749,7 +831,7 @@ const AttendanceReports: React.FC = () => {
     // Assinatura RH
     doc.line(105, signY + 18, 196, signY + 18);
     doc.setFont('helvetica', 'bold');
-    doc.text('Responsável RH / Gestão', 150, signY + 23, { align: 'center' });
+    doc.text('ResponsÃ¡vel RH / GestÃ£o', 150, signY + 23, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.text('____________________________', 150, signY + 28, { align: 'center' });
     doc.text('Data: ____/____/________', 150, signY + 34, { align: 'center' });
@@ -763,12 +845,12 @@ const AttendanceReports: React.FC = () => {
     
     // Dados da planilha
     const wsData = [
-      ['ESPELHO DE PONTO - MGR SERVIÇOS'],
+      ['ESPELHO DE PONTO - MGR SERVIÃ‡OS'],
       [`Colaborador: ${userName}`],
-      [`Período: ${selectedMonth}`],
+      [`PerÃ­odo: ${selectedMonth}`],
       [`Gerado em: ${new Date().toLocaleString()}`],
       [],
-      ['Data','Entrada','Almoço','Volta','Saída','Total Trabalhado','Obs']
+      ['Data','Entrada','AlmoÃ§o','Volta','SaÃ­da','Total Trabalhado','Obs']
     ];
     
     reportData.forEach(day => {
@@ -779,7 +861,7 @@ const AttendanceReports: React.FC = () => {
       const dayStatus = getDayStatus(day);
       
       let obs = dayStatus.label;
-      if (day.exit?.forcedClose) obs += ' (Forçada)';
+      if (day.exit?.forcedClose) obs += ' (ForÃ§ada)';
 
       wsData.push([
         dateObj.toLocaleDateString(),
@@ -803,7 +885,7 @@ const AttendanceReports: React.FC = () => {
     
     wsData.push([]);
     wsData.push([
-      `Total do Mês: ${totalH}h ${String(totalM).padStart(2,'0')}m`,
+      `Total do MÃªs: ${totalH}h ${String(totalM).padStart(2,'0')}m`,
       `Dias Trabalhados: ${workedDays}`
     ]);
     
@@ -843,16 +925,16 @@ const AttendanceReports: React.FC = () => {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text(`Colaborador: ${userName}`, 14, 33);
-    doc.text(`Período: ${monthName}`, 14, 39);
-    doc.text(`Valor Hora Padrão: R$ ${hourlyRate.toFixed(2).replace('.', ',')}`, 14, 45);
+    doc.text(`PerÃ­odo: ${monthName}`, 14, 39);
+    doc.text(`Valor Hora PadrÃ£o: R$ ${hourlyRate.toFixed(2).replace('.', ',')}`, 14, 45);
 
     autoTable(doc, {
       head: [['Venda / Evento', 'Horas', 'Valor R$']],
       body: [
         ['Horas Normais (Base)', `${financialSummary.normalHours.toFixed(1)}h`, `R$ ${financialSummary.valueNormal.toFixed(2).replace('.', ',')}`],
-        ['Horas Extras (50%) - Dias Úteis', `${financialSummary.extra50Hours.toFixed(1)}h`, `R$ ${financialSummary.valueExtra50.toFixed(2).replace('.', ',')}`],
+        ['Horas Extras (50%) - Dias Ãšteis', `${financialSummary.extra50Hours.toFixed(1)}h`, `R$ ${financialSummary.valueExtra50.toFixed(2).replace('.', ',')}`],
         ['Horas Extras (100%) - Domingos/Feriados', `${financialSummary.extra100Hours.toFixed(1)}h`, `R$ ${financialSummary.valueExtra100.toFixed(2).replace('.', ',')}`],
-        ['Adicional Noturno (20%) - 22h às 05h', `${financialSummary.nightPremiumHours.toFixed(1)}h`, `R$ ${financialSummary.valueNight.toFixed(2).replace('.', ',')}`],
+        ['Adicional Noturno (20%) - 22h Ã s 05h', `${financialSummary.nightPremiumHours.toFixed(1)}h`, `R$ ${financialSummary.valueNight.toFixed(2).replace('.', ',')}`],
       ],
       startY: 55,
       theme: 'grid',
@@ -879,7 +961,7 @@ const AttendanceReports: React.FC = () => {
     return (
       <div className="text-center py-12">
         <h2 className="text-2xl font-bold text-gray-900">Acesso Restrito</h2>
-        <p className="text-gray-500">Você não tem permissão para visualizar relatórios.</p>
+        <p className="text-gray-500">VocÃª nÃ£o tem permissÃ£o para visualizar relatÃ³rios.</p>
       </div>
     );
   }
@@ -888,8 +970,8 @@ const AttendanceReports: React.FC = () => {
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-           <h1 className="text-2xl font-bold text-gray-900">Gestão de Ponto e Frequência</h1>
-           <p className="text-gray-500">Monitoramento em tempo real e relatórios mensais.</p>
+           <h1 className="text-2xl font-bold text-gray-900">GestÃ£o de Ponto e FrequÃªncia</h1>
+           <p className="text-gray-500">Monitoramento em tempo real e relatÃ³rios mensais.</p>
         </div>
       </div>
 
@@ -921,10 +1003,10 @@ const AttendanceReports: React.FC = () => {
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3">
                   <ShieldAlert className="text-blue-600 w-5 h-5 mt-0.5" />
                   <div>
-                      <h4 className="font-bold text-blue-800">Painel de Gestão de Turnos</h4>
+                      <h4 className="font-bold text-blue-800">Painel de GestÃ£o de Turnos</h4>
                       <p className="text-sm text-blue-700">
-                          Abaixo estão listados os colaboradores que registraram entrada mas ainda não registraram saída. 
-                          Turnos abertos há mais de 12 horas são destacados em vermelho e devem ser encerrados manualmente.
+                          Abaixo estÃ£o listados os colaboradores que registraram entrada mas ainda nÃ£o registraram saÃ­da. 
+                          Turnos abertos hÃ¡ mais de 12 horas sÃ£o destacados em vermelho e devem ser encerrados manualmente.
                       </p>
                   </div>
               </div>
@@ -945,7 +1027,7 @@ const AttendanceReports: React.FC = () => {
 
                           return (
                               <div key={idx} className={`bg-white rounded-xl border p-5 shadow-sm relative overflow-hidden ${isCritical ? 'border-red-200 ring-1 ring-red-100' : 'border-gray-200'}`}>
-                                  {isCritical && <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] px-2 py-0.5 font-bold uppercase">Atenção</div>}
+                                  {isCritical && <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] px-2 py-0.5 font-bold uppercase">AtenÃ§Ã£o</div>}
                                   
                                   <div className="flex items-center gap-3 mb-3">
                                       <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600">
@@ -963,7 +1045,7 @@ const AttendanceReports: React.FC = () => {
                                           <span className="font-mono font-medium">{shift.entry.timestamp.toDate().toLocaleString()}</span>
                                       </div>
                                       <div className="flex justify-between text-sm">
-                                          <span className="text-gray-500">Duração Atual:</span>
+                                          <span className="text-gray-500">DuraÃ§Ã£o Atual:</span>
                                           <span className={`font-mono font-bold ${isCritical ? 'text-red-600' : 'text-green-600'}`}>
                                               {duration} horas
                                           </span>
@@ -974,7 +1056,7 @@ const AttendanceReports: React.FC = () => {
                                       onClick={() => handleOpenForceExit(shift)}
                                       className="w-full py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
                                   >
-                                      <X size={14} /> Encerrar Turno (Forçar Saída)
+                                      <X size={14} /> Encerrar Turno (ForÃ§ar SaÃ­da)
                                   </button>
                               </div>
                           );
@@ -1006,7 +1088,7 @@ const AttendanceReports: React.FC = () => {
                 </div>
                 
                 <div className="w-full md:w-48">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mês Ref.</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">MÃªs Ref.</label>
                     <input 
                     type="month" 
                     value={selectedMonth}
@@ -1020,7 +1102,7 @@ const AttendanceReports: React.FC = () => {
                 disabled={!selectedUser || loading}
                 className="w-full md:w-auto px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-70 flex items-center justify-center gap-2"
                 >
-                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar Relatório</>}
+                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar RelatÃ³rio</>}
                 </button>
              </div>
 
@@ -1050,11 +1132,12 @@ const AttendanceReports: React.FC = () => {
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Entrada</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Almoço</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">AlmoÃ§o</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Volta</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Saída</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total / Carga Horária</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">SaÃ­da</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total / Carga HorÃ¡ria</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Destino Extra</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -1117,7 +1200,7 @@ const AttendanceReports: React.FC = () => {
                                                 <div className="flex items-center justify-center gap-1 group relative font-bold">
                                                     <div className="flex flex-col items-center">
                                                       <span>{getTimeString(day.exit)}</span>
-                                                      {day.exit.forcedClose && <span className="text-[10px] text-red-500 font-normal">Forçado</span>}
+                                                      {day.exit.forcedClose && <span className="text-[10px] text-red-500 font-normal">ForÃ§ado</span>}
                                                     </div>
                                                     {day.exit.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1" title="Editado Manualmente">*</span>}
                                                     {userProfile?.permissions?.canManageAttendance && (
@@ -1145,17 +1228,17 @@ const AttendanceReports: React.FC = () => {
                                                         )}
                                                         {day.lunchStart?.mapsUrl && (
                                                             <a href={day.lunchStart.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Ida Almoço)
+                                                                <MapPin size={10} /> Mapa (Ida AlmoÃ§o)
                                                             </a>
                                                         )}
                                                         {day.lunchEnd?.mapsUrl && (
                                                             <a href={day.lunchEnd.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Volta Almoço)
+                                                                <MapPin size={10} /> Mapa (Volta AlmoÃ§o)
                                                             </a>
                                                         )}
                                                         {day.exit?.mapsUrl && (
                                                             <a href={day.exit.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Saída)
+                                                                <MapPin size={10} /> Mapa (SaÃ­da)
                                                             </a>
                                                         )}
                                                     </div>
@@ -1168,7 +1251,7 @@ const AttendanceReports: React.FC = () => {
                         </tbody>
                         <tfoot className="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300">
                             <tr>
-                                <td colSpan={5} className="px-6 py-4 text-right uppercase text-xs tracking-wider">Totais do Mês</td>
+                                <td colSpan={6} className="px-6 py-4 text-right uppercase text-xs tracking-wider">Totais do MÃªs</td>
                                 <td className="px-6 py-4 text-center text-brand-700 text-base">{summary.totalTime}</td>
                                 <td className="px-6 py-4 text-center text-xs font-normal">
                                     <div className="flex flex-col gap-1">
@@ -1213,14 +1296,14 @@ const AttendanceReports: React.FC = () => {
                      </div>
                      <div className="mt-6 p-4 bg-brand-50 border border-brand-200 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
                           <div className="flex flex-col gap-2">
-                              <p className="text-sm text-brand-700 font-bold uppercase tracking-wide">Salário Bruto Calculado</p>
+                              <p className="text-sm text-brand-700 font-bold uppercase tracking-wide">SalÃ¡rio Bruto Calculado</p>
                               <p className="text-3xl font-black text-brand-900">R$ {financialSummary.totalValue.toFixed(2)}</p>
                               {(() => {
                                 const user = users.find(u => u.uid === selectedUser);
                                 return typeof user?.accumulatedPrize === 'number' ? (
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 px-2 py-1 rounded-lg font-bold">
-                                      🏆 Cofre Acumulado: R$ {user.accumulatedPrize.toFixed(2)}
+                                      ðŸ† Cofre Acumulado: R$ {user.accumulatedPrize.toFixed(2)}
                                     </span>
                                   </div>
                                 ) : null;
@@ -1242,7 +1325,7 @@ const AttendanceReports: React.FC = () => {
       {activeTab === 'adjustments' && (
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm max-w-2xl mx-auto">
               <div className="mb-6">
-                  <h2 className="text-lg font-bold text-gray-900">Lançamento Manual de Ponto</h2>
+                  <h2 className="text-lg font-bold text-gray-900">LanÃ§amento Manual de Ponto</h2>
                   <p className="text-sm text-gray-500">Utilize esta ferramenta para corrigir esquecimentos ou erros no registro de ponto dos colaboradores.</p>
               </div>
 
@@ -1270,9 +1353,9 @@ const AttendanceReports: React.FC = () => {
                               required
                           >
                               <option value="entry">Entrada</option>
-                              <option value="lunch_start">Início Almoço</option>
-                              <option value="lunch_end">Fim Almoço</option>
-                              <option value="exit">Saída</option>
+                              <option value="lunch_start">InÃ­cio AlmoÃ§o</option>
+                              <option value="lunch_end">Fim AlmoÃ§o</option>
+                              <option value="exit">SaÃ­da</option>
                           </select>
                       </div>
                       <div>
@@ -1294,7 +1377,7 @@ const AttendanceReports: React.FC = () => {
                           onChange={e => setAdjReason(e.target.value)}
                           className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                           rows={3}
-                          placeholder="Ex: Colaborador esqueceu de bater o ponto na volta do almoço."
+                          placeholder="Ex: Colaborador esqueceu de bater o ponto na volta do almoÃ§o."
                           required
                       />
                   </div>
@@ -1310,6 +1393,70 @@ const AttendanceReports: React.FC = () => {
                       </button>
                   </div>
               </form>
+
+              {/* --- BANK COMPENSATION SECTION --- */}
+              <div className="mt-8 pt-6 border-t-2 border-indigo-100">
+                <div className="mb-4 flex items-center gap-2">
+                  <PiggyBank size={20} className="text-indigo-600" />
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Lancar Compensacao de Banco</h3>
+                    <p className="text-xs text-gray-500">Registre horas usadas como compensacao (ex: saida antecipada). Isso debita do Banco de Horas do colaborador.</p>
+                  </div>
+                </div>
+                <form onSubmit={submitBankCompensation} className="space-y-4 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Colaborador</label>
+                    <select
+                      value={bankCompUser}
+                      onChange={e => setBankCompUser(e.target.value)}
+                      className="w-full rounded-lg border-indigo-300 bg-white text-gray-900"
+                      required
+                    >
+                      <option value="">Selecione o colaborador...</option>
+                      {users.map(u => {
+                        const bal = u.timeBankBalance ?? 0;
+                        const hh = Math.floor(bal / 60);
+                        const mm = bal % 60;
+                        return <option key={u.uid} value={u.uid}>{u.displayName} (saldo: {hh}h {mm}min)</option>;
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Minutos a Compensar</label>
+                    <input
+                      type="number"
+                      value={bankCompMinutes}
+                      onChange={e => setBankCompMinutes(parseInt(e.target.value) || 0)}
+                      min={1}
+                      className="w-full rounded-lg border-indigo-300 bg-white text-gray-900"
+                      placeholder="Ex: 240 = 4 horas"
+                      required
+                    />
+                    <p className="text-xs text-indigo-600 mt-1">{Math.floor(bankCompMinutes / 60)}h {bankCompMinutes % 60}min</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Motivo / Justificativa</label>
+                    <textarea
+                      value={bankCompReason}
+                      onChange={e => setBankCompReason(e.target.value)}
+                      className="w-full rounded-lg border-indigo-300 bg-white text-gray-900"
+                      rows={2}
+                      placeholder="Ex: Tecnico saiu mais cedo na sexta para compensar 4h de banco."
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={isSavingComp || !bankCompUser || bankCompMinutes <= 0 || !bankCompReason}
+                      className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-70 flex items-center gap-2"
+                    >
+                      {isSavingComp ? <Loader2 className="w-4 h-4 animate-spin" /> : <PiggyBank className="w-4 h-4" />}
+                      Lancar Compensacao
+                    </button>
+                  </div>
+                </form>
+              </div>
           </div>
       )}
 
@@ -1319,13 +1466,13 @@ const AttendanceReports: React.FC = () => {
              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
                  <h2 className="text-xl font-bold text-gray-900 mb-2">Encerrar Turno Manualmente</h2>
                  <p className="text-sm text-gray-500 mb-6">
-                     Você está forçando a saída de <strong className="text-gray-900">{selectedShiftToClose.user.displayName}</strong>. 
-                     Esta ação ficará registrada na auditoria.
+                     VocÃª estÃ¡ forÃ§ando a saÃ­da de <strong className="text-gray-900">{selectedShiftToClose.user.displayName}</strong>. 
+                     Esta aÃ§Ã£o ficarÃ¡ registrada na auditoria.
                  </p>
 
                  <div className="space-y-4">
                      <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-1">Data/Hora da Saída</label>
+                         <label className="block text-sm font-medium text-gray-700 mb-1">Data/Hora da SaÃ­da</label>
                          <input 
                             type="datetime-local" 
                             value={exitTime} 
@@ -1340,7 +1487,7 @@ const AttendanceReports: React.FC = () => {
                             value={exitReason} 
                             onChange={e => setExitReason(e.target.value)}
                             className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
-                            placeholder="Ex: Colaborador esqueceu de registrar saída."
+                            placeholder="Ex: Colaborador esqueceu de registrar saÃ­da."
                          />
                      </div>
                  </div>
@@ -1368,10 +1515,10 @@ const AttendanceReports: React.FC = () => {
       {editModalOpen && entryToEdit && (
          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-                 <h2 className="text-xl font-bold text-gray-900 mb-2">Editar Registro de Horário</h2>
+                 <h2 className="text-xl font-bold text-gray-900 mb-2">Editar Registro de HorÃ¡rio</h2>
                  <p className="text-sm text-gray-500 mb-6">
-                     Você está alterando um registro do dia <strong className="text-gray-900">{entryToEdit.timestamp.toDate().toLocaleDateString()}</strong>. 
-                     Esta ação ficará registrada na auditoria do sistema.
+                     VocÃª estÃ¡ alterando um registro do dia <strong className="text-gray-900">{entryToEdit.timestamp.toDate().toLocaleDateString()}</strong>. 
+                     Esta aÃ§Ã£o ficarÃ¡ registrada na auditoria do sistema.
                  </p>
 
                  <div className="space-y-4">
@@ -1391,7 +1538,7 @@ const AttendanceReports: React.FC = () => {
                             value={editEntryReason} 
                             onChange={e => setEditEntryReason(e.target.value)}
                             className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
-                            placeholder="Ex: Correção de esquecimento."
+                            placeholder="Ex: CorreÃ§Ã£o de esquecimento."
                          />
                      </div>
                  </div>
