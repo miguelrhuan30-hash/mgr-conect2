@@ -30,7 +30,7 @@ steps:
       - '--project'
       - 'gen-lang-client-0227796366'
       - '--set-secrets=ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest'
-      - '--startup-cpu-boost'
+      - '--cpu-boost'
 images:
   - 'us-west1-docker.pkg.dev/gen-lang-client-0227796366/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
 substitutions:
