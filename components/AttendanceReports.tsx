@@ -47,6 +47,12 @@ const AttendanceReports: React.FC = () => {
   const [bankCompReason, setBankCompReason] = useState('');
   const [isSavingComp, setIsSavingComp] = useState(false);
 
+  // Global Edits (Sprint 14)
+  const [adjStartDate, setAdjStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [adjEndDate, setAdjEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [adjustmentsList, setAdjustmentsList] = useState<TimeEntry[]>([]);
+  const [loadingAdjList, setLoadingAdjList] = useState(false);
+
   // Edit Entry State
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [entryToEdit, setEntryToEdit] = useState<TimeEntry | null>(null);
@@ -395,6 +401,30 @@ const AttendanceReports: React.FC = () => {
       alert("Erro ao editar registro.");
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  const loadAdjustmentsList = async () => {
+    if (!adjUser) return;
+    setLoadingAdjList(true);
+    try {
+        const start = Timestamp.fromDate(new Date(adjStartDate + 'T00:00:00'));
+        const end = Timestamp.fromDate(new Date(adjEndDate + 'T23:59:59'));
+
+        const q = query(
+            collection(db, CollectionName.TIME_ENTRIES),
+            where('userId', '==', adjUser),
+            where('timestamp', '>=', start),
+            where('timestamp', '<=', end),
+            orderBy('timestamp', 'asc')
+        );
+
+        const snap = await getDocs(q);
+        setAdjustmentsList(snap.docs.map(d => ({ id: d.id, ...d.data() } as TimeEntry)));
+    } catch (error) {
+        console.error("Error loading adjustments list:", error);
+    } finally {
+        setLoadingAdjList(false);
     }
   };
 
@@ -1524,6 +1554,84 @@ const AttendanceReports: React.FC = () => {
           </div>
       )}
 
+      {/* --- GLOBAL EDIT CENTER (SPRINT 14) --- */}
+      {activeTab === 'adjustments' && (
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mt-6">
+              <div className="mb-6 flex items-center justify-between border-b pb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                        <Clock className="text-brand-600" />
+                        Histórico e Edição Global por Período
+                    </h2>
+                    <p className="text-sm text-gray-500">Busque e edite múltiplos registros de uma vez filtrando pelo período.</p>
+                  </div>
+              </div>
+
+              <div className="flex flex-col md:flex-row gap-4 mb-6 items-end bg-gray-50 p-4 rounded-lg">
+                  <div className="flex-1">
+                      <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Inicial</label>
+                      <input 
+                        type="date" 
+                        value={adjStartDate} 
+                        onChange={e => setAdjStartDate(e.target.value)}
+                        className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                      />
+                  </div>
+                  <div className="flex-1">
+                      <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Final</label>
+                      <input 
+                        type="date" 
+                        value={adjEndDate} 
+                        onChange={e => setAdjEndDate(e.target.value)}
+                        className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                      />
+                  </div>
+                  <button 
+                    onClick={loadAdjustmentsList}
+                    disabled={!adjUser || loadingAdjList}
+                    className="px-6 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
+                  >
+                      {loadingAdjList ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Buscar Registros
+                  </button>
+              </div>
+
+              {adjustmentsList.length > 0 ? (
+                  <div className="overflow-x-auto border rounded-xl overflow-hidden">
+                      <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                              <tr>
+                                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Data/Hora Registro</th>
+                                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Tipo</th>
+                                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Localização / Foto</th>
+                                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Ajuste</th>
+                                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">Ação</th>
+                              </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                              {adjustmentsList.map((entry) => (
+                                  <AdjustEntryRow 
+                                    key={entry.id} 
+                                    entry={entry} 
+                                    onUpdate={() => {
+                                        loadAdjustmentsList();
+                                        if (selectedUser === adjUser) generateReport();
+                                    }} 
+                                  />
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              ) : (
+                  !loadingAdjList && adjUser && (
+                    <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                        <AlertCircle className="mx-auto w-12 h-12 text-gray-300 mb-2" />
+                        <p className="text-gray-500 font-medium">Nenhum registro encontrado para este período.</p>
+                    </div>
+                  )
+              )}
+          </div>
+      )}
+
       {/* FORCE EXIT MODAL */}
       {forceExitModalOpen && selectedShiftToClose && (
          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1628,6 +1736,111 @@ const AttendanceReports: React.FC = () => {
 
     </div>
   );
+};
+
+// --- SUB-COMPONENT FOR GLOBAL EDIT ROW ---
+const AdjustEntryRow: React.FC<{ entry: TimeEntry, onUpdate: () => void }> = ({ entry, onUpdate }) => {
+    const { currentUser } = useAuth();
+    const [newTime, setNewTime] = useState(new Date(entry.timestamp.toDate().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16));
+    const [newType, setNewType] = useState(entry.type);
+    const [reason, setReason] = useState(entry.editReason || '');
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleUpdate = async () => {
+        if (!reason) {
+            alert("Por favor, insira uma justificativa para a alteração.");
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const entryRef = doc(db, CollectionName.TIME_ENTRIES, entry.id);
+            await updateDoc(entryRef, {
+                timestamp: Timestamp.fromDate(new Date(newTime)),
+                type: newType,
+                editedBy: currentUser?.uid,
+                editReason: reason,
+                editTimestamp: serverTimestamp(),
+                isManual: true
+            });
+            onUpdate();
+        } catch (error) {
+            console.error("Error updating entry:", error);
+            alert("Erro ao atualizar registro.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const originalTime = new Date(entry.timestamp.toDate().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+    const isChanged = newTime !== originalTime || newType !== entry.type;
+
+    return (
+        <tr className="hover:bg-gray-50 transition-colors">
+            <td className="px-4 py-3 whitespace-nowrap">
+                <div className="flex flex-col">
+                    <span className="text-sm font-bold text-gray-900">{entry.timestamp.toDate().toLocaleString()}</span>
+                    <span className="text-[10px] text-gray-500 uppercase">{entry.id}</span>
+                </div>
+            </td>
+            <td className="px-4 py-3">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                    entry.type === 'entry' ? 'bg-green-100 text-green-700' :
+                    entry.type === 'exit' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                    {entry.type}
+                </span>
+            </td>
+            <td className="px-4 py-3">
+                <div className="flex flex-col gap-1">
+                    {entry.mapsUrl ? (
+                        <a href={entry.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                            <MapPin size={12} /> Localização
+                        </a>
+                    ) : <span className="text-xs text-gray-400">Sem GPS</span>}
+                    {entry.photoUrl ? (
+                        <a href={entry.photoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:underline">Ver Foto</a>
+                    ) : <span className="text-xs text-gray-400">Sem Foto</span>}
+                </div>
+            </td>
+            <td className="px-4 py-3 min-w-[300px]">
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                    <input 
+                        type="datetime-local" 
+                        value={newTime}
+                        onChange={e => setNewTime(e.target.value)}
+                        className="text-xs rounded border-gray-300 w-full text-gray-900"
+                    />
+                    <select 
+                        value={newType}
+                        onChange={e => setNewType(e.target.value as any)}
+                        className="text-xs rounded border-gray-300 w-full text-gray-900"
+                    >
+                        <option value="entry">Entrada</option>
+                        <option value="lunch_start">Início Almoço</option>
+                        <option value="lunch_end">Fim Almoço</option>
+                        <option value="exit">Saída</option>
+                    </select>
+                </div>
+                <input 
+                    type="text"
+                    value={reason}
+                    onChange={e => setReason(e.target.value)}
+                    placeholder="Justificativa obrigatória..."
+                    className="text-xs rounded border-gray-300 w-full text-gray-900"
+                />
+            </td>
+            <td className="px-4 py-3 text-right">
+                <button 
+                    onClick={handleUpdate}
+                    disabled={isSaving || !reason || !isChanged}
+                    className="p-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-30 transition-all shadow-sm"
+                    title="Salvar alterações"
+                >
+                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                </button>
+            </td>
+        </tr>
+    );
 };
 
 export default AttendanceReports;
