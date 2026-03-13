@@ -422,7 +422,7 @@ const Ponto: React.FC = () => {
       const remainingMin = Math.floor(remainingMs / 1000 / 60);
       const remainingSec = Math.floor((remainingMs / 1000) % 60);
       return {
-        valid: false,
+      valid: false,
         remaining: `${String(remainingMin).padStart(2,'0')}:${String(remainingSec).padStart(2,'0')}`
       };
     }
@@ -502,7 +502,7 @@ const Ponto: React.FC = () => {
        return;
     }
 
-    // 2. Start Process (Capture and release)
+    // 2. Start Process
     setProcessing(true);
     setProcessMessage('Capturando...');
     setErrorMessage('');
@@ -521,60 +521,89 @@ const Ponto: React.FC = () => {
 
         const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-        // RELEASE UI IMMEDIATELY
+        // ─── PASSO 1: SALVAR O PONTO IMEDIATAMENTE NO FIRESTORE ───
+        setProcessMessage('Gravando registro...');
+        const docRef = await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
+            userId: currentUser.uid,
+            type: nextAction.type,
+            timestamp: serverTimestamp(),
+            locationId: detectedLocation?.id || 'unknown',
+            locationName: detectedLocation?.name || 'Capturado via GPS',
+            isManual: false,
+            gpsCoords: freshLocation ? { lat: freshLocation.lat, lng: freshLocation.lng, accuracy: freshLocation.accuracy } : null,
+            userAgent: navigator.userAgent,
+            biometricVerified: false,   // será atualizado pelo background
+            photoURL: null,             // será atualizado pelo background
+            aiValidation: null,         // será atualizado pelo background
+        });
+
+        // ─── PASSO 2: LIBERAR A UI APÓS CONFIRMAÇÃO DO FIRESTORE ───
         setSuccessMessage(`${nextAction.label} REGISTRADA!`);
         setProcessing(false);
         stopCamera();
         
+        logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success', `Ponto gravado: ${nextAction.label}`, { extra: { docId: docRef.id } });
+
         // Auto-reset after 3s
         setTimeout(() => {
             setSuccessMessage('');
             setActiveTab('history');
         }, 3000);
 
-        // PERSIST IN BACKGROUND
+        // ─── PASSO 3: PROCESSAR FOTO E IA EM BACKGROUND (updateDoc) ───
         (async () => {
           try {
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY as string });
-            const refBase64 = await getBase64FromUrl(profilePhotoUrl);
-            
-            const response = await ai.models.generateContent({
-                model: "gemini-1.5-flash",
-                contents: {
-                  parts: [
-                     { inlineData: { mimeType: 'image/jpeg', data: photoBase64.split(',')[1] } },
-                     { inlineData: { mimeType: 'image/jpeg', data: refBase64.split(',')[1] } },
-                     { text: "Analyze these two faces. Are they the same person? Reply with strictly valid JSON: { \"match\": boolean, \"confidence\": number }." }
-                  ]
-                },
-                config: { responseMimeType: "application/json" }
-            });
-
-            const result = JSON.parse(response.text || '{}');
-
-            // Upload Photo
-            const storageRef = ref(storage, `${CollectionName.TIME_ENTRIES}/${currentUser.uid}_${Date.now()}.jpg`);
+            // 3a. Upload da foto capturada
+            const storageRef = ref(storage, `${CollectionName.TIME_ENTRIES}/${currentUser.uid}_${docRef.id}.jpg`);
             await uploadString(storageRef, photoBase64, 'data_url');
             const photoURL = await getDownloadURL(storageRef);
 
-            // SAVE RECORD
-            await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
-                userId: currentUser.uid,
-                type: nextAction.type,
-                timestamp: serverTimestamp(),
+            // 3b. Validação biométrica com Gemini
+            let aiValidation: { match: boolean; confidence: number } | null = null;
+            try {
+              const refBase64 = await getBase64FromUrl(profilePhotoUrl);
+              const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY as string });
+              const response = await ai.models.generateContent({
+                  model: "gemini-1.5-flash",
+                  contents: {
+                    parts: [
+                       { inlineData: { mimeType: 'image/jpeg', data: photoBase64.split(',')[1] } },
+                       { inlineData: { mimeType: 'image/jpeg', data: refBase64.split(',')[1] } },
+                       { text: "Analyze these two faces. Are they the same person? Reply with strictly valid JSON: { \"match\": boolean, \"confidence\": number }." }
+                    ]
+                  },
+                  config: { responseMimeType: "application/json" }
+              });
+              aiValidation = JSON.parse(response.text || 'null');
+            } catch (aiError) {
+              // IA falhou — registrar e continuar sem invalidar o ponto
+              logEvent(
+                currentUser.uid,
+                userProfile?.displayName,
+                'ponto_ai_validation_failed',
+                'warning',
+                `Validação biométrica falhou para o doc ${docRef.id}. Ponto mantido para conferência manual.`,
+                { extra: { error: String(aiError) } }
+              );
+            }
+
+            // 3c. Atualizar o documento já salvo com foto e resultado da IA
+            await updateDoc(doc(db, CollectionName.TIME_ENTRIES, docRef.id), {
                 photoURL,
-                locationId: detectedLocation?.id || 'unknown',
-                locationName: detectedLocation?.name || 'Capturado via GPS',
-                isManual: false,
-                aiValidation: result,
-                gpsCoords: freshLocation ? { lat: freshLocation.lat, lng: freshLocation.lng, accuracy: freshLocation.accuracy } : null,
-                userAgent: navigator.userAgent
+                aiValidation,
+                biometricVerified: aiValidation?.match === true,
             });
 
-            logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success', `Ponto registrado asincronamente: ${nextAction.label}`);
-            
           } catch (bgError) {
-            console.error("Background processing error:", bgError);
+            // Upload de foto falhou — registrar e não abortar o ponto
+            logEvent(
+              currentUser.uid,
+              userProfile?.displayName,
+              'ponto_background_processing_failed',
+              'warning',
+              `Processamento em background falhou para o doc ${docRef.id}. Ponto mantido para conferência manual.`,
+              { extra: { error: String(bgError) } }
+            );
           }
         })();
 
