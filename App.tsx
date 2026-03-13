@@ -30,6 +30,8 @@ const LandingPageEditor = lazy(() => import('./components/LandingPageEditor'));
 const SystemLogs = lazy(() => import('./components/SystemLogs'));
 const TechnicianStats = lazy(() => import('./components/TechnicianStats')); // SPRINT 5
 const CampaignManagement = lazy(() => import('./components/CampaignManagement')); // SPRINT 9
+const IntelModule = lazy(() => import('./components/IntelModule')); // SPRINT 15
+const IntelGuard = lazy(() => import('./components/IntelGuard')); // SPRINT 15
 
 // Extracted EnforceShiftLock Component
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean, children?: React.ReactNode }) => {
@@ -266,6 +268,12 @@ const AppContent: React.FC = () => {
             
             <Route path="locais" element={
               hasPermission('canManageUsers') ? <WorkLocations /> : <Navigate to="/app" />
+            } />
+
+            <Route path="inteligencia" element={
+              <IntelGuard>
+                <IntelModule />
+              </IntelGuard>
             } />
           </Route>
 

@@ -28,7 +28,8 @@ import {
   Trophy,
   Download,
   RefreshCcw,
-  Target
+  Target,
+  Brain
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -80,6 +81,7 @@ const Layout: React.FC = () => {
       '/app/ranking':          'Ranking da Equipe',
       '/app/campanhas':        'Gestão de Campanhas',
       '/app/perfil':           'Meu Perfil',
+      '/app/inteligencia':     'Inteligência MGR',
     };
 
     const pageTitle = PAGE_TITLES[location.pathname] ?? location.pathname;
@@ -157,6 +159,7 @@ const Layout: React.FC = () => {
     { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') }, // Renomeado
+    { to: '/app/inteligencia', icon: Brain, label: 'Inteligência MGR 🧠', visible: ['admin', 'developer', 'intel_admin', 'intel_analyst', 'intel_viewer'].includes(userProfile?.role || '') },
     
     // Management Section
     { to: '/app/campanhas', icon: Target, label: 'Campanhas (MGR Coins)', visible: can('canManageSettings') },

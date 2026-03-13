@@ -3,7 +3,12 @@ import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTi
 import { db } from '../firebase';
 import { CollectionName, TimeEntry, UserProfile, TimeBankEntry } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { Calendar, User, Search, AlertCircle, CheckCircle, Clock, AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, FileText, FileSpreadsheet, MapPin, Edit2, Banknote, PiggyBank } from 'lucide-react';
+import { 
+  Calendar, User, Search, AlertCircle, CheckCircle, Clock, 
+  AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, 
+  FileText, FileSpreadsheet, MapPin, Edit2, Banknote, PiggyBank,
+  History, Camera
+} from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -1816,68 +1821,98 @@ const AdjustEntryRow: React.FC<{ entry: TimeEntry, onUpdate: () => void }> = ({ 
     const isChanged = newTime !== originalTime || newType !== entry.type;
 
     return (
-        <tr className="hover:bg-gray-50 transition-colors">
+        <tr className={`hover:bg-gray-50 transition-colors ${entry.editedBy ? 'bg-amber-50/30' : ''}`}>
             <td className="px-4 py-3 whitespace-nowrap">
                 <div className="flex flex-col">
-                    <span className="text-sm font-bold text-gray-900">{entry.timestamp.toDate().toLocaleString()}</span>
-                    <span className="text-[10px] text-gray-500 uppercase">{entry.id}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-900">{entry.timestamp.toDate().toLocaleString()}</span>
+                        {entry.editedBy && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-black text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-tighter" title={`Editado por UID: ${entry.editedBy}`}>
+                                <History size={10} /> Editado
+                            </span>
+                        )}
+                    </div>
+                    <span className="text-[10px] text-gray-400 font-mono">{entry.id}</span>
                 </div>
-            </td>
-            <td className="px-4 py-3">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                    entry.type === 'entry' ? 'bg-green-100 text-green-700' :
-                    entry.type === 'exit' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
-                }`}>
-                    {entry.type}
-                </span>
             </td>
             <td className="px-4 py-3">
                 <div className="flex flex-col gap-1">
-                    {entry.mapsUrl ? (
-                        <a href={entry.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                            <MapPin size={12} /> Localização
-                        </a>
-                    ) : <span className="text-xs text-gray-400">Sem GPS</span>}
-                    {entry.photoUrl ? (
-                        <a href={entry.photoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:underline">Ver Foto</a>
-                    ) : <span className="text-xs text-gray-400">Sem Foto</span>}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase w-fit ${
+                        entry.type === 'entry' ? 'bg-green-100 text-green-700 border border-green-200' :
+                        entry.type === 'exit' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-blue-100 text-blue-700 border border-blue-200'
+                    }`}>
+                        {entry.type === 'entry' ? 'Entrada' : entry.type === 'exit' ? 'Saída' : entry.type === 'lunch_start' ? 'Início Almoço' : 'Fim Almoço'}
+                    </span>
+                    {entry.isManual && !entry.editedBy && (
+                        <span className="text-[9px] text-gray-500 font-medium italic">Lançamento Manual</span>
+                    )}
                 </div>
             </td>
-            <td className="px-4 py-3 min-w-[300px]">
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                    <input 
-                        type="datetime-local" 
-                        value={newTime}
-                        onChange={e => setNewTime(e.target.value)}
-                        className="text-xs rounded border-gray-300 w-full text-gray-900"
-                    />
-                    <select 
-                        value={newType}
-                        onChange={e => setNewType(e.target.value as any)}
-                        className="text-xs rounded border-gray-300 w-full text-gray-900"
-                    >
-                        <option value="entry">Entrada</option>
-                        <option value="lunch_start">Início Almoço</option>
-                        <option value="lunch_end">Fim Almoço</option>
-                        <option value="exit">Saída</option>
-                    </select>
+            <td className="px-4 py-3">
+                <div className="flex flex-col gap-1.5">
+                    {entry.locationName ? (
+                        <span className="text-xs text-gray-600 flex items-center gap-1">
+                            <MapPin size={12} className="text-gray-400" /> {entry.locationName}
+                        </span>
+                    ) : entry.coordinates ? (
+                        <a href={`https://www.google.com/maps?q=${entry.coordinates.lat},${entry.coordinates.lng}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                            <MapPin size={12} /> Ver no Mapa
+                        </a>
+                    ) : <span className="text-xs text-gray-400 italic">Sem localização</span>}
+                    
+                    {entry.photoUrl ? (
+                        <a href={entry.photoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 font-medium hover:underline flex items-center gap-1">
+                            <Camera size={12} /> Ver Evidência
+                        </a>
+                    ) : <span className="text-xs text-gray-400 italic">Sem foto</span>}
                 </div>
-                <input 
-                    type="text"
-                    value={reason}
-                    onChange={e => setReason(e.target.value)}
-                    placeholder="Justificativa obrigatória..."
-                    className="text-xs rounded border-gray-300 w-full text-gray-900"
-                />
+            </td>
+            <td className="px-4 py-3 min-w-[320px]">
+                <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase">Ajustar Hora</label>
+                            <input 
+                                type="datetime-local" 
+                                value={newTime}
+                                onChange={e => setNewTime(e.target.value)}
+                                className="text-xs rounded-lg border-gray-200 w-full text-gray-900 focus:ring-brand-500 focus:border-brand-500 py-1"
+                            />
+                        </div>
+                        <div className="space-y-0.5">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase">Ajustar Tipo</label>
+                            <select 
+                                value={newType}
+                                onChange={e => setNewType(e.target.value as any)}
+                                className="text-xs rounded-lg border-gray-200 w-full text-gray-900 focus:ring-brand-500 focus:border-brand-500 py-1"
+                            >
+                                <option value="entry">Entrada</option>
+                                <option value="lunch_start">Início Almoço</option>
+                                <option value="lunch_end">Fim Almoço</option>
+                                <option value="exit">Saída</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="space-y-0.5">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase">Justificativa da Alteração</label>
+                        <input 
+                            type="text"
+                            value={reason}
+                            onChange={e => setReason(e.target.value)}
+                            placeholder="Descreva o motivo da correção..."
+                            className="text-xs rounded-lg border-gray-200 w-full text-gray-900 focus:ring-brand-500 focus:border-brand-500 py-1.5"
+                        />
+                    </div>
+                </div>
             </td>
             <td className="px-4 py-3 text-right">
                 <button 
                     onClick={handleUpdate}
                     disabled={isSaving || !reason || !isChanged}
-                    className="p-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-30 transition-all shadow-sm"
-                    title="Salvar alterações"
+                    className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 disabled:opacity-30 transition-all shadow-md hover:shadow-lg active:scale-95 group"
+                    title="Confirmar Ajuste"
                 >
-                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} className="group-hover:scale-110 transition-transform" />}
                 </button>
             </td>
         </tr>

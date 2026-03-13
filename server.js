@@ -6,10 +6,16 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import intelRoutes from './routes/intel.js';
+
 const app = express();
+app.use(express.json()); // Suporte a JSON no body
 
 // Pega a porta do Cloud Run
 const PORT = process.env.PORT || 8080;
+
+// Rotas da API
+app.use('/api/intel', intelRoutes);
 
 // 1. IMPORTANTE: Serve APENAS os arquivos estáticos da pasta 'dist'
 // Isso garante que o navegador pegue o JS compilado, não o source .tsx

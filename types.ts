@@ -13,7 +13,7 @@ export interface CampaignConfig {
 
 
 // --- ACCESS CONTROL & PERMISSIONS ---
-export type UserRole = 'admin' | 'manager' | 'employee' | 'technician' | 'pending' | 'developer';
+export type UserRole = 'admin' | 'manager' | 'employee' | 'technician' | 'pending' | 'developer' | 'intel_viewer' | 'intel_analyst' | 'intel_admin';
 
 export interface PermissionSet {
   // Administrative
@@ -180,6 +180,27 @@ export interface TimeBankEntry {
   createdAt: Timestamp;
 }
 
+// --- INTELLIGENCE MODULE ---
+export interface IntelAnalysis {
+  summary: string;
+  suggestion: string;
+  urgency: 'critical' | 'high' | 'medium' | 'low';
+  sentiment: 'positive' | 'neutral' | 'negative' | 'frustrated';
+  category: string; // Eisenhower, Ishikawa, BPMN, etc.
+}
+
+export interface IntelNote {
+  id: string;
+  userId: string; // Quem criou a nota
+  text: string;
+  analysis?: IntelAnalysis;
+  applied?: boolean;
+  hub_sync?: boolean;
+  createdAt: Timestamp;
+  createdBy: string; // Nome ou UID do autor
+  type?: 'insight' | 'alert' | 'metric';
+}
+
 // --- HR & TIME TRACKING ---
 export interface TimeEntry {
   id: string;
@@ -300,4 +321,6 @@ export enum CollectionName {
   CONTACT_MESSAGES = 'contact_messages',
   SYSTEM_LOGS = 'system_logs',
   TIME_BANK = 'time_bank',
+  NOTAS_INTEL = 'notas_intel',
+  INTEL_CONFIG = 'intel_config',
 }
