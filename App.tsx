@@ -27,7 +27,8 @@ const AttendanceReports = lazy(() => import('./components/AttendanceReports'));
 const PendingApproval = lazy(() => import('./components/PendingApproval'));
 const LandingPage = lazy(() => import('./components/LandingPage'));
 const LandingPageEditor = lazy(() => import('./components/LandingPageEditor'));
-const SystemLogs = lazy(() => import('./components/SystemLogs')); // ← NOVO
+const SystemLogs = lazy(() => import('./components/SystemLogs'));
+const TechnicianStats = lazy(() => import('./components/TechnicianStats')); // SPRINT 5
 
 // Extracted EnforceShiftLock Component
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean, children?: React.ReactNode }) => {
@@ -248,6 +249,10 @@ const AppContent: React.FC = () => {
             
             <Route path="usuarios" element={
               hasPermission('canManageUsers') ? <Users /> : <Navigate to="/app" />
+            } />
+
+            <Route path="ranking" element={
+               <TechnicianStats />
             } />
             
             <Route path="setores" element={

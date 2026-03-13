@@ -24,7 +24,8 @@ import {
   Menu,
   X,
   CalendarDays,
-  Activity
+  Activity,
+  Trophy
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -56,6 +57,7 @@ const Layout: React.FC = () => {
       '/app/setores':          'Cargos & Acessos',
       '/app/locais':           'Locais de Trabalho',
       '/app/logs':             'Log do Sistema',
+      '/app/ranking':          'Ranking da Equipe',
       '/app/perfil':           'Meu Perfil',
     };
 
@@ -93,6 +95,7 @@ const Layout: React.FC = () => {
   const navItems = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
     { to: '/app/tarefas', icon: CheckSquare, label: 'Tarefas (OS)', visible: can('canViewTasks') },
+    { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: true },
     { to: '/app/agenda', icon: CalendarDays, label: 'Agenda (Gantt)', visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
     { to: '/app/clientes', icon: Building, label: 'Clientes', visible: can('canManageClients') },
     { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },

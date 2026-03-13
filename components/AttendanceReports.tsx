@@ -1056,9 +1056,14 @@ const AttendanceReports: React.FC = () => {
                                                     {dayStatus.label}
                                                 </span>
                                                 
-                                                {/* Map Links for Lunch Entries */}
-                                                {(day.lunchStart?.mapsUrl || day.lunchEnd?.mapsUrl) && (
+                                                {/* Map Links for All Entries */}
+                                                {(day.entry?.mapsUrl || day.lunchStart?.mapsUrl || day.lunchEnd?.mapsUrl || day.exit?.mapsUrl) && (
                                                     <div className="flex flex-col gap-0.5 mt-1">
+                                                        {day.entry?.mapsUrl && (
+                                                            <a href={day.entry.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                                                <MapPin size={10} /> Mapa (Entrada)
+                                                            </a>
+                                                        )}
                                                         {day.lunchStart?.mapsUrl && (
                                                             <a href={day.lunchStart.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
                                                                 <MapPin size={10} /> Mapa (Ida Almoço)
@@ -1067,6 +1072,11 @@ const AttendanceReports: React.FC = () => {
                                                         {day.lunchEnd?.mapsUrl && (
                                                             <a href={day.lunchEnd.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
                                                                 <MapPin size={10} /> Mapa (Volta Almoço)
+                                                            </a>
+                                                        )}
+                                                        {day.exit?.mapsUrl && (
+                                                            <a href={day.exit.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                                                <MapPin size={10} /> Mapa (Saída)
                                                             </a>
                                                         )}
                                                     </div>

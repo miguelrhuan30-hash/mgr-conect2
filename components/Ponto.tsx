@@ -487,15 +487,16 @@ const Ponto: React.FC = () => {
     }
 
     const requiresLocation = nextAction.type === 'entry' || nextAction.type === 'exit';
+    const hasRestrictedPerimeter = userProfile?.allowedLocationIds && userProfile.allowedLocationIds.length > 0;
 
-    if (requiresLocation && !detectedLocation && userProfile?.role !== 'admin') {
-        setErrorMessage("Você está fora do perímetro permitido. Entrada e Saída exigem localização autorizada.");
+    if (requiresLocation && hasRestrictedPerimeter && !detectedLocation && userProfile?.role !== 'admin') {
+        setErrorMessage("Você está fora do perímetro permitido para o seu perfil.");
         logEvent(
           currentUser.uid,
           userProfile?.displayName,
           'ponto_location_blocked',
           'warning',
-          'Bloqueado: fora do perímetro para entrada/saída',
+          'Bloqueado: fora do perímetro restrito',
           {
             gpsCoords: currentLocation
               ? { lat: currentLocation.lat, lng: currentLocation.lng, accuracy: currentLocation.accuracy }
@@ -503,6 +504,29 @@ const Ponto: React.FC = () => {
           }
         );
         return;
+    }
+    
+    // 1.5 GET FRESH GPS
+    console.log('1.5 Obtendo GPS fresco...');
+    let freshLocation = currentLocation;
+    let gpsDenied = false;
+
+    try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            if (!navigator.geolocation) { reject(new Error('unsupported')); return; }
+            navigator.geolocation.getCurrentPosition(resolve, reject, { 
+                enableHighAccuracy: true, 
+                timeout: 8000,
+                maximumAge: 0 
+            });
+        });
+        freshLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        setCurrentLocation(freshLocation);
+    } catch (err: any) {
+        console.warn("GPS Fresh Fetch Failed:", err);
+        if (err.code === 1) { // PERMISSION_DENIED
+           gpsDenied = true;
+        }
     }
     
     // 2. Profile Photo Check
@@ -590,18 +614,30 @@ const Ponto: React.FC = () => {
         logEvent(currentUser.uid, userProfile?.displayName, 'ponto_upload_photo', 'info', 'Foto de evidência enviada');
 
         console.log('5. Salvando no Firestore...');
+        
+        let finalLocationName = detectedLocation ? detectedLocation.name : null;
+        if (!finalLocationName) {
+            if (freshLocation) {
+                finalLocationName = "Capturado via GPS";
+            } else if (gpsDenied) {
+                finalLocationName = "Sem Localização (GPS Negado)";
+            } else {
+                finalLocationName = "Sem Localização (Erro/Timeout)";
+            }
+        }
+
         const docRef = await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
             userId: currentUser.uid,
             type: nextAction.type,
             timestamp: serverTimestamp(),
             locationId: detectedLocation?.id || null,
-            locationName: detectedLocation?.name || null,
-            coordinates: currentLocation ? {
-                lat: currentLocation.lat,
-                lng: currentLocation.lng,
-                accuracy: currentLocation.accuracy || null
+            locationName: finalLocationName,
+            coordinates: freshLocation ? {
+                lat: freshLocation.lat,
+                lng: freshLocation.lng,
+                accuracy: freshLocation.accuracy || null
             } : null,
-            mapsUrl: currentLocation ? `https://www.google.com/maps?q=${currentLocation.lat},${currentLocation.lng}` : null,
+            mapsUrl: freshLocation ? `https://www.google.com/maps?q=${freshLocation.lat},${freshLocation.lng}` : null,
             locationVerified: !!detectedLocation,
             photoEvidenceUrl: photoUrl,
             userAgent: navigator.userAgent,
@@ -619,8 +655,8 @@ const Ponto: React.FC = () => {
             actionType: nextAction.type,
             locationName: detectedLocation?.name,
             locationId: detectedLocation?.id,
-            gpsCoords: currentLocation
-              ? { lat: currentLocation.lat, lng: currentLocation.lng, accuracy: currentLocation.accuracy }
+            gpsCoords: freshLocation
+              ? { lat: freshLocation.lat, lng: freshLocation.lng, accuracy: freshLocation.accuracy }
               : undefined,
             biometricConfidence: result.confidence,
             biometricMatch: true,
