@@ -226,6 +226,49 @@ input,textarea,select{font-family:var(--font);transition:border-color .15s}
 .connect-data-table td{padding:7px 10px;border-bottom:1px solid var(--bdr2)}
 .connect-data-table tr:last-child td{border-bottom:none}
 
+/* ── INTELIGÊNCIA ── */
+.intel-input-wrap{border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;background:var(--surf)}
+.intel-ta{width:100%;border:none;outline:none;padding:12px 14px;font-size:13px;font-family:var(--font);background:var(--surf);color:var(--txt);resize:vertical;min-height:72px;line-height:1.5}
+.intel-input-row{padding:8px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--bdr2);background:var(--surf2)}
+.intel-hint{font-size:10.5px;color:var(--txt3)}
+.intel-btn{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,var(--blue),var(--blue-d));color:#fff;font-size:12px;font-weight:500;cursor:pointer;transition:opacity .15s}
+.intel-btn:hover{opacity:.88}
+.intel-btn:disabled{opacity:.5;cursor:not-allowed}
+.intel-stats{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--bdr2);margin-bottom:10px}
+.istat{text-align:center;flex:1}
+.istat-n{font-family:var(--display);font-size:22px;font-weight:700;line-height:1}
+.istat-l{font-size:10px;color:var(--txt3);margin-top:2px}
+.intel-filter{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.if-chip{font-size:11px;padding:4px 11px;border-radius:20px;border:1px solid var(--bdr);background:var(--surf);color:var(--txt2);cursor:pointer;transition:all .15s}
+.if-chip:hover{border-color:var(--blue-m);color:var(--blue)}
+.if-chip.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.intel-empty{text-align:center;padding:40px 20px;color:var(--txt3)}
+.intel-card{background:var(--surf);border:1px solid var(--bdr2);border-radius:var(--r-lg);margin-bottom:10px;box-shadow:var(--sh);overflow:hidden;transition:box-shadow .15s}
+.intel-card:hover{box-shadow:var(--sh-md)}
+.ic-head{display:flex;align-items:flex-start;gap:10px;padding:12px 14px 8px}
+.ic-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.ic-body{flex:1;min-width:0}
+.ic-author{font-size:12.5px;font-weight:500;color:var(--txt)}
+.ic-time{font-size:10.5px;color:var(--txt3);margin-top:2px}
+.ic-tag{display:inline-flex;align-items:center}
+.ic-text{padding:0 14px 10px;font-size:13px;color:var(--txt2);line-height:1.55}
+.ic-analysis{margin:0 14px 10px;background:linear-gradient(135deg,#E8F0FA,#F0F6FF);border:1px solid #B5D4F4;border-radius:10px;padding:10px 13px}
+.ic-analysis-head{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#185FA5;margin-bottom:5px;display:flex;align-items:center;gap:5px}
+.ic-summary{font-size:12.5px;font-weight:500;color:var(--txt);line-height:1.4;margin-bottom:4px}
+.ic-acao{font-size:11.5px;color:#185FA5;margin-bottom:6px}
+.ic-tags{display:flex;flex-wrap:wrap;gap:4px}
+.ic-dest{padding:10px 14px 12px;border-top:1px solid var(--bdr2)}
+.ic-dest-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);margin-bottom:7px}
+.ic-dest-inner{display:flex;flex-wrap:wrap;gap:5px}
+.ic-dest-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;border:1px solid;font-size:11.5px;font-weight:600;cursor:pointer;transition:opacity .15s;user-select:none}
+.ic-dest-chip:hover{opacity:.75}
+.nc-btn{font-size:11px;padding:4px 10px;border-radius:7px;border:1px solid var(--bdr);background:var(--surf2);color:var(--txt2);cursor:pointer}
+.nc-btn:hover{background:var(--bdr)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.pulse{animation:pulse 1.2s ease infinite}
+
 /* ── SECTION BOX ── */
 .sbox{background:var(--surf);border:1px solid var(--bdr2);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh);margin-bottom:14px}
 .sbox-head{padding:13px 16px;border-bottom:1px solid var(--bdr2);display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -2103,35 +2146,54 @@ async function intelSend() {
     const res = await fetch('/api/intel/notas', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({text: txt, userId: 'hub-user', userName: 'MGR Hub'})
+      body: JSON.stringify({text: txt, context: INTEL_CONTEXT, userId: 'hub-user', userName: 'MGR Hub'})
     });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+
+    // Tenta usar JSON estruturado retornado pelo Gemini (via backend)
+    let analise = null;
     const raw = data.analysis || {};
-    const destino = raw.category?.toLowerCase().includes('roadmap') ? 'roadmap'
-                  : raw.category?.toLowerCase().includes('ishikawa') ? 'ishikawa'
-                  : raw.category?.toLowerCase().includes('canvas') ? 'canvas'
-                  : 'eisenhower';
-    const analise = {
-      tipo:'geral', destino, area: raw.category||'geral',
-      sentimento: raw.sentiment==='positive'?'positiva':raw.sentiment==='negative'?'negativa':'neutra',
-      urgencia: raw.urgency==='critical'?'critica':raw.urgency==='high'?'alta':raw.urgency==='low'?'baixa':'media',
-      resumo: raw.summary||txt.slice(0,150),
-      acao_sugerida: raw.suggestion||'Revise manualmente.',
-      tags: [raw.category||'geral'],
-      eisenhower:{quadrante:'plan',titulo:(raw.summary||txt).slice(0,60),responsavel:'Equipe',prazo:'A definir'},
-      ishikawa:{categoria:'Processos',causa:(raw.suggestion||txt).slice(0,70)},
-      canvas:{celula:'atividades',conteudo:(raw.suggestion||txt).slice(0,80)},
-      bpmn:{processo:'nenhum',task:(raw.summary||txt).slice(0,50)},
-      roadmap:{fase:2,titulo:(raw.summary||txt).slice(0,60),responsavel:'Equipe',prazo:'A definir'}
-    };
+    if(typeof raw === 'object' && raw.destino) {
+      // Backend retornou JSON estruturado direto
+      analise = raw;
+    } else {
+      // Fallback: monta analise a partir dos campos simples do backend
+      const txt2 = raw.summary || txt;
+      const destino = raw.destino ||
+        (raw.category?.includes('roadmap') ? 'roadmap'
+        : raw.category?.includes('ishikawa') ? 'ishikawa'
+        : raw.category?.includes('canvas') ? 'canvas'
+        : raw.category?.includes('bpmn') ? 'bpmn' : 'eisenhower');
+      const urgencia = raw.urgency==='critical'||raw.urgencia==='critica' ? 'critica'
+                     : raw.urgency==='high'||raw.urgencia==='alta' ? 'alta'
+                     : raw.urgency==='low'||raw.urgencia==='baixa' ? 'baixa' : 'media';
+      const sentimento = raw.sentiment==='positive'||raw.sentimento==='oportunidade' ? 'oportunidade'
+                       : raw.sentiment==='negative'||raw.sentimento==='alerta' ? 'alerta' : 'neutra';
+      analise = {
+        tipo: raw.tipo || 'acao',
+        destino,
+        area: raw.area || raw.category || 'geral',
+        sentimento,
+        urgencia,
+        resumo: txt2.slice(0,150),
+        acao_sugerida: raw.suggestion || raw.acao_sugerida || 'Revise manualmente.',
+        tags: raw.tags || [raw.category || 'geral'],
+        eisenhower: raw.eisenhower || {quadrante:'plan', titulo:txt2.slice(0,60), responsavel:'Equipe', prazo:'A definir'},
+        ishikawa: raw.ishikawa || {categoria:'Processos', causa:txt2.slice(0,70)},
+        canvas: raw.canvas || {celula:'atividades', conteudo:txt2.slice(0,80)},
+        bpmn: raw.bpmn || {processo:'nenhum', task:txt2.slice(0,50)},
+        roadmap: raw.roadmap || {fase:2, titulo:txt2.slice(0,60), responsavel:'Equipe', prazo:'A definir'}
+      };
+    }
+
     const n = S.intel.notas.find(x=>x.id===tmpId);
     if(n) { n.loading = false; n.analise = analise; }
     log(`Nota de inteligência analisada: "${txt.slice(0,50)}"`);
     save();
   } catch(e) {
     const n = S.intel.notas.find(x=>x.id===tmpId);
-    if(n) { n.loading = false; n.analise = null; n.erro = 'Erro ao conectar ao servidor: ' + e.message; }
+    if(n) { n.loading = false; n.analise = null; n.erro = 'Erro ao conectar ao servidor Gemini: ' + e.message; }
   }
 
   btn.disabled = false;
@@ -2182,11 +2244,11 @@ function renderIntelCard(n) {
 
   if(n.loading) return `<div class="intel-card">
     <div class="ic-head">
-      <div class="ic-avatar" style="background:#E6F1FB;color:#185FA5">✦</div>
-      <div class="ic-body"><div class="ic-author">Analisando com Claude...</div><div class="ic-time">${n.ts}</div></div>
+      <div class="ic-avatar" style="background:#E8F0FA;color:#185FA5">✦</div>
+      <div class="ic-body"><div class="ic-author">Analisando com Gemini...</div><div class="ic-time">${n.ts}</div></div>
     </div>
     <div class="ic-text" style="color:var(--txt3)">${esc(n.texto)}</div>
-    <div style="margin:0 14px 14px;display:flex;gap:5px;align-items:center"><div class="pulse" style="width:8px;height:8px;border-radius:50%;background:var(--blue-m)"></div><span class="fz11 txt3">Claude está analisando o contexto do negócio...</span></div>
+    <div style="margin:0 14px 14px;display:flex;gap:5px;align-items:center"><div class="pulse" style="width:8px;height:8px;border-radius:50%;background:var(--blue-m)"></div><span class="fz11 txt3">Gemini está analisando o contexto do negócio...</span></div>
   </div>`;
 
   if(!a) return `<div class="intel-card">
@@ -2232,7 +2294,7 @@ function renderIntelCard(n) {
     </div>
     <div class="ic-text">${esc(n.texto)}</div>
     <div class="ic-analysis">
-      <div class="ic-analysis-head">✦ Claude analisou</div>
+      <div class="ic-analysis-head">✦ Gemini analisou</div>
       <div class="ic-summary">${esc(a.resumo)}</div>
       ${a.acao_sugerida?`<div class="ic-acao">→ ${esc(a.acao_sugerida)}</div>`:''}
       <div class="ic-tags">${(a.tags||[]).map(t=>`<span class="ic-tag" style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--surf);color:var(--txt2);border:1px solid var(--bdr)">${esc(t)}</span>`).join('')}</div>
@@ -2464,6 +2526,74 @@ document.addEventListener('keydown',e=>{
 /* ── INIT ── */
 try{const t=localStorage.getItem('mgr-theme');if(t==='dark')document.documentElement.setAttribute('data-dark','');}catch(e){}
 load();
+
+/* ═══════════════════════════════════════
+   DEMO — popula dados ricos se storage vazio
+═══════════════════════════════════════ */
+(function initDemo(){
+  if(localStorage.getItem('mgr-hub-v1')) return;
+  const today = new Date().toLocaleDateString('pt-BR');
+  if(!S.intel) S.intel = {notas:[]};
+  S.intel.notas = [
+    {id:'ni1',texto:'O cliente Honor RJ ficou 3 dias sem resposta após aprovação do orçamento. Ninguém avisou o administrativo sobre a instalação.',
+     ts:'há 2 dias',autor:'Miguel',loading:false,aplicados:{},
+     analise:{tipo:'fraqueza',destino:'ishikawa',area:'comercial',sentimento:'alerta',urgencia:'alta',
+       resumo:'Falha de handoff gerou cliente insatisfeito',
+       acao_sugerida:'Implementar protocolo de confirmação 24h pós-aprovação',
+       tags:['handoff','cliente','urgente'],
+       eisenhower:{quadrante:'do',titulo:'Protocolo de handoff Comercial → Adm',responsavel:'Comercial + Adm',prazo:'Semana 1'},
+       ishikawa:{categoria:'Comunicação',causa:'Sem handoff formal entre Comercial e Administrativo'},
+       canvas:{celula:'relacionamento',conteudo:'Confirmação ativa pós-aprovação de orçamento'},
+       bpmn:{processo:'handoff-comercial',task:'Confirmar recebimento em 24h',novo_processo:''},
+       roadmap:{fase:1,titulo:'Implementar protocolo de handoff',responsavel:'Comercial + Adm',prazo:'Semana 1'}}},
+    {id:'ni2',texto:'Temos 3 câmaras com manutenção preventiva vencendo em abril. Nenhuma está agendada e os clientes não foram contactados.',
+     ts:'ontem',autor:'Giovanni',loading:false,aplicados:{eisenhower:true},
+     analise:{tipo:'alerta',destino:'eisenhower',area:'operacional',sentimento:'alerta',urgencia:'critica',
+       resumo:'3 PMs vencendo sem agendamento — risco de perda de contrato',
+       acao_sugerida:'Acionar Adm para agendar os 3 clientes esta semana',
+       tags:['preventiva','prazo','agenda'],
+       eisenhower:{quadrante:'do',titulo:'Agendar 3 manutenções preventivas de abril',responsavel:'Administrativo',prazo:'Esta semana'},
+       ishikawa:{categoria:'Processos',causa:'Sem controle de vencimento de contratos PM'},
+       canvas:{celula:'relacionamento',conteudo:'Agendamento proativo de manutenções preventivas'},
+       bpmn:{processo:'manutencao-preventiva',task:'Verificar vencimentos mensalmente',novo_processo:''},
+       roadmap:{fase:1,titulo:'Sistema de alertas de vencimento PM',responsavel:'Adm',prazo:'Mês 1'}}},
+    {id:'ni3',texto:'Poderíamos oferecer contratos anuais de manutenção para os 8 clientes que fizeram instalação no último ano. Receita recorrente previsível.',
+     ts:'hoje',autor:'Miguel',loading:false,aplicados:{canvas:true},
+     analise:{tipo:'oportunidade',destino:'canvas',area:'comercial',sentimento:'oportunidade',urgencia:'media',
+       resumo:'Oportunidade de receita recorrente com 8 clientes',
+       acao_sugerida:'Elaborar proposta de contrato anual e apresentar ao Giovanni',
+       tags:['receita recorrente','contratos','expansão'],
+       eisenhower:{quadrante:'plan',titulo:'Criar programa de contratos anuais de manutenção',responsavel:'Giovanni',prazo:'Mês 1'},
+       ishikawa:{categoria:'Gestão',causa:'Sem modelo de receita recorrente formalizado'},
+       canvas:{celula:'receitas',conteudo:'Contratos anuais de manutenção preventiva'},
+       bpmn:{processo:'atendimento-comercial',task:'Propor contrato anual na entrega do projeto',novo_processo:''},
+       roadmap:{fase:2,titulo:'Lançar programa de contratos anuais',responsavel:'Giovanni',prazo:'Mês 2'}}},
+    {id:'ni4',texto:'A equipe técnica não tem um lugar padrão para registrar o que foi feito na OS. Cada um faz de um jeito diferente, e às vezes a OS volta sem assinatura.',
+     ts:'hoje',autor:'Equipe',loading:false,aplicados:{bpmn:true},
+     analise:{tipo:'processo',destino:'bpmn',area:'operacional',sentimento:'alerta',urgencia:'media',
+       resumo:'Falta de padrão no preenchimento de OS gera retrabalho',
+       acao_sugerida:'Criar checklist padrão de OS no processo de Execução de Projetos',
+       tags:['OS','padrão','processo'],
+       eisenhower:{quadrante:'plan',titulo:'Padronizar preenchimento de OS',responsavel:'Técnico',prazo:'Mês 1'},
+       ishikawa:{categoria:'Processos',causa:'Sem padrão de preenchimento de Ordem de Serviço'},
+       canvas:{celula:'atividades',conteudo:'Execução com OS padronizada e assinada'},
+       bpmn:{processo:'execucao-projetos',task:'Preencher e assinar OS padrão',novo_processo:''},
+       roadmap:{fase:2,titulo:'Implementar OS digital padronizada',responsavel:'Técnico + Adm',prazo:'Mês 2'}}},
+  ];
+  S.items.push(
+    {id:'demo-ei1',q:'do',title:'Agendar 3 manutenções preventivas de abril',pri:'Crítica',sts:'Em andamento',resp:'Administrativo',prazo:'Esta semana',
+     desc:'3 câmaras com PM vencendo em abril sem agendamento.',notes:'Gerado por Inteligência MGR.',
+     hist:[{d:today,t:'Criado via Inteligência de Negócios — alerta PM vencendo'}]},
+    {id:'demo-ei2',q:'plan',title:'Criar programa de contratos anuais de manutenção',pri:'Alta',sts:'Pendente',resp:'Giovanni',prazo:'Mês 1',
+     desc:'Oportunidade de receita recorrente com 8 clientes.',notes:'Gerado por Inteligência MGR.',
+     hist:[{d:today,t:'Criado via Inteligência de Negócios — oportunidade comercial'}]}
+  );
+  if(S.canvas && !S.canvas.receitas.includes('Contratos anuais'))
+    S.canvas.receitas += '\nContratos anuais de manutenção preventiva (via Inteligência MGR)';
+  save();
+  renderAll();
+  setTimeout(updateIntelBadge, 200);
+})();
 </script>
 </body>
 </html>
