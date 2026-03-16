@@ -316,26 +316,111 @@ export interface Task {
   clientName?: string;
   projectId?: string;
   projectName?: string;
-  assignedTo?: string; // Legacy: Primary assignee
+  assignedTo?: string;
   assigneeName?: string;
-  assignedUsers?: string[]; // NEW: Multiple assignees
-  assignedUserNames?: string[]; // NEW: Names for display
+  assignedUsers?: string[];
+  assignedUserNames?: string[];
   startDate?: Timestamp;
   endDate?: Timestamp;
-  progress?: number; // 0-100
+  progress?: number;
   tools?: string[];
   checklist: ChecklistItem[];
-  evidenceUrl?: string; 
+  evidenceUrl?: string;
   createdAt: Timestamp;
+
+  // Sprint 30-34 WorkOrder extensions
+  workflowStatus?: WorkflowStatus;
+  parentOSId?: string;              // Sub-OS: filho de outra O.S.
+  assetId?: string;                 // Equipámento specífico do cliente
+  geofencing?: {
+    lat: number;
+    lng: number;
+    radius: number;                 // metros (padrão 100)
+    validated: boolean;             // true quando técnico fez check-in dentro do raio
+  };
+  scheduling?: {
+    equipeId?: string;
+    dataPrevista?: Timestamp;
+    tempoEstimado?: number;         // minutos
+  };
+  execution?: {
+    checkIn?: Timestamp;
+    checkOut?: Timestamp;
+    actualStartTime?: Timestamp;
+    actualEndTime?: Timestamp;
+    adversidades?: string;
+    evidencias?: string[];          // URLs de fotos Antes/Depois
+  };
+  financial?: {
+    metodoPagamento?: string;
+    previsaoPagamento?: Timestamp;
+    statusPagamento?: 'pendente' | 'confirmado' | 'cancelado';
+    valor?: number;
+  };
+  // Intel integration
+  origin?: 'intel_module' | 'manual';
+  intelNoteId?: string;
+  eisenhowerQuadrante?: 'do' | 'plan' | 'dele' | 'elim';
+  tags?: string[];
+  notes?: string;
+}
+
+export interface ClientContact {
+  id: string;
+  nome: string;
+  cargo: 'decisor' | 'financeiro' | 'operacional' | 'outro';
+  phone?: string;
+  email?: string;
+  whatsapp?: string;
 }
 
 export interface Client {
   id: string;
   name: string;
+  // Legacy
   contactName?: string;
   phone?: string;
   address?: string;
-  document?: string;
+  document?: string;            // CNPJ ou CPF
+  createdAt: Timestamp;
+  // Sprint 30 additions
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  email?: string;
+  whatsapp?: string;
+  website?: string;
+  segment?: string;             // ex: Supermercado, Indústria
+  geo?: {
+    lat: number;
+    lng: number;
+    formattedAddress?: string;
+  };
+  contacts?: ClientContact[];   // múltiplos contactos por papél
+  createdBy?: string;
+  updatedAt?: Timestamp;
+}
+
+export interface ClientAsset {
+  id: string;
+  clientId: string;
+  nome: string;                 // ex: "Câmara Fria Walk-in #1"
+  tipo: string;                 // ex: "Câmara Fria" | "Split" | "Chiller"
+  fotos?: string[];             // URLs de fotos/plaquetas
+  especificacoes?: {
+    marca?: string;
+    modelo?: string;
+    capacidadeBTU?: number;
+    potenciaKW?: number;
+    refrigerante?: string;
+    anoFabricacao?: number;
+    numeroSerie?: string;
+    [key: string]: any;
+  };
+  dataInstalacao?: Timestamp;
+  historicoOS?: string[];       // array de Task IDs
+  status?: 'ativo' | 'inativo' | 'manutencao';
+  localizacao?: string;         // ex: "Sala B2, 2º andar"
   createdAt: Timestamp;
 }
 
@@ -413,11 +498,83 @@ export interface BpmnProcess {
   updatedAt?: Timestamp;
 }
 
+// --- SPRINT 30-34: WORKFLOW & FINANCIAL TYPES ---
+
+export enum WorkflowStatus {
+  TRIAGEM                 = 'TRIAGEM',
+  PRE_ORCAMENTO          = 'PRE_ORCAMENTO',
+  VISITA_TECNICA         = 'VISITA_TECNICA',
+  ORCAMENTO_FINAL        = 'ORCAMENTO_FINAL',
+  AGUARDANDO_APROVACAO   = 'AGUARDANDO_APROVACAO',
+  AGENDADO               = 'AGENDADO',
+  EM_EXECUCAO            = 'EM_EXECUCAO',
+  AGUARDANDO_FATURAMENTO = 'AGUARDANDO_FATURAMENTO',
+  AGUARDANDO_PAGAMENTO   = 'AGUARDANDO_PAGAMENTO',
+  CONCLUIDO              = 'CONCLUIDO',
+}
+
+export const WORKFLOW_ORDER: WorkflowStatus[] = [
+  WorkflowStatus.TRIAGEM,
+  WorkflowStatus.PRE_ORCAMENTO,
+  WorkflowStatus.VISITA_TECNICA,
+  WorkflowStatus.ORCAMENTO_FINAL,
+  WorkflowStatus.AGUARDANDO_APROVACAO,
+  WorkflowStatus.AGENDADO,
+  WorkflowStatus.EM_EXECUCAO,
+  WorkflowStatus.AGUARDANDO_FATURAMENTO,
+  WorkflowStatus.AGUARDANDO_PAGAMENTO,
+  WorkflowStatus.CONCLUIDO,
+];
+
+export const WORKFLOW_LABELS: Record<WorkflowStatus, string> = {
+  [WorkflowStatus.TRIAGEM]:                 'Triagem',
+  [WorkflowStatus.PRE_ORCAMENTO]:           'Pré-Orçamento',
+  [WorkflowStatus.VISITA_TECNICA]:          'Visita Técnica',
+  [WorkflowStatus.ORCAMENTO_FINAL]:         'Orçamento Final',
+  [WorkflowStatus.AGUARDANDO_APROVACAO]:    'Aguardando Aprovação',
+  [WorkflowStatus.AGENDADO]:                'Agendado',
+  [WorkflowStatus.EM_EXECUCAO]:             'Em Execução',
+  [WorkflowStatus.AGUARDANDO_FATURAMENTO]:  'Aguardando Faturamento',
+  [WorkflowStatus.AGUARDANDO_PAGAMENTO]:    'Aguardando Pagamento',
+  [WorkflowStatus.CONCLUIDO]:               'Concluído',
+};
+
+export const WORKFLOW_COLORS: Record<WorkflowStatus, string> = {
+  [WorkflowStatus.TRIAGEM]:                 'bg-gray-50 border-gray-200 text-gray-700',
+  [WorkflowStatus.PRE_ORCAMENTO]:           'bg-blue-50 border-blue-200 text-blue-700',
+  [WorkflowStatus.VISITA_TECNICA]:          'bg-indigo-50 border-indigo-200 text-indigo-700',
+  [WorkflowStatus.ORCAMENTO_FINAL]:         'bg-purple-50 border-purple-200 text-purple-700',
+  [WorkflowStatus.AGUARDANDO_APROVACAO]:    'bg-amber-50 border-amber-200 text-amber-700',
+  [WorkflowStatus.AGENDADO]:                'bg-sky-50 border-sky-200 text-sky-700',
+  [WorkflowStatus.EM_EXECUCAO]:             'bg-orange-50 border-orange-200 text-orange-700',
+  [WorkflowStatus.AGUARDANDO_FATURAMENTO]:  'bg-pink-50 border-pink-200 text-pink-700',
+  [WorkflowStatus.AGUARDANDO_PAGAMENTO]:    'bg-red-50 border-red-200 text-red-700',
+  [WorkflowStatus.CONCLUIDO]:               'bg-emerald-50 border-emerald-200 text-emerald-700',
+};
+
+// Receivable — created when O.S. moves to AGUARDANDO_FATURAMENTO
+export interface Receivable {
+  id: string;
+  taskId: string;
+  taskCode?: string;
+  clientId: string;
+  clientName: string;
+  valor?: number;
+  metodoPagamento?: string;
+  previsaoPagamento?: Timestamp;
+  status: 'pendente' | 'confirmado' | 'cancelado';
+  confirmedAt?: Timestamp;
+  confirmedBy?: string;
+  createdAt: Timestamp;
+  createdBy: string;
+  notes?: string;
+}
+
 // --- COLLECTIONS ---
 export enum CollectionName {
   TASKS = 'tasks',
   USERS = 'users',
-  SECTORS = 'sectors', // New collection for Role Templates
+  SECTORS = 'sectors',
   TIME_ENTRIES = 'time_entries',
   PROJECTS = 'projects',
   WORK_LOCATIONS = 'work_locations',
@@ -436,4 +593,7 @@ export enum CollectionName {
   PROCESSOS = 'hub_processos',
   MANUAL_STEPS = 'hub_manual_steps',
   REQUIREMENTS = 'hub_requirements',
+  // Sprint 30-34
+  ASSETS = 'client_assets',
+  RECEIVABLES = 'receivables',
 }
