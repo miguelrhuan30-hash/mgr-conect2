@@ -1,4 +1,5 @@
 steps:
+  # 1 — Build Docker image with Vite build args
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -12,8 +13,14 @@ steps:
       - '--build-arg'
       - 'VITE_FIREBASE_PROJECT_ID=$_VITE_FIREBASE_PROJECT_ID'
       - '.'
+
+  # 2 — Push to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'us-west1-docker.pkg.dev/gen-lang-client-0227796366/cloud-run-source-deploy/mgr-conect2/mgr-conect-2']
+    args:
+      - 'push'
+      - 'us-west1-docker.pkg.dev/gen-lang-client-0227796366/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
+
+  # 3 — Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -29,10 +36,18 @@ steps:
       - '--allow-unauthenticated'
       - '--project'
       - 'gen-lang-client-0227796366'
-      - '--set-env-vars=GEMINI_API_KEY=AIzaSyBrWb98BF5WE8f2jaBzMJHzNaQcxV6HRDw'
+      - '--port'
+      - '8080'
+      - '--memory'
+      - '512Mi'
+      - '--timeout'
+      - '120'
+      - '--set-env-vars=GEMINI_API_KEY=AIzaSyBrWb98BF5WE8f2jaBzMJHzNaQcxV6HRDw,NODE_ENV=production'
       - '--cpu-boost'
+
 images:
   - 'us-west1-docker.pkg.dev/gen-lang-client-0227796366/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
+
 substitutions:
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_PROJECT_ID: ''
