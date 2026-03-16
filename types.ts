@@ -181,24 +181,77 @@ export interface TimeBankEntry {
 }
 
 // --- INTELLIGENCE MODULE ---
+export type IntelTipo = 'acao' | 'fraqueza' | 'oportunidade' | 'processo' | 'meta' | 'alerta';
+export type IntelDestino = 'eisenhower' | 'ishikawa' | 'canvas' | 'bpmn' | 'roadmap';
+export type IntelArea = 'comercial' | 'financeiro' | 'operacional' | 'rh' | 'processos' | 'geral';
+export type IntelSentimento = 'alerta' | 'oportunidade' | 'neutra';
+export type IntelUrgencia = 'critica' | 'alta' | 'media' | 'baixa';
+
+// Sprint 25 — item extraído de uma nota multi-ferramenta
+export interface AcaoHub {
+  ferramenta: IntelDestino;
+  campo_especifico: 'proposta_valor' | 'causa_raiz' | 'tarefa' | 'processo' | 'etapa' | 'fraqueza' | 'oportunidade';
+  conteudo: string;    // texto extraído literal da nota (max 120 chars)
+  urgencia: IntelUrgencia;
+  contexto?: string;   // explicação do motivo do roteamento
+  applied?: boolean;   // true quando já foi gravado no Firestore
+  hub_doc_id?: string; // ID do documento criado
+}
+
 export interface IntelAnalysis {
-  summary: string;
-  suggestion: string;
-  urgency: 'critical' | 'high' | 'medium' | 'low';
-  sentiment: 'positive' | 'neutral' | 'negative' | 'frustrated';
-  category: string; // Eisenhower, Ishikawa, BPMN, etc.
+  // Campos principais obrigatórios (Sprint 21)
+  tipo: IntelTipo;
+  destino: IntelDestino;
+  area: IntelArea;
+  urgencia: IntelUrgencia;
+  sentimento: IntelSentimento;
+  resumo: string;         // até 80 chars
+  acao_sugerida: string;  // até 90 chars
+  tags: string[];         // até 3 tags
+
+  // Payloads de destino — todos preenchidos pelo Gemini
+  eisenhower: {
+    quadrante: 'do' | 'plan' | 'dele' | 'elim';
+    titulo: string;
+    responsavel: string;
+    prazo: string;
+  };
+  ishikawa: {
+    categoria: 'Pessoas' | 'Processos' | 'Comunicação' | 'Ferramentas' | 'Gestão' | 'Cultura';
+    causa: string;
+  };
+  canvas: {
+    celula: 'parceiros' | 'atividades' | 'recursos' | 'proposta' | 'relacionamento' | 'canais' | 'clientes' | 'custos' | 'receitas';
+    conteudo: string;
+  };
+  bpmn: {
+    processo: 'atendimento-comercial' | 'execucao-projetos' | 'compra-materiais' | 'manutencao-preventiva' | 'handoff-comercial' | 'novo';
+    task: string;
+    novo_processo?: string;
+  };
+  roadmap: {
+    fase: 1 | 2 | 3;
+    titulo: string;
+    responsavel: string;
+    prazo: string;
+  };
+
+  // Sprint 25 — Multi-ferramenta: array de todos os itens encontrados na nota
+  acoes_hub?: AcaoHub[];
 }
 
 export interface IntelNote {
   id: string;
-  userId: string; // Quem criou a nota
+  userId: string;          // UID de quem criou
+  createdBy: string;       // Nome do autor
   text: string;
   analysis?: IntelAnalysis;
   applied?: boolean;
-  hub_sync?: boolean;
-  createdAt: Timestamp;
-  createdBy: string; // Nome ou UID do autor
+  // Rich sync map: destino → ID do doc criado no Hub
+  hub_sync?: Partial<Record<IntelDestino, string>>;
+  status?: 'pendente' | 'classificada' | 'aplicada';
   type?: 'insight' | 'alert' | 'metric';
+  createdAt: Timestamp;
 }
 
 // --- HR & TIME TRACKING ---

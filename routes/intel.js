@@ -248,9 +248,14 @@ router.get('/stats', async (req, res) => {
 
         const stats = {
             total: docs.length,
-            critical: docs.filter(d => d.analysis?.urgency === 'critical').length,
-            applied: docs.filter(d => d.applied).length,
-            opportunities: docs.filter(d => d.analysis?.sentiment === 'positive').length
+            critical: docs.filter(d => d.analysis?.urgencia === 'critica').length,
+            applied: docs.filter(d => d.applied || d.status === 'aplicada').length,
+            opportunities: docs.filter(d => d.analysis?.sentimento === 'oportunidade').length,
+            setorFoco: (() => {
+                const counts = {};
+                docs.forEach(d => { const a = d.analysis?.area || 'geral'; counts[a] = (counts[a] || 0) + 1; });
+                return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'geral';
+            })(),
         };
 
         res.json(stats);

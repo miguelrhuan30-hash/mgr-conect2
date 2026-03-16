@@ -5,28 +5,22 @@ import IntelFeed from './IntelFeed';
 import IntelInsights from './IntelInsights';
 import IntelConfig from './IntelConfig';
 import { useIntel } from '../hooks/useIntel';
+import { useIntelApply } from '../hooks/useIntelApply';
 import { useAuth } from '../contexts/AuthContext';
+import { IntelNote, IntelDestino } from '../types';
 
 const IntelModule: React.FC = () => {
     const { userProfile } = useAuth();
     const { notes, loading, createNote } = useIntel();
+    const { handleApplyInsight } = useIntelApply();
     const [activeTab, setActiveTab] = React.useState<'feed' | 'insights' | 'config'>('feed');
 
-    const handleApplySuggestion = async (noteId: string) => {
-        try {
-            const response = await fetch('/api/intel/apply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ noteId })
-            });
-
-            if (!response.ok) throw new Error('Falha ao aplicar sugestão.');
-            
-            // O hook onSnapshot cuidará da atualização visual do card (applied: true)
-        } catch (err) {
-            console.error(err);
-            alert("Erro ao injetar dados no Hub.");
-        }
+    /**
+     * Chamado pelo IntelCard.
+     * Recebe a nota completa (para ter acesso à analise) + o destino escolhido pelo gestor.
+     */
+    const handleApply = async (note: IntelNote, destino: IntelDestino): Promise<void> => {
+        await handleApplyInsight(note, destino);
     };
 
     const isAdmin = ['admin', 'developer', 'intel_admin'].includes(userProfile?.role || '');
@@ -46,26 +40,31 @@ const IntelModule: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2 bg-brand-50 text-brand-700 px-4 py-2 rounded-lg border border-brand-200">
                     <Sparkles size={18} className="animate-pulse" />
-                    <span className="text-sm font-bold uppercase tracking-wider">AI Powered</span>
+                    <span className="text-sm font-bold uppercase tracking-wider">Powered by Gemini</span>
                 </div>
             </div>
 
             {/* Navigation Tabs */}
             <div className="flex border-b border-gray-200 gap-8">
-                <button 
+                <button
                     onClick={() => setActiveTab('feed')}
                     className={`pb-4 text-sm font-bold transition-all border-b-2 ${activeTab === 'feed' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
                 >
                     Feed de Insights
+                    {notes.length > 0 && (
+                        <span className="ml-2 bg-brand-100 text-brand-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                            {notes.filter(n => n.status !== 'aplicada').length || notes.length}
+                        </span>
+                    )}
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab('insights')}
                     className={`pb-4 text-sm font-bold transition-all border-b-2 ${activeTab === 'insights' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
                 >
                     Painel Estratégico
                 </button>
                 {isAdmin && (
-                    <button 
+                    <button
                         onClick={() => setActiveTab('config')}
                         className={`pb-4 text-sm font-bold transition-all border-b-2 ${activeTab === 'config' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
                     >
@@ -84,7 +83,7 @@ const IntelModule: React.FC = () => {
                             <p className="text-sm font-medium text-gray-500 uppercase tracking-widest">Sincronizando Insights...</p>
                         </div>
                     ) : (
-                        <IntelFeed notes={notes} onApply={handleApplySuggestion} />
+                        <IntelFeed notes={notes} onApply={handleApply} />
                     )}
                 </div>
             )}
