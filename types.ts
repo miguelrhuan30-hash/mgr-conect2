@@ -360,6 +360,59 @@ export interface TaskTemplate {
   createdAt?: Timestamp;
 }
 
+// --- BPMN / PROCESS DOCUMENTATION (Sprint 26) ---
+export type BpmnProcessoId =
+  | 'atendimento-comercial'
+  | 'execucao-projetos'
+  | 'compra-materiais'
+  | 'manutencao-preventiva'
+  | 'handoff-comercial'
+  | 'custom';
+
+export interface ManualStep {
+  id: string;
+  processoId: BpmnProcessoId | string;   // FK for the process
+  ordem: number;                         // step order (1-based)
+  titulo: string;                        // e.g. "Verificar pressu00e3o da viu00e1lvula"
+  descricao?: string;                    // optional detail
+  tipo: 'procedure' | 'requirement' | 'warning' | 'note';
+  // Audit
+  origin: 'manual' | 'intel_module';    // who added this step
+  intelNoteId?: string;                  // set when origin = intel_module
+  createdBy: string;                     // uid
+  createdByName: string;
+  createdAt: Timestamp;
+}
+
+export interface ProcessRequirement {
+  id: string;
+  processoId: BpmnProcessoId | string;
+  titulo: string;                        // e.g. "Equipe deve ter NR-10"
+  categoria: 'tecnico' | 'seguranca' | 'equipamento' | 'normativa' | 'outro';
+  obrigatorio: boolean;
+  // Audit
+  origin: 'manual' | 'intel_module';
+  intelNoteId?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: Timestamp;
+}
+
+export interface BpmnProcess {
+  id: string;
+  processoId: BpmnProcessoId | string;  // slug
+  nome: string;                          // display name
+  descricao?: string;
+  area: 'comercial' | 'operacional' | 'financeiro' | 'rh' | 'geral';
+  steps: ManualStep[];                   // ordered list
+  requisitos: ProcessRequirement[];      // requirements list
+  // SOP generation
+  sop?: string;                          // last generated SOP (markdown)
+  sopGeneratedAt?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
 // --- COLLECTIONS ---
 export enum CollectionName {
   TASKS = 'tasks',
@@ -380,4 +433,7 @@ export enum CollectionName {
   ISHIKAWA = 'hub_ishikawa',
   CANVAS = 'hub_canvas',
   ROADMAP = 'hub_roadmap',
+  PROCESSOS = 'hub_processos',
+  MANUAL_STEPS = 'hub_manual_steps',
+  REQUIREMENTS = 'hub_requirements',
 }

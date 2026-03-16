@@ -1,11 +1,18 @@
 /**
  * components/IntelCard.tsx
- * Sprint 23 + Sprint 25 — Card com blocos multi-ferramenta (acoes_hub[]).
+ * Sprint 23 + Sprint 25 — Multi-ferramenta com confirmação multi-destino.
+ *
+ * UX:
+ *  • Se a análise retornar acoes_hub[], exibe cards coloridos por item.
+ *  • Cada item tem checkbox: o utilizador pode desmarcar destinos antes de confirmar.
+ *  • Botão "Confirmar Aplicação" aplica em lote os itens selecionados.
+ *  • Itens já aplicados ficam desativados e mostram o ID do doc criado.
+ *  • Fallback: se não houver acoes_hub, exibe botões de destino primário (Sprint 23).
  */
 import React from 'react';
 import {
     ArrowUpRight, Zap, TrendingUp, ShieldAlert, Clock, User,
-    Check, Loader2, AlertTriangle, Info, CheckCircle2
+    Check, Loader2, AlertTriangle, Info, CheckCircle2, CheckSquare, Square
 } from 'lucide-react';
 import { IntelNote, IntelDestino, AcaoHub } from '../types';
 import { format } from 'date-fns';
@@ -17,7 +24,7 @@ interface IntelCardProps {
     onApply?: (note: IntelNote, destino: IntelDestino) => Promise<void>;
 }
 
-// ── Visual config ─────────────────────────────────────────────────────────────
+// ── Visual helpers ─────────────────────────────────────────────────────────
 const URGENCIA_PILL: Record<string, string> = {
     critica: 'bg-red-50 border-red-200 text-red-700',
     alta:    'bg-orange-50 border-orange-200 text-orange-700',
@@ -52,95 +59,174 @@ const CAMPO_LABEL: Record<string, string> = {
     oportunidade:   'Oportunidade',
 };
 
-// ── Sub-component: AcaoHub Block ─────────────────────────────────────────────
-interface AcaoBlockProps {
-    acao: AcaoHub;
-    index: number;
-    noteId: string;
+// ── Multi-destino confirmation panel ──────────────────────────────────────
+interface MultiApplyPanelProps {
+    acoes: AcaoHub[];
     note: IntelNote;
-    onApply: (note: IntelNote, acao: AcaoHub, index: number) => Promise<void>;
 }
 
-const AcaoBlock: React.FC<AcaoBlockProps> = ({ acao, index, noteId, note, onApply }) => {
-    const cfg = DESTINO_CFG[acao.ferramenta];
-    const [loading, setLoading] = React.useState(false);
-    const [done, setDone] = React.useState(acao.applied || !!acao.hub_doc_id);
-    const [err, setErr] = React.useState<string | null>(null);
+const MultiApplyPanel: React.FC<MultiApplyPanelProps> = ({ acoes, note }) => {
+    const { applyAcaoHub } = useIntelApply();
 
-    const handleClick = async () => {
-        if (done || loading) return;
-        setLoading(true);
-        setErr(null);
-        try {
-            await onApply(note, acao, index);
-            setDone(true);
-        } catch (e: any) {
-            setErr(e?.message || 'Erro ao aplicar');
-        } finally {
-            setLoading(false);
-        }
+    // Track selected state per index (initially all selected unless already applied)
+    const [selected, setSelected] = React.useState<boolean[]>(() =>
+        acoes.map(a => !a.applied && !a.hub_doc_id)
+    );
+    const [applying, setApplying] = React.useState(false);
+    const [results, setResults] = React.useState<Record<number, 'ok' | 'error' | 'idle'>>({});
+    const [errors, setErrors] = React.useState<Record<number, string>>({});
+    const [applied, setApplied] = React.useState<Record<number, boolean>>(() => {
+        const init: Record<number, boolean> = {};
+        acoes.forEach((a, i) => { if (a.applied || a.hub_doc_id) init[i] = true; });
+        return init;
+    });
+    const [docIds, setDocIds] = React.useState<Record<number, string>>(() => {
+        const init: Record<number, string> = {};
+        acoes.forEach((a, i) => { if (a.hub_doc_id) init[i] = a.hub_doc_id; });
+        return init;
+    });
+
+    const pendingCount = selected.filter((s, i) => s && !applied[i]).length;
+
+    const toggleItem = (idx: number) => {
+        if (applied[idx]) return; // can't deselect already applied
+        setSelected(prev => prev.map((v, i) => i === idx ? !v : v));
     };
 
+    const handleConfirmAll = async () => {
+        if (!pendingCount || applying) return;
+        setApplying(true);
+
+        for (let i = 0; i < acoes.length; i++) {
+            if (!selected[i] || applied[i]) continue;
+            try {
+                await applyAcaoHub(note, acoes[i], i);
+                setApplied(prev => ({ ...prev, [i]: true }));
+                setResults(prev => ({ ...prev, [i]: 'ok' }));
+                // Try to capture doc ID from the updated note (optimistic)
+                setDocIds(prev => ({ ...prev, [i]: acoes[i].hub_doc_id || '' }));
+            } catch (err: any) {
+                setResults(prev => ({ ...prev, [i]: 'error' }));
+                setErrors(prev => ({ ...prev, [i]: err?.message || 'Erro desconhecido' }));
+            }
+        }
+
+        setApplying(false);
+    };
+
+    const allDone = acoes.every((_, i) => applied[i] || !selected[i]);
+
     return (
-        <div className={`rounded-xl border p-4 ${cfg.border} ${cfg.bg} transition-all`}>
+        <div className="space-y-3">
             {/* Header */}
-            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-extrabold px-2 py-1 rounded-full border ${cfg.border} ${cfg.badgeBg} ${cfg.text} flex items-center gap-1`}>
-                        {cfg.icon} {cfg.label}
-                    </span>
-                    {CAMPO_LABEL[acao.campo_especifico] && (
-                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
-                            {CAMPO_LABEL[acao.campo_especifico]}
-                        </span>
-                    )}
-                </div>
-                <span className={`text-[10px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-full border ${URGENCIA_PILL[acao.urgencia] || URGENCIA_PILL.baixa}`}>
-                    {URGENCIA_ICON[acao.urgencia]} {acao.urgencia}
-                </span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <Zap size={10} /> {acoes.length} item(s) identificado(s) pelo Gemini
+                </p>
+                {!allDone && (
+                    <span className="text-[10px] text-gray-400">Desmarque itens que não deseja aplicar</span>
+                )}
             </div>
 
-            {/* Content */}
-            <p className={`text-sm font-medium leading-snug mb-3 ${cfg.text}`}>
-                "{acao.conteudo}"
-            </p>
+            {/* Item list */}
+            {acoes.map((acao, idx) => {
+                const cfg = DESTINO_CFG[acao.ferramenta];
+                const isApplied = applied[idx];
+                const isSelected = selected[idx];
+                const isError = results[idx] === 'error';
 
-            {/* Rationale */}
-            {acao.contexto && (
-                <p className="text-[10px] text-gray-500 italic mb-3 leading-relaxed pl-2 border-l-2 border-gray-200">
-                    ↳ {acao.contexto}
-                </p>
+                return (
+                    <div
+                        key={idx}
+                        onClick={() => !isApplied && toggleItem(idx)}
+                        className={`rounded-xl border p-4 transition-all cursor-pointer select-none
+                            ${isApplied
+                                ? `${cfg.border} ${cfg.bg} opacity-80`
+                                : isSelected
+                                    ? `${cfg.border} ${cfg.bg} ring-2 ring-inset ring-current/20`
+                                    : 'border-gray-200 bg-gray-50 opacity-50 grayscale'
+                            }`}
+                    >
+                        <div className="flex items-start gap-3">
+                            {/* Checkbox */}
+                            <div className="flex-shrink-0 mt-0.5">
+                                {isApplied ? (
+                                    <CheckCircle2 size={18} className="text-emerald-500" />
+                                ) : isSelected ? (
+                                    <CheckSquare size={18} className={cfg.text} />
+                                ) : (
+                                    <Square size={18} className="text-gray-300" />
+                                )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                                {/* Badge + campo */}
+                                <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${cfg.border} ${cfg.badgeBg} ${cfg.text}`}>
+                                        {cfg.icon} {cfg.label}
+                                    </span>
+                                    {CAMPO_LABEL[acao.campo_especifico] && (
+                                        <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider">
+                                            {CAMPO_LABEL[acao.campo_especifico]}
+                                        </span>
+                                    )}
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ml-auto ${URGENCIA_PILL[acao.urgencia] || URGENCIA_PILL.baixa}`}>
+                                        {acao.urgencia}
+                                    </span>
+                                </div>
+
+                                {/* Content */}
+                                <p className={`text-sm font-medium leading-snug ${cfg.text}`}>
+                                    "{acao.conteudo}"
+                                </p>
+
+                                {/* Rationale */}
+                                {acao.contexto && (
+                                    <p className="text-[10px] text-gray-400 italic mt-1 pl-2 border-l-2 border-gray-200">
+                                        ↳ {acao.contexto}
+                                    </p>
+                                )}
+
+                                {/* Status */}
+                                {isApplied && (
+                                    <p className="text-[10px] text-emerald-600 font-bold mt-1.5 flex items-center gap-1">
+                                        <CheckCircle2 size={11} />
+                                        Aplicado em {cfg.label}
+                                        {docIds[idx] && <span className="font-mono text-gray-400 ml-1">#{docIds[idx].slice(0, 6)}</span>}
+                                    </p>
+                                )}
+                                {isError && (
+                                    <p className="text-[10px] text-red-600 mt-1 flex items-center gap-1">
+                                        <AlertTriangle size={10} /> {errors[idx]}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })}
+
+            {/* Confirm button */}
+            {!allDone && (
+                <button
+                    onClick={handleConfirmAll}
+                    disabled={!pendingCount || applying}
+                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold border-2 transition-all
+                        ${pendingCount > 0 && !applying
+                            ? 'border-brand-600 bg-brand-600 text-white hover:bg-brand-700 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-brand-600/20'
+                            : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                >
+                    {applying
+                        ? <><Loader2 size={16} className="animate-spin" /> Aplicando {pendingCount} item(s)...</>
+                        : <><Check size={16} /> Confirmar Aplicação ({pendingCount} selecionado{pendingCount !== 1 ? 's' : ''})</>}
+                </button>
             )}
 
-            {/* Apply button / status */}
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-                {done ? (
-                    <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-bold">
-                        <CheckCircle2 size={13} />
-                        Aplicado em {cfg.label}
-                        {acao.hub_doc_id && (
-                            <span className="text-[9px] font-mono text-gray-400 ml-1">#{acao.hub_doc_id.slice(0, 6)}</span>
-                        )}
-                    </div>
-                ) : (
-                    <button
-                        onClick={handleClick}
-                        disabled={loading}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all
-                            ${loading ? 'opacity-60 cursor-wait' : 'hover:scale-105 active:scale-95'}
-                            ${cfg.border} ${cfg.badgeBg} ${cfg.text}`}
-                    >
-                        {loading
-                            ? <><Loader2 size={12} className="animate-spin" /> Aplicando...</>
-                            : <><ArrowUpRight size={12} /> Aplicar em {cfg.label}</>}
-                    </button>
-                )}
-                {err && (
-                    <span className="text-[10px] text-red-600 flex items-center gap-1">
-                        <AlertTriangle size={10} /> {err}
-                    </span>
-                )}
-            </div>
+            {allDone && (
+                <div className="flex items-center justify-center gap-2 py-3 text-emerald-700 text-sm font-bold">
+                    <CheckCircle2 size={18} /> Todos os itens selecionados foram aplicados!
+                </div>
+            )}
         </div>
     );
 };
@@ -148,8 +234,7 @@ const AcaoBlock: React.FC<AcaoBlockProps> = ({ acao, index, noteId, note, onAppl
 // ── Main Card ────────────────────────────────────────────────────────────────
 const IntelCard: React.FC<IntelCardProps> = ({ note, onApply }) => {
     const { analysis } = note;
-    const { handleApplyInsight, applyAcaoHub } = useIntelApply();
-
+    const { handleApplyInsight } = useIntelApply();
     const [primaryLoading, setPrimaryLoading] = React.useState<IntelDestino | null>(null);
     const [primaryError, setPrimaryError] = React.useState<string | null>(null);
 
@@ -172,15 +257,11 @@ const IntelCard: React.FC<IntelCardProps> = ({ note, onApply }) => {
         }
     };
 
-    const handleAcaoApply = async (n: IntelNote, acao: AcaoHub, idx: number) => {
-        await applyAcaoHub(n, acao, idx);
-    };
-
     return (
         <div className={`rounded-xl border p-5 transition-all hover:shadow-md
             ${isFullyApplied ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-gray-200'}`}>
 
-            {/* ── Header ─────────────────────────────── */}
+            {/* Header */}
             <div className="flex items-start justify-between mb-4 gap-2">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 border border-brand-200">
@@ -209,15 +290,16 @@ const IntelCard: React.FC<IntelCardProps> = ({ note, onApply }) => {
                 </div>
             </div>
 
-            {/* ── Texto original ──────────────────────── */}
+            {/* Texto original */}
             <p className="text-sm text-gray-800 italic border-l-2 border-gray-200 pl-3 leading-relaxed mb-4">
                 "{note.text}"
             </p>
 
-            {/* ── Análise Gemini ──────────────────────── */}
+            {/* Análise Gemini */}
             {analysis ? (
                 <div className="space-y-4 pt-4 border-t border-gray-100">
-                    {/* Resumo + ação */}
+
+                    {/* Resumo */}
                     <div className="bg-gradient-to-br from-brand-50 to-blue-50 rounded-xl p-4 border border-brand-100">
                         <p className="text-[10px] font-bold text-brand-600 uppercase tracking-widest mb-1.5">✦ Gemini analisou</p>
                         <p className="text-sm font-semibold text-gray-900 leading-snug">{analysis.resumo}</p>
@@ -240,25 +322,11 @@ const IntelCard: React.FC<IntelCardProps> = ({ note, onApply }) => {
                         </div>
                     )}
 
-                    {/* ── acoes_hub[] — blocos multi-ferramenta ───── */}
+                    {/* Multi-destino: panel com checkboxes */}
                     {hasAcoes ? (
-                        <div className="space-y-3">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                                <Zap size={10} /> {acoes.length} item(s) identificado(s) — aprovação individual
-                            </p>
-                            {acoes.map((acao, idx) => (
-                                <AcaoBlock
-                                    key={idx}
-                                    acao={acao}
-                                    index={idx}
-                                    noteId={note.id}
-                                    note={note}
-                                    onApply={handleAcaoApply}
-                                />
-                            ))}
-                        </div>
+                        <MultiApplyPanel acoes={acoes} note={note} />
                     ) : (
-                        /* Fallback: botões de destino primário quando não há acoes_hub */
+                        /* Fallback — sem acoes_hub, usa botões de destino primário */
                         <div className="pt-2 border-t border-gray-100">
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Aplicar no Hub</p>
                             <div className="flex flex-wrap gap-2">
@@ -267,7 +335,6 @@ const IntelCard: React.FC<IntelCardProps> = ({ note, onApply }) => {
                                     const synced = isSynced(dest);
                                     const isLoading = primaryLoading === dest;
                                     const isPrimary = dest === primaryDestino;
-
                                     return (
                                         <button
                                             key={dest}
@@ -279,23 +346,22 @@ const IntelCard: React.FC<IntelCardProps> = ({ note, onApply }) => {
                                                     : isLoading
                                                         ? `opacity-60 cursor-wait ${cfg.bg} ${cfg.text} ${cfg.border}`
                                                         : isPrimary
-                                                            ? `${cfg.bg} ${cfg.text} ${cfg.border} hover:scale-105 active:scale-95 shadow-sm ring-1 ring-inset ring-current/20`
+                                                            ? `${cfg.bg} ${cfg.text} ${cfg.border} hover:scale-105 active:scale-95 shadow-sm`
                                                             : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'}`}
                                         >
                                             {synced ? <><Check size={11} /> {cfg.icon} {cfg.label}</>
-                                             : isLoading ? <><Loader2 size={11} className="animate-spin" /> {cfg.label}...</>
-                                             : <>{cfg.icon} {cfg.label}{isPrimary ? ' ★' : ''}</>}
+                                                : isLoading ? <><Loader2 size={11} className="animate-spin" /> {cfg.label}...</>
+                                                : <>{cfg.icon} {cfg.label}{isPrimary ? ' ★' : ''}</>}
                                         </button>
                                     );
                                 })}
                             </div>
                             {/* hub_sync status */}
-                            {note.hub_sync && Object.entries(note.hub_sync).length > 0 && (
-                                <div className="mt-3 space-y-1">
+                            {note.hub_sync && Object.keys(note.hub_sync).length > 0 && (
+                                <div className="mt-2 space-y-0.5">
                                     {(Object.entries(note.hub_sync) as [IntelDestino, string][]).map(([d, id]) => (
                                         <p key={d} className="text-[10px] text-emerald-600 flex items-center gap-1">
-                                            <CheckCircle2 size={10} />
-                                            Sincronizado com <strong>{DESTINO_CFG[d]?.label}</strong>
+                                            <CheckCircle2 size={10} /> Sincronizado com <strong>{DESTINO_CFG[d]?.label}</strong>
                                             <span className="text-gray-400 font-mono">#{id.slice(0, 6)}</span>
                                         </p>
                                     ))}

@@ -265,7 +265,60 @@ router.get('/stats', async (req, res) => {
 });
 
 /**
- * @route   GET /api/intel/config
+ * @route   POST /api/intel/gerar-sop
+ * @desc    Gera um Manual de Operação Padrão (SOP) em Markdown a partir dos passos e requisitos do processo.
+ * @body    { processoId: string, steps: ManualStep[], requisitos: ProcessRequirement[] }
  */
+router.post('/gerar-sop', async (req, res) => {
+    const { processoId, steps = [], requisitos = [] } = req.body;
+
+    if (!processoId) {
+        return res.status(400).json({ error: 'processoId é obrigatório.' });
+    }
+    if (!gemini) {
+        return res.status(503).json({ error: 'Motor Gemini indisponível.' });
+    }
+
+    const stepsText = steps.length > 0
+        ? steps.map((s, i) => `${i + 1}. [${s.tipo?.toUpperCase() || 'PASSO'}] ${s.titulo}${s.descricao ? ': ' + s.descricao : ''}`).join('\n')
+        : 'Nenhum passo registado ainda.';
+
+    const reqText = requisitos.length > 0
+        ? requisitos.map(r => `- [${r.categoria?.toUpperCase() || 'REQ'}] ${r.titulo}${r.obrigatorio ? ' ⚠️ Obrigatório' : ''}`).join('\n')
+        : 'Nenhum requisito registado.';
+
+    const prompt = `Você é um consultor de processos sênior da MGR Soluções em Refrigeração Industrial.
+Com base nos seguintes dados de processo, gere um Manual de Operação Padrão (SOP) profissional em português, formatado em Markdown.
+
+PROCESSO: ${processoId}
+
+PASSOS REGISTADOS:
+${stepsText}
+
+REQUISITOS:
+${reqText}
+
+O SOP deve ter as seguintes seções:
+1. **Objetivo** — descrição concisa do processo
+2. **Âmbito** — quem executa e quando
+3. **Pré-requisitos** — lista dos requisitos obrigatórios
+4. **Procedimento Passo-a-Passo** — numerado com detalhes operacionais
+5. **Pontos de Atenção** — riscos, avisos e cuidados de segurança
+6. **Registo e Rastreabilidade** — como documentar a execução
+7. **Histórico de Revisões** — tabela com data e descrição
+
+Retorne APENAS o texto Markdown do SOP, sem comentários adicionais.`;
+
+    try {
+        const result = await gemini.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: prompt,
+        });
+        res.json({ sop: result.text });
+    } catch (error) {
+        console.error('[SOP] Erro Gemini:', error);
+        res.status(500).json({ error: 'Falha ao gerar SOP via Gemini.' });
+    }
+});
 
 export default router;
