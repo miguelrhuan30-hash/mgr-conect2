@@ -1,71 +1,24 @@
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { dbAdmin, admin } from '../firebase-admin.js';
+import { MGR_INTEL_PROMPT } from '../constants/intel.js';
 
 const router = express.Router();
 
+// Inicializa Gemini com fallback para VITE_GEMINI_API_KEY (ambientes locais)
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
 let gemini = null;
 try {
-    if (process.env.GEMINI_API_KEY) {
-        gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    if (GEMINI_KEY) {
+        gemini = new GoogleGenAI({ apiKey: GEMINI_KEY });
+        console.log('[Intel] Gemini SDK inicializada com sucesso.');
     } else {
-        console.warn("Módulo Intel: GEMINI_API_KEY ausente. SDK não inicializada.");
+        console.warn('[Intel] GEMINI_API_KEY ausente. SDK não inicializada.');
     }
 } catch (error) {
-    console.error("Erro ao inicializar SDK Gemini:", error);
+    console.error('[Intel] Erro ao inicializar SDK Gemini:', error.message);
 }
-
-const MGR_INTEL_PROMPT = `Você é o analista estratégico da MGR Soluções em Refrigeração Industrial.
-Empresa: 10 anos de mercado, refrigeração industrial, câmaras frigoríficas (walk-in coolers).
-Setores: Comercial (Giovanni), Técnico, Administrativo, Compras, Gestão (Miguel - sócio).
-Processos mapeados: Atendimento Comercial, Execução de Projetos, Compra de Materiais, Manutenção Preventiva, Handoff Comercial→Adm.
-Ferramentas de gestão disponíveis: Matriz Eisenhower, Espinha de Peixe (Ishikawa), Business Model Canvas, Processos BPMN, Roadmap de execução.
-
-Analise a nota e retorne APENAS um JSON válido (sem markdown, sem explicações extras) com esta estrutura:
-{
-  "tipo": "acao"|"fraqueza"|"oportunidade"|"processo"|"meta"|"alerta",
-  "destino": "eisenhower"|"ishikawa"|"canvas"|"bpmn"|"roadmap",
-  "area": "comercial"|"financeiro"|"operacional"|"rh"|"processos"|"geral",
-  "sentimento": "alerta"|"oportunidade"|"neutra",
-  "urgencia": "critica"|"alta"|"media"|"baixa",
-  "resumo": "Uma frase de até 80 caracteres explicando o impacto",
-  "acao_sugerida": "Ação concreta em até 90 caracteres",
-  "tags": ["max 3 palavras-chave"],
-  "eisenhower": {
-    "quadrante": "do"|"plan"|"dele"|"elim",
-    "titulo": "Título do item para a matriz (max 60 chars)",
-    "responsavel": "Nome ou setor responsável",
-    "prazo": "Prazo estimado"
-  },
-  "ishikawa": {
-    "categoria": "Pessoas"|"Processos"|"Comunicação"|"Ferramentas"|"Gestão"|"Cultura",
-    "causa": "Descrição da causa (max 70 chars)"
-  },
-  "canvas": {
-    "celula": "parceiros"|"atividades"|"recursos"|"proposta"|"relacionamento"|"canais"|"clientes"|"custos"|"receitas",
-    "conteudo": "Conteúdo a adicionar na célula (max 80 chars)"
-  },
-  "bpmn": {
-    "processo": "atendimento-comercial"|"execucao-projetos"|"compra-materiais"|"manutencao-preventiva"|"handoff-comercial"|"novo",
-    "task": "Nome da tarefa/etapa a adicionar (max 50 chars)",
-    "novo_processo": "Nome do novo processo (se tipo=novo)"
-  },
-  "roadmap": {
-    "fase": 1|2|3,
-    "titulo": "Título da etapa do roadmap (max 60 chars)",
-    "responsavel": "Responsável",
-    "prazo": "Prazo estimado"
-  }
-}
-
-Regras de roteamento:
-- fraqueza / problema / risco → destino: "ishikawa"
-- oportunidade / vantagem → destino: "canvas"
-- acao / tarefa / melhoria urgente → destino: "eisenhower"
-- fluxo / etapa / subprocesso → destino: "bpmn"
-- objetivo / meta / prazo longo → destino: "roadmap"
-
-Preencha TODOS os campos de TODOS os destinos. Não inclua explicações extras, apenas o JSON.`;
 
 
 /**
@@ -86,21 +39,26 @@ router.post('/notas', async (req, res) => {
     }
 
     try {
-        // 1. Chamada ao Gemini 2.0 Flash
+        // 1. Chamada ao Gemini usando formato parts + responseMimeType
         const result = await gemini.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: `${MGR_INTEL_PROMPT}\n\nNota do usuário:\n${text}`,
+            model: 'gemini-1.5-flash',
+            contents: { parts: [{ text: `${MGR_INTEL_PROMPT}\n\nNota: ${text}` }] },
+            config: { responseMimeType: 'application/json' },
         });
 
         const raw = result.text || '{}';
 
-        // 2. Parse da resposta
+        // 2. Parse robusto — remove blocos ```json ... ``` se presentes
         let analysis;
         try {
-            analysis = JSON.parse(raw.replace(/```json|```/g, '').trim());
+            const cleaned = raw
+                .replace(/^```(?:json)?\s*/i, '')
+                .replace(/\s*```$/,            '')
+                .trim();
+            analysis = JSON.parse(cleaned);
         } catch (parseError) {
-            console.error("Erro ao fazer parse do JSON do Gemini:", raw);
-            throw new Error("Resposta da IA em formato inválido.");
+            console.error('[Intel] Falha no parse JSON. Raw:', raw.slice(0, 300));
+            throw new Error('Resposta da IA em formato inválido (não-JSON).');
         }
 
         // 3. Persistência no Firestore Admin

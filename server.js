@@ -14,15 +14,16 @@ import intelRoutes from './routes/intel.js';
 const app = express();
 app.use(express.json());
 
-// Porta e chaves
+// Porta e chaves — fallback para VITE_ em ambientes locais sem arquivo .env
 const PORT = Number(process.env.PORT) || 8080;
-const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+const hasGeminiKey = !!GEMINI_KEY;
 
 // Inicializa Gemini de forma resiliente
 let geminiClient = null;
 try {
   if (hasGeminiKey) {
-    geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    geminiClient = new GoogleGenAI({ apiKey: GEMINI_KEY });
   }
 } catch (err) {
   console.error('⚠️ Falha ao inicializar Gemini SDK:', err.message);
