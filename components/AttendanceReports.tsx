@@ -27,8 +27,10 @@ const AttendanceReports: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   // Monitoring State
-  const [openShifts, setOpenShifts] = useState<{user: UserProfile, entry: TimeEntry}[]>([]);
+  const [openShifts, setOpenShifts] = useState<{user: UserProfile, entry: TimeEntry, lunchEntry?: TimeEntry}[]>([]);
+  const [allMonitoringEntries, setAllMonitoringEntries] = useState<TimeEntry[]>([]);
   const [loadingMonitoring, setLoadingMonitoring] = useState(false);
+  const [liveTime, setLiveTime] = useState(new Date());
   const [forceExitModalOpen, setForceExitModalOpen] = useState(false);
   const [selectedShiftToClose, setSelectedShiftToClose] = useState<{user: UserProfile, entry: TimeEntry} | null>(null);
   const [exitTime, setExitTime] = useState('');
@@ -73,6 +75,12 @@ const AttendanceReports: React.FC = () => {
   const canViewFinancials = 
     userProfile?.role === 'admin' || 
     !!userProfile?.permissions?.canViewFinancials;
+
+  // Live clock — updates all cards every second
+  useEffect(() => {
+    const timer = setInterval(() => setLiveTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     // Load Users
@@ -204,7 +212,7 @@ const AttendanceReports: React.FC = () => {
       setLoadingMonitoring(true);
       
       try {
-        const open: {user: UserProfile, entry: TimeEntry}[] = [];
+        const open: {user: UserProfile, entry: TimeEntry, lunchEntry?: TimeEntry}[] = [];
 
         // Get entries from last 48h to check
         const twoDaysAgo = new Date();
@@ -218,14 +226,21 @@ const AttendanceReports: React.FC = () => {
 
         const snapshot = await getDocs(q);
         const allEntries = snapshot.docs.map(d => ({id: d.id, ...(d.data() as any)} as TimeEntry));
+        setAllMonitoringEntries(allEntries);
 
         // Group by User
         users.forEach(user => {
-            const userEntries = allEntries.filter(e => e.userId === user.uid);
+            const userEntries = allEntries
+                .filter(e => e.userId === user.uid)
+                .sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
             if (userEntries.length > 0) {
                 const lastEntry = userEntries[0]; // Most recent
-                if (lastEntry.type === 'entry' || lastEntry.type === 'lunch_end') {
-                    open.push({ user, entry: lastEntry });
+                if (lastEntry.type === 'entry' || lastEntry.type === 'lunch_end' || lastEntry.type === 'lunch_start') {
+                    // Find the shift entry (type==='entry') for this session
+                    const shiftEntry = userEntries.find(e => e.type === 'entry') || lastEntry;
+                    // Find lunch_start if in lunch
+                    const lunchEntry = lastEntry.type === 'lunch_start' ? lastEntry : undefined;
+                    open.push({ user, entry: shiftEntry, lunchEntry });
                 }
             }
         });
@@ -531,11 +546,17 @@ const AttendanceReports: React.FC = () => {
     return { color: 'text-green-700 bg-green-100', label: 'No HorÃƒÂ¡rio', type: 'on-time' };
   };
 
-  const getShiftDuration = (entry: TimeEntry) => {
-      const start = entry.timestamp.toDate().getTime();
-      const now = Date.now();
-      const diffHrs = (now - start) / (1000 * 60 * 60);
-      return diffHrs.toFixed(1);
+  // Formata ms em HH:MM
+  const msToHHMM = (ms: number) => {
+      const totalMin = Math.floor(ms / 60000);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      return `${h}h ${String(m).padStart(2, '0')}m`;
+  };
+
+  const getShiftDurationMs = (entryTimestamp: Date, referenceTime?: Date) => {
+      const ref = referenceTime || new Date();
+      return Math.max(0, ref.getTime() - entryTimestamp.getTime());
   };
 
   const calcWorkedHours = (day: any) => {
@@ -1123,41 +1144,103 @@ const AttendanceReports: React.FC = () => {
                           </div>
                       )}
                       {openShifts.map((shift, idx) => {
-                          const duration = parseFloat(getShiftDuration(shift.entry));
-                          const isCritical = duration > 12;
+                          const isOnLunch = !!shift.lunchEntry;
+                          const entryDate = shift.entry.timestamp.toDate();
+
+                          // Turno 1: entrada até início do almoço (ou até agora se não há almoço)
+                          const lunchStartDate = isOnLunch ? shift.lunchEntry!.timestamp.toDate() : null;
+                          const t1Ms = lunchStartDate
+                              ? lunchStartDate.getTime() - entryDate.getTime()
+                              : getShiftDurationMs(entryDate, liveTime);
+
+                          // Turno 2: volta do almoço até agora (lunch_end)
+                          const userAllEntries = allMonitoringEntries
+                              .filter(e => e.userId === shift.user.uid)
+                              .sort((a,b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
+                          const lunchEndEntry = userAllEntries.find(e => e.type === 'lunch_end');
+                          const t2Ms = lunchEndEntry
+                              ? getShiftDurationMs(lunchEndEntry.timestamp.toDate(), liveTime)
+                              : 0;
+
+                          // Almoço em andamento
+                          const lunchElapsedMs = isOnLunch
+                              ? getShiftDurationMs(shift.lunchEntry!.timestamp.toDate(), liveTime)
+                              : 0;
+
+                          // Total trabalhado (T1 + T2)
+                          const totalWorkedMs = t1Ms + t2Ms;
+
+                          // Total desde entrada (para checar turno crítico)
+                          const totalSinceEntryMs = getShiftDurationMs(entryDate, liveTime);
+                          const isCritical = totalSinceEntryMs > 12 * 3600000;
 
                           return (
-                              <div key={idx} className={`bg-white rounded-xl border p-5 shadow-sm relative overflow-hidden ${isCritical ? 'border-red-200 ring-1 ring-red-100' : 'border-gray-200'}`}>
-                                  {isCritical && <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] px-2 py-0.5 font-bold uppercase">AtenÃƒÂ§ÃƒÂ£o</div>}
-                                  
+                              <div key={idx} className={`bg-white rounded-xl border p-5 shadow-sm relative overflow-hidden ${
+                                  isCritical ? 'border-red-200 ring-1 ring-red-100'
+                                  : isOnLunch ? 'border-orange-200 ring-1 ring-orange-100'
+                                  : 'border-gray-200'
+                              }`}>
+                                  {isCritical && <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] px-2 py-0.5 font-bold uppercase">Atenção</div>}
+
+                                  {/* Header do card */}
                                   <div className="flex items-center gap-3 mb-3">
-                                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600">
+                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${
+                                          isOnLunch ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'
+                                      }`}>
                                           {shift.user.displayName.charAt(0)}
                                       </div>
-                                      <div>
+                                      <div className="flex-1">
                                           <h3 className="font-bold text-gray-900">{shift.user.displayName}</h3>
                                           <p className="text-xs text-gray-500">{shift.user.role}</p>
                                       </div>
+                                      {/* Badge de status */}
+                                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                                          isOnLunch
+                                              ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                                              : 'bg-green-100 text-green-700 border border-green-200'
+                                      }`}>
+                                          {isOnLunch ? '☕ Almoço' : '🟢 Trabalhando'}
+                                      </span>
                                   </div>
 
-                                  <div className="space-y-2 mb-4">
-                                      <div className="flex justify-between text-sm">
+                                  {/* Almoço em andamento */}
+                                  {isOnLunch && (
+                                      <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-3 text-center">
+                                          <p className="text-[10px] text-orange-600 font-bold uppercase tracking-wider mb-0.5">⏱ Almoço em andamento</p>
+                                          <p className="text-xl font-black font-mono text-orange-700">{msToHHMM(lunchElapsedMs)}</p>
+                                          <p className="text-[10px] text-orange-500">Inicio: {shift.lunchEntry!.timestamp.toDate().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+                                      </div>
+                                  )}
+
+                                  {/* Detalhes dos turnos */}
+                                  <div className="space-y-1.5 mb-4 text-sm">
+                                      <div className="flex justify-between">
                                           <span className="text-gray-500">Entrada:</span>
-                                          <span className="font-mono font-medium">{shift.entry.timestamp.toDate().toLocaleString()}</span>
+                                          <span className="font-mono font-medium">{entryDate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                                       </div>
-                                      <div className="flex justify-between text-sm">
-                                          <span className="text-gray-500">DuraÃƒÂ§ÃƒÂ£o Atual:</span>
-                                          <span className={`font-mono font-bold ${isCritical ? 'text-red-600' : 'text-green-600'}`}>
-                                              {duration} horas
-                                          </span>
+                                      <div className="flex justify-between">
+                                          <span className="text-gray-500">Turno 1:</span>
+                                          <span className="font-mono font-medium text-blue-700">{msToHHMM(t1Ms)}</span>
+                                      </div>
+                                      {lunchEndEntry && (
+                                          <div className="flex justify-between">
+                                              <span className="text-gray-500">Turno 2:</span>
+                                              <span className="font-mono font-medium text-blue-700">{msToHHMM(t2Ms)}</span>
+                                          </div>
+                                      )}
+                                      <div className="flex justify-between border-t border-gray-100 pt-1.5">
+                                          <span className="text-gray-700 font-bold">Total trabalhado:</span>
+                                          <span className={`font-mono font-black ${
+                                              isCritical ? 'text-red-600' : 'text-green-700'
+                                          }`}>{msToHHMM(totalWorkedMs)}</span>
                                       </div>
                                   </div>
 
-                                  <button 
+                                  <button
                                       onClick={() => handleOpenForceExit(shift)}
                                       className="w-full py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
                                   >
-                                      <X size={14} /> Encerrar Turno (ForÃƒÂ§ar SaÃƒÂ­da)
+                                      <X size={14} /> Encerrar Turno (Forçar Saída)
                                   </button>
                               </div>
                           );
