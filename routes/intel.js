@@ -1,20 +1,18 @@
 import express from 'express';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { dbAdmin, admin } from '../firebase-admin.js';
 
 const router = express.Router();
 
-let anthropic = null;
+let gemini = null;
 try {
-    if (process.env.ANTHROPIC_API_KEY) {
-        anthropic = new Anthropic({
-            apiKey: process.env.ANTHROPIC_API_KEY,
-        });
+    if (process.env.GEMINI_API_KEY) {
+        gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     } else {
-        console.warn("Módulo Intel: ANTHROPIC_API_KEY ausente. SDK não inicializada.");
+        console.warn("Módulo Intel: GEMINI_API_KEY ausente. SDK não inicializada.");
     }
 } catch (error) {
-    console.error("Erro ao inicializar SDK Anthropic:", error);
+    console.error("Erro ao inicializar SDK Gemini:", error);
 }
 
 const MGR_INTEL_PROMPT = `
@@ -38,7 +36,7 @@ Diretrizes:
 
 /**
  * @route   POST /api/intel/notas
- * @desc    Analisa nota via Claude-3 e salva no Firestore
+ * @desc    Analisa nota via Gemini e salva no Firestore
  */
 router.post('/notas', async (req, res) => {
     const { text, userId, userName } = req.body;
@@ -47,28 +45,27 @@ router.post('/notas', async (req, res) => {
         return res.status(400).json({ error: 'Texto e ID do usuário são obrigatórios.' });
     }
 
-    if (!anthropic) {
-        return res.status(503).json({ 
-            error: 'Serviço de Inteligência temporariamente indisponível (SDK não inicializada).' 
+    if (!gemini) {
+        return res.status(503).json({
+            error: 'Serviço de Inteligência temporariamente indisponível (SDK não inicializada).'
         });
     }
 
     try {
-        // 1. Chamada ao Claude-3-5-Sonnet
-        const message = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20240620",
-            max_tokens: 1000,
-            system: MGR_INTEL_PROMPT,
-            messages: [{ role: "user", content: text }],
+        // 1. Chamada ao Gemini 2.0 Flash
+        const result = await gemini.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: `${MGR_INTEL_PROMPT}\n\nNota do usuário:\n${text}`,
         });
+
+        const raw = result.text || '{}';
 
         // 2. Parse da resposta
         let analysis;
         try {
-            const content = message.content[0].text;
-            analysis = JSON.parse(content);
+            analysis = JSON.parse(raw.replace(/```json|```/g, '').trim());
         } catch (parseError) {
-            console.error("Erro ao fazer parse do JSON do Claude:", message.content[0].text);
+            console.error("Erro ao fazer parse do JSON do Gemini:", raw);
             throw new Error("Resposta da IA em formato inválido.");
         }
 
@@ -88,9 +85,9 @@ router.post('/notas', async (req, res) => {
 
     } catch (error) {
         console.error("Erro no processamento Intel:", error);
-        res.status(500).json({ 
-            error: 'Erro no processamento da inteligência', 
-            details: error.message 
+        res.status(500).json({
+            error: 'Erro no processamento da inteligência',
+            details: error.message
         });
     }
 });
@@ -150,10 +147,10 @@ router.post('/apply', async (req, res) => {
             hub_collection: collectionName
         });
 
-        res.json({ 
-            success: true, 
-            hubId: hubDocRef.id, 
-            collection: collectionName 
+        res.json({
+            success: true,
+            hubId: hubDocRef.id,
+            collection: collectionName
         });
 
     } catch (error) {
@@ -179,28 +176,26 @@ router.get('/summary', async (req, res) => {
             return res.json({ summary: "Ainda não há dados suficientes para um resumo estratégico." });
         }
 
-        if (!anthropic) {
-            return res.status(503).json({ 
-                error: 'Serviço de Inteligência temporariamente indisponível (SDK não inicializada).' 
+        if (!gemini) {
+            return res.status(503).json({
+                error: 'Serviço de Inteligência temporariamente indisponível (SDK não inicializada).'
             });
         }
 
-        const prompt = `
-            Analise as seguintes ${notes.length} observações operacionais e gere um "Resumo Estratégico Semanal" curto e direto (máx 3 parágrafos).
-            Identifique padrões de falha, gargalos ou oportunidades de melhoria.
-            
-            Observações:
-            ${notes.join('\n- ')}
-        `;
+        const prompt = `Você é um consultor de estratégia sênior. Responda em Português de forma profissional.
 
-        const message = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20240620",
-            max_tokens: 1000,
-            system: "Você é um consultor de estratégia sênior. Responda em Português de forma profissional.",
-            messages: [{ role: "user", content: prompt }],
+Analise as seguintes ${notes.length} observações operacionais e gere um "Resumo Estratégico Semanal" curto e direto (máx 3 parágrafos).
+Identifique padrões de falha, gargalos ou oportunidades de melhoria.
+
+Observações:
+- ${notes.join('\n- ')}`;
+
+        const result = await gemini.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: prompt,
         });
 
-        res.json({ summary: message.content[0].text });
+        res.json({ summary: result.text });
 
     } catch (error) {
         console.error("Erro ao gerar resumo estratégico:", error);

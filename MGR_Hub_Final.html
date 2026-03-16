@@ -525,8 +525,8 @@ input,textarea,select{font-family:var(--font);transition:border-color .15s}
               <span style="color:var(--blue-m)">✦</span> Inteligência de Negócios MGR
             </span>
             <div style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--txt3)">
-              <span id="intel-api-dot" style="width:7px;height:7px;border-radius:50%;background:#ccc;display:inline-block"></span>
-              <span id="intel-api-label">Configure a API Key</span>
+              <span id="intel-api-dot" style="width:7px;height:7px;border-radius:50%;background:#1D7A45;display:inline-block"></span>
+              <span id="intel-api-label">Gemini 2.0 Flash</span>
             </div>
           </div>
           <div style="width:100%;background:var(--surf2);border-radius:8px;padding:8px 12px;font-size:11.5px;color:var(--txt2)">
@@ -537,12 +537,8 @@ input,textarea,select{font-family:var(--font);transition:border-color .15s}
           <div class="intel-input-wrap">
             <textarea id="intel-ta" class="intel-ta" placeholder="Ex: O cliente Honor ficou 3 dias sem resposta após aprovação do orçamento...&#10;Ex: Poderíamos oferecer contratos anuais de manutenção para clientes recorrentes...&#10;Ex: O processo de compra de materiais não tem etapa de verificação de estoque..." rows="3"></textarea>
             <div class="intel-input-row">
-              <span class="intel-hint">Ctrl+Enter para enviar · Claude analisa e roteia para a ferramenta certa</span>
+              <span class="intel-hint">Ctrl+Enter para enviar · Gemini analisa e roteia para a ferramenta certa</span>
               <div style="display:flex;gap:6px">
-                <div style="position:relative">
-                  <input id="intel-apikey" type="password" placeholder="sk-ant-..." style="font-size:11px;padding:5px 10px;border:1px solid var(--bdr);border-radius:7px;background:var(--surf2);color:var(--txt);width:160px;outline:none" oninput="checkIntelKey()">
-                  <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--txt3)">API Key</span>
-                </div>
                 <button class="intel-btn" id="intel-send" onclick="intelSend()">
                   <span>✦</span> Analisar
                 </button>
@@ -2006,33 +2002,12 @@ const Q_LABELS2 = {do:'Fazer agora',plan:'Planejar',dele:'Delegar',elim:'Cultura
 
 let intelFilter = 'todos';
 
-function checkIntelKey() {
-  const k = document.getElementById('intel-apikey');
-  if(!k) return;
-  const v = k.value.trim();
-  const dot = document.getElementById('intel-api-dot');
-  const lbl = document.getElementById('intel-api-label');
-  if(v.startsWith('sk-ant-') && v.length > 20) {
-    dot.style.background = '#1A6B3C';
-    if(lbl) lbl.textContent = 'Claude conectado';
-    S.intel.apikey = v; save();
-  } else if(v.length > 0) {
-    dot.style.background = '#BA7517';
-    if(lbl) lbl.textContent = 'Chave inválida';
-  } else {
-    dot.style.background = '#ccc';
-    if(lbl) lbl.textContent = 'Configure a API Key';
-  }
-}
+function checkIntelKey() { /* removido — chave gerenciada pelo servidor Gemini */ }
 
 async function intelSend() {
   const ta = document.getElementById('intel-ta');
   const txt = ta?.value.trim();
   if(!txt) return;
-  const apikey = S.intel.apikey || document.getElementById('intel-apikey')?.value.trim();
-  if(!apikey || !apikey.startsWith('sk-ant-')) {
-    toast('Cole sua API Key Claude (sk-ant-...) no campo ao lado'); return;
-  }
   const btn = document.getElementById('intel-send');
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span> Analisando...';
@@ -2043,29 +2018,38 @@ async function intelSend() {
   renderIntelFeed();
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('/api/intel/notas', {
       method: 'POST',
-      headers: {'Content-Type':'application/json', 'x-api-key': apikey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'},
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 900,
-        system: INTEL_CONTEXT,
-        messages: [{role:'user', content: txt}]
-      })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({text: txt, userId: 'hub-user', userName: 'MGR Hub'})
     });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    let analise = null;
-    try {
-      const raw = data.content?.[0]?.text || '{}';
-      analise = JSON.parse(raw.replace(/```json|```/g,'').trim());
-    } catch(e) { analise = {tipo:'geral',destino:'eisenhower',area:'geral',sentimento:'neutra',urgencia:'media',resumo:'Nota registrada.',acao_sugerida:'Revise manualmente.',tags:[],eisenhower:{quadrante:'plan',titulo:txt.slice(0,60),responsavel:'Equipe',prazo:'A definir'},ishikawa:{categoria:'Processos',causa:txt.slice(0,70)},canvas:{celula:'atividades',conteudo:txt.slice(0,80)},bpmn:{processo:'nenhum',task:txt.slice(0,50)},roadmap:{fase:2,titulo:txt.slice(0,60),responsavel:'Equipe',prazo:'A definir'}}; }
+    const raw = data.analysis || {};
+    const destino = raw.category?.toLowerCase().includes('roadmap') ? 'roadmap'
+                  : raw.category?.toLowerCase().includes('ishikawa') ? 'ishikawa'
+                  : raw.category?.toLowerCase().includes('canvas') ? 'canvas'
+                  : 'eisenhower';
+    const analise = {
+      tipo:'geral', destino, area: raw.category||'geral',
+      sentimento: raw.sentiment==='positive'?'positiva':raw.sentiment==='negative'?'negativa':'neutra',
+      urgencia: raw.urgency==='critical'?'critica':raw.urgency==='high'?'alta':raw.urgency==='low'?'baixa':'media',
+      resumo: raw.summary||txt.slice(0,150),
+      acao_sugerida: raw.suggestion||'Revise manualmente.',
+      tags: [raw.category||'geral'],
+      eisenhower:{quadrante:'plan',titulo:(raw.summary||txt).slice(0,60),responsavel:'Equipe',prazo:'A definir'},
+      ishikawa:{categoria:'Processos',causa:(raw.suggestion||txt).slice(0,70)},
+      canvas:{celula:'atividades',conteudo:(raw.suggestion||txt).slice(0,80)},
+      bpmn:{processo:'nenhum',task:(raw.summary||txt).slice(0,50)},
+      roadmap:{fase:2,titulo:(raw.summary||txt).slice(0,60),responsavel:'Equipe',prazo:'A definir'}
+    };
     const n = S.intel.notas.find(x=>x.id===tmpId);
     if(n) { n.loading = false; n.analise = analise; }
     log(`Nota de inteligência analisada: "${txt.slice(0,50)}"`);
     save();
   } catch(e) {
     const n = S.intel.notas.find(x=>x.id===tmpId);
-    if(n) { n.loading = false; n.analise = null; n.erro = 'Erro de conexão com a API Claude.'; }
+    if(n) { n.loading = false; n.analise = null; n.erro = 'Erro ao conectar ao servidor: ' + e.message; }
   }
 
   btn.disabled = false;
