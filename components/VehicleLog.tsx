@@ -8,8 +8,9 @@ import { db } from '../firebase';
 import { CollectionName } from '../types';
 import {
   Car, Search, Calendar, Filter, ChevronRight,
-  Loader2, AlertCircle, ImageOff, RefreshCw,
+  Loader2, AlertCircle, ImageOff, RefreshCw, Plus,
 } from 'lucide-react';
+import VehicleCheck from './VehicleCheck';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ const VehicleLog: React.FC = () => {
   const [lastDoc,       setLastDoc]       = useState<DocumentSnapshot | null>(null);
   const [hasMore,       setHasMore]       = useState(false);
   const [totalCount,    setTotalCount]    = useState<number | null>(null);
+  const [mostrarForm,   setMostrarForm]   = useState(false);
 
   // ── Query principal ────────────────────────────────────────────────────────
   const buscar = useCallback(async (paginar = false) => {
@@ -169,12 +171,20 @@ const VehicleLog: React.FC = () => {
             )}
           </p>
         </div>
-        <button
-          onClick={() => buscar(false)}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5"
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMostrarForm(f => !f)}
+            className="flex items-center gap-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> Nova abertura
+          </button>
+          <button
+            onClick={() => buscar(false)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -234,6 +244,20 @@ const VehicleLog: React.FC = () => {
         )}
       </div>
 
+      {/* Formulário inline — Nova abertura */}
+      {mostrarForm && (
+        <div className="bg-white border border-blue-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-5 pt-4 pb-1 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-700">Nova abertura de veículo</h3>
+            <button onClick={() => setMostrarForm(false)} className="text-xs text-gray-400 hover:text-gray-600">✕ Fechar</button>
+          </div>
+          <VehicleCheck
+            onComplete={() => { setMostrarForm(false); buscar(false); }}
+            onSkip={() => setMostrarForm(false)}
+          />
+        </div>
+      )}
+
       {/* Estado de erro */}
       {error && (
         <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3">
@@ -246,10 +270,28 @@ const VehicleLog: React.FC = () => {
         <div className="flex justify-center py-16">
           <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
         </div>
+      ) : registros.length === 0 && !temFiltro ? (
+        // Empty state sem filtros: CTA primário
+        <div className="bg-blue-50 border-2 border-dashed border-blue-300 rounded-2xl p-8 text-center">
+          <Car className="w-14 h-14 mx-auto mb-4 text-blue-400" />
+          <h3 className="text-lg font-semibold text-blue-800 mb-2">
+            Nenhuma abertura registrada hoje
+          </h3>
+          <p className="text-sm text-blue-600 mb-5">
+            Registre a abertura do veículo antes de iniciar o deslocamento.
+          </p>
+          <button
+            onClick={() => setMostrarForm(true)}
+            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold
+                       text-sm hover:bg-blue-700 active:scale-95 transition-all"
+          >
+            + Registrar abertura de veículo
+          </button>
+        </div>
       ) : registros.length === 0 ? (
+        // Empty state com filtros: mensagem simples
         <div className="text-center py-16 text-gray-400">
-          <Car className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Nenhum registro encontrado com os filtros aplicados</p>
+          <p className="text-sm">Nenhum registro com os filtros aplicados</p>
         </div>
       ) : (
         <div className="space-y-2">

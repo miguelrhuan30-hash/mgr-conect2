@@ -47,8 +47,9 @@ const BIDashboard = lazy(() => import('./components/BIDashboard'));
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT VEÍCULOS
 // ─────────────────────────────────────────────
-const VehicleLog    = lazy(() => import('./components/VehicleLog'));
-const VehicleDetail = lazy(() => import('./components/VehicleDetail'));
+const VehicleLog          = lazy(() => import('./components/VehicleLog'));
+const VehicleDetail       = lazy(() => import('./components/VehicleDetail'));
+const VehicleCheckConfig  = lazy(() => import('./components/VehicleCheckConfig'));
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -313,6 +314,8 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="veiculos"
             element={hasPermission('canViewAttendanceReports') ? <VehicleLog /> : <Navigate to="/app" />} />
+          <Route path="veiculos/config"
+            element={hasPermission('canManageSettings') ? <VehicleCheckConfig /> : <Navigate to="/app/veiculos" />} />
           <Route path="veiculos/:id"
             element={hasPermission('canViewAttendanceReports') ? <VehicleDetail /> : <Navigate to="/app" />} />
 

@@ -1,24 +1,16 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { collection, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { CollectionName } from '../types';
 import { Analytics } from '../utils/mgr-analytics';
 import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X } from 'lucide-react';
+import { SlotConfig, FOTO_SLOTS_DEFAULT } from './VehicleCheckConfig';
 
-// ─── Tipos ───────────────────────────────────────────────────────────────────
+// ─── Tipo dinâmico (string em vez de literal union) ───────────────────────────
 
-// ─── Config de fotos ─────────────────────────────────────────────────────────
-
-const FOTO_SLOTS = [
-  { key: 'motorista',  label: 'Lado motorista',      hint: 'Lateral esquerda completa do veículo' },
-  { key: 'passageiro', label: 'Lado passageiro',      hint: 'Lateral direita completa do veículo' },
-  { key: 'traseira',   label: 'Carroceria traseira',  hint: 'Ferramentas visíveis e organizadas' },
-  { key: 'painel',     label: 'Painel + KM inicial',  hint: 'Hodômetro legível na foto' },
-] as const;
-
-type FotoKey = typeof FOTO_SLOTS[number]['key'];
+type FotoKey = string;
 
 // ─── Helper de máscara de placa ───────────────────────────────────────────────
 
@@ -44,6 +36,24 @@ interface VehicleCheckProps {
 const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, onSkip }) => {
   const { currentUser, userProfile } = useAuth();
 
+  // ── Config de slots (dinâmica) ─────────────────────────────────────────────
+  const [fotoSlots, setFotoSlots]         = useState<SlotConfig[]>(FOTO_SLOTS_DEFAULT);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+
+  useEffect(() => {
+    getDoc(doc(db, 'vehicle_check_config', 'default'))
+      .then(snap => {
+        if (snap.exists() && Array.isArray(snap.data().slots)) {
+          const ativos = (snap.data().slots as SlotConfig[])
+            .filter(s => s.active)
+            .sort((a, b) => a.order - b.order);
+          if (ativos.length > 0) setFotoSlots(ativos);
+        }
+      })
+      .catch(() => { /* mantém o fallback */ })
+      .finally(() => setLoadingConfig(false));
+  }, []);
+
   const [placa, setPlaca]           = useState('');
   const [kmInicial, setKmInicial]   = useState('');
   const [fotos, setFotos]           = useState<Partial<Record<FotoKey, File>>>({});
@@ -67,10 +77,13 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
   }, []);
 
   // ── Validação ──────────────────────────────────────────────────────────────
-  const placaValida  = placa.length >= 8;
-  const kmValido     = kmInicial !== '' && Number(kmInicial) >= 0;
-  const todasFotos   = FOTO_SLOTS.every(s => !!fotos[s.key]);
-  const podeSalvar   = placaValida && kmValido && todasFotos && !saving;
+  const placaValida = placa.length >= 8;
+  const kmValido    = kmInicial !== '' && Number(kmInicial) >= 0;
+  // Apenas slots required bloqueiam o salvar
+  const todasFotos  = fotoSlots
+    .filter(s => s.required)
+    .every(s => !!fotos[s.key]);
+  const podeSalvar  = placaValida && kmValido && todasFotos && !saving && !loadingConfig;
 
   // ── Upload e gravação ──────────────────────────────────────────────────────
   const handleSalvar = async () => {
@@ -79,10 +92,11 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
     setError(null);
 
     try {
-      const urls: Partial<Record<FotoKey, string>> = {};
+      const urls: Record<FotoKey, string> = {};
 
-      for (const slot of FOTO_SLOTS) {
-        const file = fotos[slot.key]!;
+      for (const slot of fotoSlots) {
+        const file = fotos[slot.key];
+        if (!file) continue; // slots opcionais sem foto são pulados
         const path = `vehicle_checks/${currentUser.uid}/${Date.now()}_${slot.key}.jpg`;
         const storageRef = ref(storage, path);
         await uploadBytes(storageRef, file);
@@ -96,12 +110,7 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         placa:       placa.toUpperCase(),
         kmInicial:   Number(kmInicial),
         timestamp:   serverTimestamp(),
-        fotos: {
-          motorista:  urls.motorista!,
-          passageiro: urls.passageiro!,
-          traseira:   urls.traseira!,
-          painel:     urls.painel!,
-        },
+        fotos:       urls,
         ...(timeEntryId ? { timeEntryId } : {}),
       });
 
@@ -131,6 +140,15 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         <CheckCircle className="w-16 h-16 text-emerald-500" />
         <h2 className="text-xl font-semibold text-gray-800">Abertura de veículo registrada!</h2>
         <p className="text-gray-500 text-sm">Placa {placa} · KM {kmInicial}</p>
+      </div>
+    );
+  }
+
+  // ── Loading config ─────────────────────────────────────────────────────────
+  if (loadingConfig) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
       </div>
     );
   }
@@ -184,13 +202,16 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         />
       </div>
 
-      {/* Grade de fotos */}
+      {/* Grade de fotos — dinâmica */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Fotos obrigatórias * <span className="text-gray-400 font-normal">({Object.keys(fotos).length}/4)</span>
+          Fotos *{' '}
+          <span className="text-gray-400 font-normal">
+            ({Object.keys(fotos).length}/{fotoSlots.filter(s => s.required).length} obrigatórias)
+          </span>
         </label>
         <div className="grid grid-cols-2 gap-3">
-          {FOTO_SLOTS.map(slot => {
+          {fotoSlots.map(slot => {
             const preview = previews[slot.key];
             return (
               <div key={slot.key} className="relative">
@@ -210,13 +231,17 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
                 ) : (
                   <button
                     onClick={() => inputRefs.current[slot.key]?.click()}
-                    className="w-full aspect-video rounded-xl border-2 border-dashed border-gray-300
+                    className={`w-full aspect-video rounded-xl border-2 border-dashed
                                hover:border-blue-400 hover:bg-blue-50 transition-colors
-                               flex flex-col items-center justify-center gap-1.5 bg-gray-50"
+                               flex flex-col items-center justify-center gap-1.5 bg-gray-50
+                               ${slot.required ? 'border-gray-300' : 'border-gray-200'}`}
                   >
                     <Camera className="w-6 h-6 text-gray-400" />
                     <span className="text-xs font-medium text-gray-600 text-center px-2">{slot.label}</span>
                     <span className="text-xs text-gray-400 text-center px-2 leading-tight">{slot.hint}</span>
+                    {!slot.required && (
+                      <span className="text-[10px] text-gray-300 font-mono">opcional</span>
+                    )}
                   </button>
                 )}
                 <input
@@ -264,7 +289,7 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         {[
           { ok: placaValida, label: 'Placa informada' },
           { ok: kmValido,    label: 'KM inicial informado' },
-          { ok: todasFotos,  label: '4 fotos capturadas' },
+          { ok: todasFotos,  label: `${fotoSlots.filter(s => s.required).length} fotos obrigatórias capturadas` },
         ].map(item => (
           <div key={item.label} className="flex items-center gap-1.5">
             <span className={item.ok ? 'text-emerald-500' : 'text-gray-300'}>

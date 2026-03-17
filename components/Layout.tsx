@@ -34,7 +34,8 @@ import {
   Wrench,
   Receipt,
   BarChart3,
-  Car
+  Car,
+  Settings
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -174,7 +175,8 @@ const Layout: React.FC = () => {
     { to: '/app/campanhas', icon: Target, label: 'Campanhas (MGR Coins)', visible: can('canManageSettings') },
     { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') },
     { to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto', visible: can('canViewAttendanceReports') },
-    { to: '/app/veiculos', icon: Car, label: 'Controle de Veículos', visible: can('canViewAttendanceReports') },
+    { to: '/app/veiculos',         icon: Car,           label: 'Controle de Veículos', visible: can('canViewAttendanceReports') },
+    { to: '/app/veiculos/config',  icon: Settings,      label: 'Config. Veículos',     visible: can('canManageSettings') },
     { to: '/app/logs', icon: Activity, label: 'Log do Sistema', visible: userProfile?.permissions?.canViewLogs === true || userProfile?.role === 'admin' },
     
     // Admin Section

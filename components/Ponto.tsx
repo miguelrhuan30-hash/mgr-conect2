@@ -27,7 +27,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { GoogleGenAI } from "@google/genai";
 import { 
   Clock, MapPin, ShieldCheck, Loader2, AlertTriangle, 
-  History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2 
+  History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2, Car 
 } from 'lucide-react';
 import { logEvent } from '../utils/logger';
 import { Analytics } from '../utils/mgr-analytics';
@@ -849,6 +849,25 @@ const Ponto: React.FC = () => {
                         {entryCountdown === '00:00' ? '✅ Pronto para começar!' : 'Tempo restante de preparo'}
                       </span>
                     </div>
+
+                    {/* ── Atalho de abertura de veículo ── */}
+                    {!mostrarVehicleCheck && (
+                      <div className="mt-4 border-t border-amber-200 pt-4">
+                        <button
+                          onClick={() => setMostrarVehicleCheck(true)}
+                          className="w-full flex items-center justify-center gap-2 py-2.5
+                                     bg-white border border-amber-300 rounded-xl text-sm
+                                     font-semibold text-amber-800 hover:bg-amber-50
+                                     active:scale-95 transition-all"
+                        >
+                          <Car className="w-4 h-4" />
+                          Registrar abertura de veículo
+                        </button>
+                        <p className="text-center text-xs text-amber-500 mt-1.5">
+                          Faça agora enquanto prepara as ferramentas
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
