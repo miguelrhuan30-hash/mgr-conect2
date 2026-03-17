@@ -574,6 +574,10 @@ export interface Receivable {
   observacoes?: string;
 }
 
+// ─── Sprint Analytics ────────────────────────────────────────────────────────
+export type ClientStatus = 'novo' | 'ativo' | 'inativo' | 'reativado';
+// MetaField, MgrEvent, EventType, EventArea — importar de '../utils/mgr-analytics'
+
 // VehicleCheck — abertura de veículo após check-in
 export interface VehicleCheck {
   id: string;
@@ -620,4 +624,6 @@ export enum CollectionName {
   RECEIVABLES = 'receivables',
   // Sprint Veículos
   VEHICLE_CHECKS = 'vehicle_checks',
+  // Sprint Analytics
+  MGR_EVENTS = 'mgr_events',
 }

@@ -6,8 +6,10 @@
 import React, { useState, useEffect } from 'react';
 import {
     collection, query, onSnapshot, doc, updateDoc,
-    orderBy, addDoc, serverTimestamp, arrayUnion, Timestamp
+    orderBy, addDoc, serverTimestamp, arrayUnion, Timestamp,
+    increment, getDoc
 } from 'firebase/firestore';
+import { Analytics } from '../utils/mgr-analytics';
 import { db } from '../firebase';
 import {
     Task, WorkflowStatus as WS, WORKFLOW_ORDER,
@@ -283,7 +285,7 @@ const Pipeline: React.FC = () => {
     const moveTask = async (task: Task, direction: 'next' | 'prev') => {
         const idx  = WORKFLOW_ORDER.indexOf(task.workflowStatus || WS.TRIAGEM);
         const next = direction === 'next' ? WORKFLOW_ORDER[idx + 1] : WORKFLOW_ORDER[idx - 1];
-        if (!next) return;
+        if (!next || !currentUser) return;
 
         if (next === WS.AGENDADO) { setSchedulingModal(task); return; }
         if (next === WS.AGUARDANDO_FATURAMENTO) { setFinancialModal(task); return; }
@@ -299,6 +301,51 @@ const Pipeline: React.FC = () => {
                 updatedAt: serverTimestamp(),
             });
             await recordStatusHistory(task.id, next);
+
+            // Analytics — transição de fase
+            await Analytics.logTransition({
+                collectionName: CollectionName.TASKS,
+                docId: task.id,
+                de: task.workflowStatus || WS.TRIAGEM,
+                para: next,
+                userId: currentUser.uid,
+                area: 'pipeline',
+                eventType: 'os_status_changed',
+                extraPayload: { clientId: task.clientId, clientName: task.clientName },
+            });
+
+            // Ao concluir: actualizar dados do cliente
+            if (next === WS.CONCLUIDO && task.clientId) {
+                const clientRef = doc(db, CollectionName.CLIENTS, task.clientId);
+                const clientSnap = await getDoc(clientRef);
+                const clientData = clientSnap.data();
+                const previousStatus = clientData?.status || 'ativo';
+                await updateDoc(clientRef, {
+                    ultimaOSData: serverTimestamp(),
+                    totalOS: increment(1),
+                    status: previousStatus === 'inativo' ? 'reativado' : 'ativo',
+                });
+                if (previousStatus === 'inativo') {
+                    await Analytics.logTransition({
+                        collectionName: CollectionName.CLIENTS,
+                        docId: task.clientId,
+                        de: 'inativo',
+                        para: 'reativado',
+                        userId: currentUser.uid,
+                        area: 'clientes',
+                        eventType: 'cliente_status_changed',
+                        extraPayload: { motivo: 'os_concluida', taskId: task.id },
+                    });
+                }
+                await Analytics.logEvent({
+                    eventType: 'os_concluida',
+                    area: 'pipeline',
+                    userId: currentUser.uid,
+                    entityId: task.id,
+                    entityType: 'task',
+                    payload: { clientId: task.clientId, clientName: task.clientName, valor: task.financial?.valor },
+                });
+            }
         } finally { setMoving(null); }
     };
 
@@ -351,10 +398,19 @@ const Pipeline: React.FC = () => {
     };
 
     const confirmPayment = async (task: Task) => {
+        if (!currentUser) return;
         await updateDoc(doc(db, CollectionName.TASKS, task.id), {
             'financial.statusPagamento': 'confirmado',
             workflowStatus: WS.AGUARDANDO_PAGAMENTO,
             updatedAt: serverTimestamp(),
+        });
+        await Analytics.logEvent({
+            eventType: 'payment_confirmed',
+            area: 'financeiro',
+            userId: currentUser.uid,
+            entityId: task.id,
+            entityType: 'task',
+            payload: { clientId: task.clientId, clientName: task.clientName, valor: task.financial?.valor },
         });
     };
 

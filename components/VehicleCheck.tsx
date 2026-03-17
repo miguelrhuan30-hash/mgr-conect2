@@ -4,6 +4,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { CollectionName } from '../types';
+import { Analytics } from '../utils/mgr-analytics';
 import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X } from 'lucide-react';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         urls[slot.key] = await getDownloadURL(storageRef);
       }
 
-      await addDoc(collection(db, CollectionName.VEHICLE_CHECKS), {
+      const docRef = await addDoc(collection(db, CollectionName.VEHICLE_CHECKS), {
         userId:      currentUser.uid,
         userName:    userProfile?.displayName || currentUser.email || 'Colaborador',
         userSector:  userProfile?.sectorName  || '',
@@ -102,6 +103,15 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
           painel:     urls.painel!,
         },
         ...(timeEntryId ? { timeEntryId } : {}),
+      });
+
+      await Analytics.logEvent({
+        eventType: 'veiculo_abertura',
+        area: 'veiculos',
+        userId: currentUser.uid,
+        entityId: docRef.id,
+        entityType: 'vehicle_check',
+        payload: { placa: placa.toUpperCase(), kmInicial: Number(kmInicial), timeEntryId: timeEntryId ?? null },
       });
 
       setSaved(true);

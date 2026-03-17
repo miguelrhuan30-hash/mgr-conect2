@@ -4,13 +4,23 @@ import {
   query, orderBy, onSnapshot, updateDoc, Timestamp
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, Client, ClientContact } from '../types';
+import { CollectionName, Client, ClientContact, ClientStatus } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { Analytics } from '../utils/mgr-analytics';
 import {
   Building, Plus, Trash2, Search, Phone, MapPin, User,
   Loader2, Save, X, Pencil, ChevronDown, ChevronUp,
   Globe, Mail, Tag, Users, Thermometer
 } from 'lucide-react';
 import ClientAssets from './ClientAssets';
+
+// ── Status config ─────────────────────────────────────────────────────────────
+const STATUS_CONFIG: Record<ClientStatus, { label: string; cls: string }> = {
+  novo:      { label: 'Novo',      cls: 'bg-blue-100 text-blue-700 border-blue-200' },
+  ativo:     { label: 'Ativo',     cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  inativo:   { label: 'Inativo',   cls: 'bg-gray-100 text-gray-500 border-gray-200' },
+  reativado: { label: 'Reativado', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+};
 
 // ── Segment options ───────────────────────────────────────────────────────────
 const SEGMENTS = [
@@ -42,6 +52,7 @@ const EMPTY_FORM = {
   address: '',
   contactName: '',
   contacts: [] as ClientContact[],
+  status: 'novo' as ClientStatus,
 };
 
 type FormData = typeof EMPTY_FORM;
@@ -54,6 +65,7 @@ interface ClientModalProps {
 
 const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
   const isEdit = !!initial;
+  const { currentUser, userProfile } = useAuth();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormData>({
     name:         initial?.name         || '',
@@ -69,6 +81,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
     address:      initial?.address      || '',
     contactName:  initial?.contactName  || '',
     contacts:     (initial?.contacts    || []) as ClientContact[],
+    status:       (initial as any)?.status || 'novo' as ClientStatus,
   });
 
   // Multiple contacts management
@@ -98,6 +111,8 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
     e.preventDefault();
     if (!form.name.trim()) return;
     setSaving(true);
+    const userId = currentUser?.uid || 'unknown';
+    const userName = userProfile?.displayName || currentUser?.email || 'Gestor';
     try {
       const payload = {
         name:         form.name.trim(),
@@ -113,15 +128,27 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
         address:      form.address.trim()   || null,
         contactName:  form.contactName.trim() || null,
         contacts:     form.contacts,
+        status:       form.status,
         updatedAt:    serverTimestamp(),
       };
 
       if (isEdit && initial) {
         await updateDoc(doc(db, CollectionName.CLIENTS, initial.id), payload);
       } else {
-        await addDoc(collection(db, CollectionName.CLIENTS), {
+        const docRef = await addDoc(collection(db, CollectionName.CLIENTS), {
           ...payload,
+          totalOS: 0,
           createdAt: serverTimestamp(),
+          _meta: Analytics.initMeta({ userId, userName, area: 'clientes', faseInicial: form.status }),
+        });
+        await Analytics.logEvent({
+          eventType: 'cliente_criado',
+          area: 'clientes',
+          userId,
+          userName,
+          entityId: docRef.id,
+          entityType: 'client',
+          payload: { nome: form.name.trim(), status: form.status },
         });
       }
       onClose();
@@ -175,6 +202,15 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900">
                   <option value="">Selecionar segmento...</option>
                   {SEGMENTS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status do cliente</label>
+                <select value={form.status} onChange={set('status')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900">
+                  {(Object.keys(STATUS_CONFIG) as ClientStatus[]).map(s => (
+                    <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -312,6 +348,7 @@ const Clients: React.FC = () => {
   const [modal, setModal] = useState<{ open: boolean; client: Client | null }>({ open: false, client: null });
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<ClientStatus | 'todos'>('todos');
 
   useEffect(() => {
     const q = query(collection(db, CollectionName.CLIENTS), orderBy('name', 'asc'));
@@ -326,11 +363,14 @@ const Clients: React.FC = () => {
     await deleteDoc(doc(db, CollectionName.CLIENTS, id)).catch(console.error);
   };
 
-  const filtered = clients.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.contactName?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (c.segment?.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filtered = clients.filter(c => {
+    const matchText =
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.contactName?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (c.segment?.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchStatus = statusFilter === 'todos' || (c as any).status === statusFilter;
+    return matchText && matchStatus;
+  });
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -346,12 +386,26 @@ const Clients: React.FC = () => {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-400"
-          placeholder="Buscar por nome, contato ou segmento..." />
+      {/* Search + Status filter */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-400"
+            placeholder="Buscar por nome, contato ou segmento..." />
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {(['todos', 'novo', 'ativo', 'inativo', 'reativado'] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                statusFilter === s
+                  ? s === 'todos' ? 'bg-gray-800 text-white border-gray-800' : STATUS_CONFIG[s as ClientStatus].cls
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+              }`}>
+              {s === 'todos' ? 'Todos' : STATUS_CONFIG[s as ClientStatus].label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* List */}
@@ -385,6 +439,11 @@ const Clients: React.FC = () => {
                           {client.segment && (
                             <span className="text-[10px] font-bold px-2 py-0.5 bg-brand-50 text-brand-700 rounded-full border border-brand-100">
                               {client.segment}
+                            </span>
+                          )}
+                          {(client as any).status && STATUS_CONFIG[(client as any).status as ClientStatus] && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_CONFIG[(client as any).status as ClientStatus].cls}`}>
+                              {STATUS_CONFIG[(client as any).status as ClientStatus].label}
                             </span>
                           )}
                         </div>

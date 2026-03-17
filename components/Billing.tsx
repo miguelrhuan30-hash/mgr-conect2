@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { Analytics } from '../utils/mgr-analytics';
 import { Task, WorkflowStatus as WS, CollectionName, Receivable } from '../types';
 import {
     Receipt, FileCheck, Clock, CheckCircle2, AlertTriangle,
@@ -149,6 +150,14 @@ const TabAguardando: React.FC = () => {
             for (const d of recSnap.docs) {
                 await updateDoc(d.ref, { status: 'confirmado', confirmedAt: Timestamp.now(), confirmedBy: currentUser.uid });
             }
+            await Analytics.logEvent({
+                eventType: 'payment_confirmed',
+                area: 'financeiro',
+                userId: currentUser.uid,
+                entityId: task.id,
+                entityType: 'task',
+                payload: { clientId: task.clientId, clientName: task.clientName, valor: task.financial?.valor },
+            });
         } finally { setConfirming(null); }
     };
     if (loading) return <div className="flex justify-center py-12"><Loader2 className="animate-spin text-brand-600 w-8 h-8" /></div>;

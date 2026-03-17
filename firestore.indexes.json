@@ -62,7 +62,15 @@
 
     { "collectionGroup": "projects", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "clientId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" } ] },
 
-    { "collectionGroup": "contact_messages", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "read", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] }
+    { "collectionGroup": "contact_messages", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "read", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "eventType", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "area", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "mes", "order": "ASCENDING" }, { "fieldPath": "eventType", "order": "ASCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "entityId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "clients", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "clients", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "ultimaOSData", "order": "ASCENDING" } ] }
   ],
   "fieldOverrides": []
 }

@@ -30,6 +30,7 @@ import {
   History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2 
 } from 'lucide-react';
 import { logEvent } from '../utils/logger';
+import { Analytics } from '../utils/mgr-analytics';
 import VehicleCheck from './VehicleCheck';
 
 // Tipos de Ação do Ponto
@@ -580,10 +581,13 @@ const Ponto: React.FC = () => {
         setProcessing(false);
         stopCamera();
 
-        // ── Acionar formulário de veículo após entrada ──
+        // Analytics RH
         if (nextAction.type === 'entry') {
+          Analytics.logEvent({ eventType: 'ponto_entrada', area: 'rh', userId: currentUser.uid, entityId: docRef.id, payload: { tipo: 'entry', locationId: detectedLocation?.id } });
           setNovoTimeEntryId(docRef.id);
           setMostrarVehicleCheck(true);
+        } else if (nextAction.type === 'exit') {
+          Analytics.logEvent({ eventType: 'ponto_saida', area: 'rh', userId: currentUser.uid, entityId: docRef.id, payload: { tipo: 'exit', locationId: detectedLocation?.id } });
         }
         logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success', `Ponto gravado: ${nextAction.label}`, { extra: { docId: docRef.id } });
 
