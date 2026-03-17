@@ -29,7 +29,11 @@ import {
   Download,
   RefreshCcw,
   Target,
-  Brain
+  Brain,
+  Kanban,
+  Wrench,
+  Receipt,
+  BarChart3
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -82,6 +86,10 @@ const Layout: React.FC = () => {
       '/app/campanhas':        'Gestão de Campanhas',
       '/app/perfil':           'Meu Perfil',
       '/app/inteligencia':     'Inteligência MGR',
+      '/app/ativos':           'Ativos de Clientes',
+      '/app/pipeline':         'Pipeline de O.S.',
+      '/app/faturamento':      'Faturamento & Recebíveis',
+      '/app/bi':               'BI & Inteligência',
     };
 
     const pageTitle = PAGE_TITLES[location.pathname] ?? location.pathname;
@@ -171,6 +179,11 @@ const Layout: React.FC = () => {
     { to: '/app/usuarios', icon: Users, label: 'Equipe & RH', visible: can('canManageUsers') },
     { to: '/app/setores', icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
     { to: '/app/locais', icon: MapPin, label: 'Locais de Trabalho', visible: can('canManageUsers') },
+    // ── Ops 2.0 (Sprint 30-34) ──
+    { to: '/app/pipeline', icon: Kanban, label: 'Pipeline de O.S.', visible: can('canManageProjects') },
+    { to: '/app/ativos', icon: Wrench, label: 'Ativos de Clientes', visible: can('canManageClients') },
+    { to: '/app/faturamento', icon: Receipt, label: 'Faturamento', visible: can('canViewFinancials') },
+    { to: '/app/bi', icon: BarChart3, label: 'BI / Inteligência', visible: can('canManageSettings') },
   ];
 
   // Add "Editar Site" only for Developers/Admins

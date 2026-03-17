@@ -363,6 +363,8 @@ export interface Task {
   eisenhowerQuadrante?: 'do' | 'plan' | 'dele' | 'elim';
   tags?: string[];
   notes?: string;
+  // Sprint 31/34 — auditoria de fases para SLA
+  statusHistory?: { status: WorkflowStatus; changedAt: Timestamp; changedBy?: string }[];
 }
 
 export interface ClientContact {
