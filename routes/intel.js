@@ -5,7 +5,6 @@ import { MGR_INTEL_PROMPT } from '../constants/intel.js';
 
 const router = express.Router();
 
-// Inicializa Gemini com fallback para VITE_GEMINI_API_KEY (ambientes locais)
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
 let gemini = null;
@@ -20,6 +19,8 @@ try {
     console.error('[Intel] Erro ao inicializar SDK Gemini:', error.message);
 }
 
+// ─── MODELO PADRÃO ────────────────────────────────────────────────────────────
+const GEMINI_MODEL = 'gemini-2.0-flash'; // ✅ único ponto de controle
 
 /**
  * @route   POST /api/intel/notas
@@ -39,21 +40,21 @@ router.post('/notas', async (req, res) => {
     }
 
     try {
-        // 1. Chamada ao Gemini usando formato parts + responseMimeType
+        // 1. Chamada ao Gemini — modelo corrigido para gemini-2.0-flash
         const result = await gemini.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: GEMINI_MODEL, // ✅ era 'gemini-1.5-flash' — CORRIGIDO
             contents: { parts: [{ text: `${MGR_INTEL_PROMPT}\n\nNota: ${text}` }] },
             config: { responseMimeType: 'application/json' },
         });
 
         const raw = result.text || '{}';
 
-        // 2. Parse robusto — remove blocos ```json ... ``` se presentes
+        // 2. Parse robusto
         let analysis;
         try {
             const cleaned = raw
                 .replace(/^```(?:json)?\s*/i, '')
-                .replace(/\s*```$/,            '')
+                .replace(/\s*```$/, '')
                 .trim();
             analysis = JSON.parse(cleaned);
         } catch (parseError) {
@@ -76,7 +77,7 @@ router.post('/notas', async (req, res) => {
         res.json({ id: docRef.id, analysis });
 
     } catch (error) {
-        console.error("Erro no processamento Intel:", error);
+        console.error('[Intel/notas] Erro:', error);
         res.status(500).json({
             error: 'Erro no processamento da inteligência',
             details: error.message
@@ -110,8 +111,7 @@ router.post('/apply', async (req, res) => {
             return res.status(400).json({ error: 'Esta nota não possui uma análise válida para aplicação.' });
         }
 
-        // Mapeamento de Coleção baseado na Categoria/Metodologia
-        let collectionName = 'hub_eisenhower'; // Default
+        let collectionName = 'hub_eisenhower';
         const category = (analysis.category || '').toLowerCase();
 
         if (category.includes('ishikawa')) collectionName = 'hub_ishikawa';
@@ -119,7 +119,6 @@ router.post('/apply', async (req, res) => {
         else if (category.includes('roadmap')) collectionName = 'hub_roadmap';
         else if (category.includes('eisenhower')) collectionName = 'hub_eisenhower';
 
-        // Criar o documento no Hub
         const hubDocRef = await dbAdmin.collection(collectionName).add({
             content: analysis.suggestion,
             originalNote: text,
@@ -131,7 +130,6 @@ router.post('/apply', async (req, res) => {
             metadata: analysis
         });
 
-        // Atualizar a nota original
         await noteRef.update({
             applied: true,
             hub_sync: true,
@@ -139,14 +137,10 @@ router.post('/apply', async (req, res) => {
             hub_collection: collectionName
         });
 
-        res.json({
-            success: true,
-            hubId: hubDocRef.id,
-            collection: collectionName
-        });
+        res.json({ success: true, hubId: hubDocRef.id, collection: collectionName });
 
     } catch (error) {
-        console.error("Erro ao aplicar sugestão:", error);
+        console.error('[Intel/apply] Erro:', error);
         res.status(500).json({ error: 'Falha na injeção de dados no Hub.' });
     }
 });
@@ -165,7 +159,7 @@ router.get('/summary', async (req, res) => {
         const notes = snapshot.docs.map(doc => doc.data().text);
 
         if (notes.length === 0) {
-            return res.json({ summary: "Ainda não há dados suficientes para um resumo estratégico." });
+            return res.json({ summary: 'Ainda não há dados suficientes para um resumo estratégico.' });
         }
 
         if (!gemini) {
@@ -183,14 +177,14 @@ Observações:
 - ${notes.join('\n- ')}`;
 
         const result = await gemini.models.generateContent({
-            model: 'gemini-2.0-flash',
+            model: GEMINI_MODEL,
             contents: prompt,
         });
 
         res.json({ summary: result.text });
 
     } catch (error) {
-        console.error("Erro ao gerar resumo estratégico:", error);
+        console.error('[Intel/summary] Erro:', error);
         res.status(500).json({ error: 'Falha ao processar resumo estratégico.' });
     }
 });
@@ -218,14 +212,14 @@ router.get('/stats', async (req, res) => {
 
         res.json(stats);
     } catch (error) {
+        console.error('[Intel/stats] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar estatísticas.' });
     }
 });
 
 /**
  * @route   POST /api/intel/gerar-sop
- * @desc    Gera um Manual de Operação Padrão (SOP) em Markdown a partir dos passos e requisitos do processo.
- * @body    { processoId: string, steps: ManualStep[], requisitos: ProcessRequirement[] }
+ * @desc    Gera um Manual de Operação Padrão (SOP) em Markdown
  */
 router.post('/gerar-sop', async (req, res) => {
     const { processoId, steps = [], requisitos = [] } = req.body;
@@ -269,12 +263,12 @@ Retorne APENAS o texto Markdown do SOP, sem comentários adicionais.`;
 
     try {
         const result = await gemini.models.generateContent({
-            model: 'gemini-2.0-flash',
+            model: GEMINI_MODEL,
             contents: prompt,
         });
         res.json({ sop: result.text });
     } catch (error) {
-        console.error('[SOP] Erro Gemini:', error);
+        console.error('[Intel/gerar-sop] Erro:', error);
         res.status(500).json({ error: 'Falha ao gerar SOP via Gemini.' });
     }
 });

@@ -45,6 +45,12 @@ const Billing     = lazy(() => import('./components/Billing'));
 const BIDashboard = lazy(() => import('./components/BIDashboard'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT VEÍCULOS
+// ─────────────────────────────────────────────
+const VehicleLog    = lazy(() => import('./components/VehicleLog'));
+const VehicleDetail = lazy(() => import('./components/VehicleDetail'));
+
+// ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
 // ─────────────────────────────────────────────
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean; children?: React.ReactNode }) => {
@@ -301,6 +307,14 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="bi"
             element={hasPermission('canManageSettings') ? <BIDashboard /> : <Navigate to="/app" />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT VEÍCULOS — Controle de Frota
+          ════════════════════════════════════════ */}
+          <Route path="veiculos"
+            element={hasPermission('canViewAttendanceReports') ? <VehicleLog /> : <Navigate to="/app" />} />
+          <Route path="veiculos/:id"
+            element={hasPermission('canViewAttendanceReports') ? <VehicleDetail /> : <Navigate to="/app" />} />
 
         </Route>{/* fim /app */}
 

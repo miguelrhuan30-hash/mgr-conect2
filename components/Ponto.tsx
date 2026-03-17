@@ -30,6 +30,7 @@ import {
   History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2 
 } from 'lucide-react';
 import { logEvent } from '../utils/logger';
+import VehicleCheck from './VehicleCheck';
 
 // Tipos de Ação do Ponto
 type ActionType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
@@ -63,11 +64,16 @@ const Ponto: React.FC = () => {
   const [history, setHistory] = useState<TimeEntry[]>([]);
   const [lastEntry, setLastEntry] = useState<TimeEntry | null>(null);
   const [lunchCountdown, setLunchCountdown] = useState<string | null>(null);
+  const [entryCountdown, setEntryCountdown] = useState<string | null>(null);
+  // ── Veículos ──
+  const [mostrarVehicleCheck, setMostrarVehicleCheck] = useState(false);
+  const [novoTimeEntryId, setNovoTimeEntryId] = useState<string | undefined>(undefined);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  const entryTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- CLOCK TICKER ---
   useEffect(() => {
@@ -98,6 +104,38 @@ const Ponto: React.FC = () => {
 
     return () => stopCamera();
   }, [activeTab, processing, successMessage]);
+
+  // --- CRONÔMETRO DE BOAS-VINDAS (20 min após entrada) ---
+  useEffect(() => {
+    const isEntry = lastEntry?.type === 'entry';
+    if (!isEntry) {
+      // Limpa se o último evento não é entrada
+      if (entryTimerRef.current) clearInterval(entryTimerRef.current);
+      setEntryCountdown(null);
+      return;
+    }
+
+    const entryTime = lastEntry?.timestamp?.toDate?.() ?? null;
+    if (!entryTime) return;
+
+    const TOTAL_MS = 20 * 60 * 1000; // 20 minutos
+
+    const tick = () => {
+      const elapsed = Date.now() - entryTime.getTime();
+      const remaining = Math.max(0, TOTAL_MS - elapsed);
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      setEntryCountdown(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+    };
+
+    tick(); // imediato
+    if (entryTimerRef.current) clearInterval(entryTimerRef.current);
+    entryTimerRef.current = setInterval(tick, 1000);
+
+    return () => {
+      if (entryTimerRef.current) clearInterval(entryTimerRef.current);
+    };
+  }, [lastEntry]);
 
   // --- GEOLOCATION LOGIC ---
   const loadLocations = async () => {
@@ -541,7 +579,12 @@ const Ponto: React.FC = () => {
         setSuccessMessage(`${nextAction.label} REGISTRADA!`);
         setProcessing(false);
         stopCamera();
-        
+
+        // ── Acionar formulário de veículo após entrada ──
+        if (nextAction.type === 'entry') {
+          setNovoTimeEntryId(docRef.id);
+          setMostrarVehicleCheck(true);
+        }
         logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success', `Ponto gravado: ${nextAction.label}`, { extra: { docId: docRef.id } });
 
         // Auto-reset after 3s
@@ -564,7 +607,7 @@ const Ponto: React.FC = () => {
               const refBase64 = await getBase64FromUrl(profilePhotoUrl);
               const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY as string });
               const response = await ai.models.generateContent({
-                  model: "gemini-1.5-flash",
+                  model: "gemini-2.0-flash",
                   contents: {
                     parts: [
                        { inlineData: { mimeType: 'image/jpeg', data: photoBase64.split(',')[1] } },
@@ -777,6 +820,34 @@ const Ponto: React.FC = () => {
                     </div>
                 )}
 
+                {/* ─── CRONÔMETRO PEDAGÓGICO DE BOAS-VINDAS ─────────────────── */}
+                {entryCountdown && nextAction?.type !== 'entry' && (
+                  <div className="mt-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 text-center animate-in slide-in-from-bottom duration-500">
+                    {/* Ícone e saudação */}
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <Coffee className="w-5 h-5 text-amber-600" />
+                      <span className="text-sm font-extrabold text-amber-800 uppercase tracking-wide">Bom dia! ☀️</span>
+                      <Coffee className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <p className="text-xs text-amber-700 mb-4 leading-relaxed">
+                      Tome seu café, arrume suas ferramentas<br />e prepare-se para iniciar as atividades!
+                    </p>
+
+                    {/* Cronômetro regressivo */}
+                    <div className="relative inline-flex flex-col items-center">
+                      <div className="w-28 h-28 rounded-full border-4 border-amber-300 bg-white shadow-inner flex flex-col items-center justify-center mb-2">
+                        <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-0.5">preparo</span>
+                        <span className="text-3xl font-black text-amber-700 font-mono leading-none">
+                          {entryCountdown}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-amber-500 font-bold">
+                        {entryCountdown === '00:00' ? '✅ Pronto para começar!' : 'Tempo restante de preparo'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <button
                     onClick={handleRegister}
                     disabled={isBlocked}
@@ -809,6 +880,15 @@ const Ponto: React.FC = () => {
                 <div className="text-center text-xs text-gray-400">
                     Último registro: {getActionLabel(lastEntry.type).text} às {lastEntry.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) ?? '--:--'}
                 </div>
+            )}
+
+            {/* ─── ABERTURA DE VEÍCULO (após entrada) ─── */}
+            {mostrarVehicleCheck && (
+              <VehicleCheck
+                timeEntryId={novoTimeEntryId}
+                onComplete={() => setMostrarVehicleCheck(false)}
+                onSkip={() => setMostrarVehicleCheck(false)}
+              />
             )}
         </div>
       )}

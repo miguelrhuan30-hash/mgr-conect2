@@ -561,6 +561,7 @@ export interface Receivable {
   taskCode?: string;
   clientId: string;
   clientName: string;
+  assigneeName?: string;
   valor?: number;
   metodoPagamento?: string;
   previsaoPagamento?: Timestamp;
@@ -570,6 +571,25 @@ export interface Receivable {
   createdAt: Timestamp;
   createdBy: string;
   notes?: string;
+  observacoes?: string;
+}
+
+// VehicleCheck — abertura de veículo após check-in
+export interface VehicleCheck {
+  id: string;
+  userId: string;
+  userName: string;
+  userSector?: string;
+  placa: string;           // AAA-0000 ou AAA0A00 (Mercosul)
+  kmInicial: number;
+  timestamp: Timestamp;
+  fotos: {
+    motorista: string;     // URL Firebase Storage
+    passageiro: string;
+    traseira: string;
+    painel: string;
+  };
+  timeEntryId?: string;    // vínculo com time_entry do ponto
 }
 
 // --- COLLECTIONS ---
@@ -598,4 +618,6 @@ export enum CollectionName {
   // Sprint 30-34
   ASSETS = 'client_assets',
   RECEIVABLES = 'receivables',
+  // Sprint Veículos
+  VEHICLE_CHECKS = 'vehicle_checks',
 }

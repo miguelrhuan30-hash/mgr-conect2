@@ -1,0 +1,327 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  collection, query, where, orderBy, getDocs,
+  Timestamp, limit, startAfter, DocumentSnapshot,
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import { CollectionName } from '../types';
+import {
+  Car, Search, Calendar, Filter, ChevronRight,
+  Loader2, AlertCircle, ImageOff, RefreshCw,
+} from 'lucide-react';
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+interface VehicleCheckRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userSector: string;
+  placa: string;
+  kmInicial: number;
+  timestamp: Timestamp;
+  fotos: { motorista: string; passageiro: string; traseira: string; painel: string };
+  timeEntryId?: string;
+}
+
+const PAGE_SIZE = 20;
+
+// ─── Componente de thumbnail ─────────────────────────────────────────────────
+
+const Thumb: React.FC<{ url: string; label: string }> = ({ url, label }) => {
+  const [err, setErr] = useState(false);
+  return (
+    <div className="relative w-14 h-10 rounded overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
+      {err ? (
+        <div className="w-full h-full flex items-center justify-center">
+          <ImageOff className="w-4 h-4 text-gray-300" />
+        </div>
+      ) : (
+        <img
+          src={url} alt={label}
+          className="w-full h-full object-cover"
+          onError={() => setErr(true)}
+        />
+      )}
+      <span className="absolute bottom-0 left-0 right-0 text-[8px] text-white bg-black/40 px-0.5 truncate leading-tight">
+        {label}
+      </span>
+    </div>
+  );
+};
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+
+const VehicleLog: React.FC = () => {
+  const navigate = useNavigate();
+
+  // Filtros
+  const [filtroPlaca,    setFiltroPlaca]    = useState('');
+  const [filtroData,     setFiltroData]     = useState('');  // YYYY-MM-DD
+  const [filtroUsuario,  setFiltroUsuario]  = useState('');
+
+  // Dados
+  const [registros,     setRegistros]     = useState<VehicleCheckRecord[]>([]);
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState<string | null>(null);
+  const [lastDoc,       setLastDoc]       = useState<DocumentSnapshot | null>(null);
+  const [hasMore,       setHasMore]       = useState(false);
+  const [totalCount,    setTotalCount]    = useState<number | null>(null);
+
+  // ── Query principal ────────────────────────────────────────────────────────
+  const buscar = useCallback(async (paginar = false) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      let constraints: Parameters<typeof query>[1][] = [
+        orderBy('timestamp', 'desc'),
+        limit(PAGE_SIZE + 1),
+      ];
+
+      // Filtro de data
+      if (filtroData) {
+        const inicio = new Date(filtroData + 'T00:00:00');
+        const fim    = new Date(filtroData + 'T23:59:59');
+        constraints = [
+          ...constraints,
+          where('timestamp', '>=', Timestamp.fromDate(inicio)),
+          where('timestamp', '<=', Timestamp.fromDate(fim)),
+        ];
+      }
+
+      // Filtro de placa (busca por prefixo)
+      if (filtroPlaca.trim().length >= 3) {
+        const p = filtroPlaca.trim().toUpperCase();
+        constraints = [
+          ...constraints,
+          where('placa', '>=', p),
+          where('placa', '<=', p + '\uf8ff'),
+        ];
+      }
+
+      // Paginação
+      if (paginar && lastDoc) {
+        constraints = [...constraints, startAfter(lastDoc)];
+      }
+
+      const q = query(collection(db, CollectionName.VEHICLE_CHECKS), ...constraints);
+      const snap = await getDocs(q);
+      const docs = snap.docs;
+      const temMais = docs.length > PAGE_SIZE;
+      const itens = docs.slice(0, PAGE_SIZE).map(d => ({
+        id: d.id,
+        ...d.data(),
+      })) as VehicleCheckRecord[];
+
+      // Filtro local de usuário (nome — evita índice extra)
+      const filtrados = filtroUsuario.trim()
+        ? itens.filter(r =>
+            r.userName.toLowerCase().includes(filtroUsuario.toLowerCase()) ||
+            r.userSector?.toLowerCase().includes(filtroUsuario.toLowerCase())
+          )
+        : itens;
+
+      if (paginar) {
+        setRegistros(prev => [...prev, ...filtrados]);
+      } else {
+        setRegistros(filtrados);
+        setTotalCount(filtrados.length);
+      }
+
+      setLastDoc(docs[PAGE_SIZE - 1] ?? null);
+      setHasMore(temMais);
+    } catch (err: any) {
+      console.error('[VehicleLog] Erro na query:', err);
+      setError('Erro ao carregar registros. Verifique se os índices do Firestore foram criados.');
+    } finally {
+      setLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroPlaca, filtroData, filtroUsuario]);
+
+  // Busca inicial e ao mudar filtros
+  useEffect(() => {
+    setLastDoc(null);
+    buscar(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroPlaca, filtroData, filtroUsuario]);
+
+  const temFiltro = !!(filtroPlaca || filtroData || filtroUsuario);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+
+      {/* Cabeçalho */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+            <Car className="w-5 h-5 text-blue-600" /> Controle de Veículos
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Registros de abertura de veículos com fotos e KM
+            {totalCount !== null && (
+              <span className="ml-2 text-gray-400">
+                · {totalCount} registro{totalCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </p>
+        </div>
+        <button
+          onClick={() => buscar(false)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+        </button>
+      </div>
+
+      {/* Filtros */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
+          <Filter className="w-4 h-4" /> Filtros
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Placa */}
+          <div className="relative">
+            <Car className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Placa (ex: ABC-1234)"
+              maxLength={8}
+              value={filtroPlaca}
+              onChange={e => setFiltroPlaca(e.target.value.toUpperCase())}
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg
+                         focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+            />
+          </div>
+
+          {/* Data */}
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="date"
+              value={filtroData}
+              onChange={e => setFiltroData(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Colaborador */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Colaborador ou setor"
+              value={filtroUsuario}
+              onChange={e => setFiltroUsuario(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Limpar filtros — only when active */}
+        {temFiltro && (
+          <button
+            onClick={() => { setFiltroPlaca(''); setFiltroData(''); setFiltroUsuario(''); }}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            Limpar filtros
+          </button>
+        )}
+      </div>
+
+      {/* Estado de erro */}
+      {error && (
+        <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        </div>
+      )}
+
+      {/* Lista de registros */}
+      {loading && registros.length === 0 ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        </div>
+      ) : registros.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <Car className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">Nenhum registro encontrado com os filtros aplicados</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {registros.map(reg => {
+            const data = reg.timestamp?.toDate?.();
+            const dataStr = data
+              ? data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              : '—';
+            const horaStr = data
+              ? data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+              : '—';
+
+            return (
+              <button
+                key={reg.id}
+                onClick={() => navigate(`/app/veiculos/${reg.id}`)}
+                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3
+                           hover:border-blue-300 hover:shadow-sm transition-all
+                           flex items-center gap-4 text-left"
+              >
+                {/* Thumbnails das 4 fotos */}
+                <div className="hidden sm:flex gap-1.5 flex-shrink-0">
+                  <Thumb url={reg.fotos.motorista}  label="Motorista" />
+                  <Thumb url={reg.fotos.passageiro} label="Passageiro" />
+                  <Thumb url={reg.fotos.traseira}   label="Traseira" />
+                  <Thumb url={reg.fotos.painel}     label="Painel" />
+                </div>
+
+                {/* Infos */}
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-semibold text-blue-700 text-sm bg-blue-50 px-2 py-0.5 rounded">
+                      {reg.placa}
+                    </span>
+                    <span className="text-xs text-gray-500">KM {reg.kmInicial.toLocaleString('pt-BR')}</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-800 truncate">{reg.userName}</p>
+                  {reg.userSector && (
+                    <p className="text-xs text-gray-400 truncate">{reg.userSector}</p>
+                  )}
+                </div>
+
+                {/* Data/hora */}
+                <div className="text-right flex-shrink-0 space-y-0.5">
+                  <p className="text-sm font-medium text-gray-700">{dataStr}</p>
+                  <p className="text-xs text-gray-400">{horaStr}</p>
+                </div>
+
+                <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Carregar mais */}
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <button
+            onClick={() => buscar(true)}
+            disabled={loading}
+            className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800
+                       border border-blue-200 rounded-lg px-5 py-2 hover:bg-blue-50 transition-colors
+                       disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Carregar mais registros
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default VehicleLog;
