@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+﻿import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -139,6 +139,15 @@ const Users: React.FC = () => {
   const [editRate50, setEditRate50] = useState<number>(1.5);
   const [editRate100, setEditRate100] = useState<number>(2.0);
   const [editTimeBankBalance, setEditTimeBankBalance] = useState<number>(0);
+
+  // Profile fields
+  const [editCargo, setEditCargo] = useState('');
+  const [editCpf, setEditCpf] = useState('');
+  const [editPix, setEditPix] = useState('');
+  const [editBanco, setEditBanco] = useState('');
+  const [editConta, setEditConta] = useState('');
+  const [editAgencia, setEditAgencia] = useState('');
+  const [editPhone, setEditPhone] = useState('');
   
   // Permission Modal State
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
@@ -242,6 +251,14 @@ const Users: React.FC = () => {
     setEditRate50(user.overtimeRules?.rate50 || 1.5);
     setEditRate100(user.overtimeRules?.rate100 || 2.0);
     setEditTimeBankBalance(user.timeBankBalance ?? 0);
+    // Profile fields
+    setEditCargo((user as any).cargo || '');
+    setEditCpf((user as any).cpf || '');
+    setEditPix((user as any).pixKey || '');
+    setEditBanco((user as any).banco || '');
+    setEditConta((user as any).conta || '');
+    setEditAgencia((user as any).agencia || '');
+    setEditPhone((user as any).phone || '');
   };
 
   const saveEdits = async (uid: string) => {
@@ -266,7 +283,15 @@ const Users: React.FC = () => {
         allowedLocationIds: editLocations,
         hourlyRate: editHourlyRate,
         overtimeRules: { rate50: editRate50, rate100: editRate100 },
-        timeBankBalance: editTimeBankBalance
+        timeBankBalance: editTimeBankBalance,
+        // Profile fields
+        cargo:    editCargo    || null,
+        cpf:      editCpf      || null,
+        pixKey:   editPix      || null,
+        banco:    editBanco    || null,
+        conta:    editConta    || null,
+        agencia:  editAgencia  || null,
+        phone:    editPhone    || null,
       });
       setEditingUserId(null);
     } catch (e) {
@@ -528,6 +553,39 @@ const Users: React.FC = () => {
                                </div>
                              </div>
                            </div>
+                            {/* Dados Profissionais */}
+                            <div className="space-y-2 pt-3 border-t border-gray-200 mt-3">
+                              <p className="text-xs font-bold text-gray-700">Dados Profissionais:</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="flex flex-col col-span-2">
+                                  <span className="text-[10px] text-gray-500">Cargo / Função</span>
+                                  <input value={editCargo} onChange={e => setEditCargo(e.target.value)} placeholder="Ex: Técnico de Campo" className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] text-gray-500">Telefone</span>
+                                  <input value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="(11) 99999-9999" className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] text-gray-500">CPF</span>
+                                  <input value={editCpf} onChange={e => setEditCpf(e.target.value)} placeholder="000.000.000-00" className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] text-gray-500">Chave PIX</span>
+                                  <input value={editPix} onChange={e => setEditPix(e.target.value)} placeholder="CPF, e-mail ou tel." className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] text-gray-500">Banco</span>
+                                  <input value={editBanco} onChange={e => setEditBanco(e.target.value)} placeholder="Nubank, Itaú..." className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900" />
+                                </div>
+                                <div className="flex flex-col col-span-2">
+                                  <span className="text-[10px] text-gray-500">Agência / Conta</span>
+                                  <div className="flex gap-1">
+                                    <input value={editAgencia} onChange={e => setEditAgencia(e.target.value)} placeholder="Agência" className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900 w-20" />
+                                    <input value={editConta} onChange={e => setEditConta(e.target.value)} placeholder="Conta" className="text-xs border rounded px-1.5 py-0.5 bg-white text-gray-900 flex-1" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                          </div>
                        ) : (
                          <div className="text-sm">
