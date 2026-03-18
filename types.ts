@@ -13,7 +13,7 @@ export interface CampaignConfig {
 
 
 // --- ACCESS CONTROL & PERMISSIONS ---
-export type UserRole = 'admin' | 'manager' | 'employee' | 'technician' | 'pending' | 'developer' | 'intel_viewer' | 'intel_analyst' | 'intel_admin';
+export type UserRole = 'admin' | 'gestor' | 'manager' | 'employee' | 'technician' | 'tecnico' | 'pending' | 'developer' | 'intel_viewer' | 'intel_analyst' | 'intel_admin';
 
 export interface PermissionSet {
   // Administrative
@@ -365,6 +365,30 @@ export interface Task {
   notes?: string;
   // Sprint 31/34 — auditoria de fases para SLA
   statusHistory?: { status: WorkflowStatus; changedAt: Timestamp; changedBy?: string }[];
+
+  // ─── Sprint 38-45: Módulo O.S. Completo ─────────────────────────────────
+  // Sprint 38 — auditoria de edições
+  edicoes?: OSEdicao[];
+  // Sprint 39 — fotos por tarefa (estrutura de tarefas expandida)
+  tarefasOS?: OSItemTarefa[];
+  // Sprint 40 — check-in / check-out geoloc
+  checkinOS?: OSCheckin;
+  checkoutOS?: OSCheckout;
+  // Sprint 41 — O.S. como ponto
+  ponto?: OSPontoConfig;
+  // Sprint 42 — digitalização documento físico
+  documentoFisico?: OSDocumentoFisico;
+  atualizacoesViaFoto?: OSAtualizacaoViaFoto[];
+  // Sprint 43 — tipo de serviço e ferramentas
+  tipoServico?: string;
+  ferramentasUtilizadas?: string[];
+  // Sprint 44 — ativo e questionário
+  ativoId?: string | null;
+  ativoNome?: string | null;
+  finalizacaoRespostas?: OSFinalizacaoResposta[];
+  statusOS?: OSStatusFinal;
+  // Sprint 45 — observações
+  observacoes?: OSObservacao[];
 }
 
 export interface ClientContact {
@@ -397,6 +421,13 @@ export interface Client {
     lat: number;
     lng: number;
     formattedAddress?: string;
+  };
+  // Sprint 40 — geolocalização para check-in de O.S.
+  geolocalizacao?: {
+    latitude: number;
+    longitude: number;
+    raioMetros: number;          // default 200
+    enderecoReferencia?: string;
   };
   contacts?: ClientContact[];   // múltiplos contactos por papél
   createdBy?: string;
@@ -596,6 +627,120 @@ export interface VehicleCheck {
   timeEntryId?: string;    // vínculo com time_entry do ponto
 }
 
+// ─── Sprint 38-45: Tipos auxiliares da O.S. ─────────────────────────────────
+
+export interface OSEdicao {
+  campo: string;
+  valorAnterior?: any;
+  valorNovo?: any;
+  editadoPor: string;           // uid
+  editadoPorNome: string;
+  editadoEm: Timestamp;
+  viaDados: 'sistema' | 'foto_digitalizada';
+}
+
+export interface OSFotoSlot {
+  key: string;
+  label: string;
+  descricao: string;
+  required: boolean;
+  order: number;
+  active: boolean;
+}
+
+export interface OSFotoRegistro {
+  url: string;
+  uploadEm: Timestamp;
+  uploadPor: string;
+  descricaoGestor: string;
+  comentarioTecnico?: string;
+}
+
+export interface OSItemTarefa {
+  id: string;
+  descricao: string;
+  status: 'pendente' | 'em_andamento' | 'concluida';
+  iniciadaEm?: Timestamp | null;
+  concluidaEm?: Timestamp | null;
+  tempoDuracaoMinutos?: number;
+  executorId?: string;
+  fotos?: Record<string, OSFotoRegistro>;
+}
+
+export interface OSCheckin {
+  feito: boolean;
+  timestamp?: Timestamp;
+  gpsCoords?: { lat: number; lng: number; accuracy?: number | null };
+  distanciaMetros?: number;
+  userId?: string;
+  manual?: boolean;             // bypass admin/gestor
+}
+
+export interface OSCheckout {
+  feito: boolean;
+  timestamp?: Timestamp;
+  gpsCoords?: { lat: number; lng: number; accuracy?: number | null };
+  userId?: string;
+}
+
+export interface OSPontoConfig {
+  permiteEntrada: boolean;
+  permiteSaida: boolean;
+  raioMetros?: number;
+}
+
+export interface OSDocumentoFisico {
+  fotoUrl: string;
+  uploadEm: Timestamp;
+  uploadPor: string;
+  analisadoPorIA: boolean;
+  analiseResultado?: string | null;
+  temAssinatura?: boolean;
+}
+
+export interface OSAtualizacaoViaFoto {
+  campo: string;
+  valorIdentificado: string;
+  confianca: 'alta' | 'media' | 'baixa';
+  aplicadoNaOS: boolean;
+  revisadoPorGestor: boolean;
+  timestamp: Timestamp;
+}
+
+export interface OSObservacao {
+  id: string;
+  texto: string;
+  autorId: string;
+  autorNome: string;
+  autorRole: string;
+  criadaEm: Timestamp;
+  editada?: boolean;
+  editadaEm?: Timestamp | null;
+}
+
+export interface OSFinalizacaoResposta {
+  perguntaId: string;
+  perguntaTexto: string;
+  resposta: string | boolean;
+  timestamp: Timestamp;
+}
+
+export type OSStatusFinal =
+  | 'concluida'
+  | 'reagendar'
+  | 'pendente_administrativo'
+  | 'em_revisao_tecnica'
+  | 'concluida_nova_os_sugerida';
+
+export interface OSKpiEntry {
+  descricaoTarefa: string;
+  tipoServico?: string;
+  tempoDuracaoMinutos: number;
+  osId: string;
+  tecnicoId: string;
+  data: Timestamp;
+}
+
 // --- COLLECTIONS ---
 export enum CollectionName {
   TASKS = 'tasks',
@@ -626,4 +771,10 @@ export enum CollectionName {
   VEHICLE_CHECKS = 'vehicle_checks',
   // Sprint Analytics
   MGR_EVENTS = 'mgr_events',
+  // Sprint 38-45 — Módulo O.S. Completo
+  OS_TASK_PHOTO_CONFIG = 'os_task_photo_config',
+  SERVICE_TYPES = 'service_types',
+  TOOLS_CATALOG = 'tools_catalog',
+  TASK_KPIS = 'task_kpis',
+  ORDENS_SERVICO = 'tasks',     // alias (O.S. usa a mesma coleção 'tasks')
 }

@@ -163,7 +163,7 @@ const Ponto: React.FC = () => {
      if (!navigator.geolocation) return;
      
      navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude, accuracy } = position.coords;
         setCurrentLocation({ lat: latitude, lng: longitude, accuracy: accuracy });
 
@@ -178,7 +178,20 @@ const Ponto: React.FC = () => {
           const dist = getDistanceFromLatLonInM(latitude, longitude, loc.latitude, loc.longitude);
           return dist <= loc.radius;
         });
-        setDetectedLocation(found || null);
+
+        if (found) {
+          setDetectedLocation(found);
+        } else if (currentUser) {
+          // Sprint 41 — Fallback: verificar O.S. com ponto permitido
+          const osLocal = await verificarOSComoPonto(currentUser.uid);
+          if (osLocal) {
+            setDetectedLocation({ id: osLocal.id, name: osLocal.name } as WorkLocation);
+          } else {
+            setDetectedLocation(null);
+          }
+        } else {
+          setDetectedLocation(null);
+        }
       }, 
       (err) => console.error("GPS Error", err),
       { enableHighAccuracy: true }
@@ -192,6 +205,35 @@ const Ponto: React.FC = () => {
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
     return R * c * 1000;
+  };
+
+  // Sprint 41 — O.S. como local de ponto válido
+  const verificarOSComoPonto = async (uid: string): Promise<{ name: string; id: string } | null> => {
+    try {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const snap = await getDocs(
+        query(
+          collection(db, CollectionName.TASKS),
+          where('assignedTo', '==', uid),
+          where('workflowStatus', '==', 'EM_EXECUCAO'),
+        )
+      );
+      for (const d of snap.docs) {
+        const t = d.data() as any;
+        const pontoConfig = t.ponto;
+        if (!pontoConfig?.permiteEntrada) continue;
+        const checkin = t.checkinOS;
+        // Check-in feito hoje conta como local válido
+        if (checkin?.feito && checkin?.timestamp) {
+          const checkinDate = checkin.timestamp.toDate?.();
+          if (checkinDate && checkinDate >= today) {
+            const clientName = t.clientName || 'Cliente';
+            return { id: d.id, name: `Cliente: ${clientName} (OS)` };
+          }
+        }
+      }
+    } catch { /* silent */ }
+    return null;
   };
 
   // --- HISTORY & STATE MACHINE LOGIC (REAL-TIME) ---

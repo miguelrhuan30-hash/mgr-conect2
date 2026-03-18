@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate } from '../types';
-import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft } from 'lucide-react';
+import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft, MapPin, Clock } from 'lucide-react';
 
 interface OSCreationModalProps {
   isOpen: boolean;
@@ -27,6 +27,17 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newChecklistItem, setNewChecklistItem] = useState('');
 
+  // Sprint 43 — tipo de serviço
+  const [tipoServico, setTipoServico] = useState('');
+  const [tipoSugestoes, setTipoSugestoes] = useState<string[]>([]);
+  // Sprint 41 — ponto
+  const [pontoEntrada, setPontoEntrada] = useState(false);
+  const [pontoSaida,   setPontoSaida]   = useState(false);
+  // Sprint 44 — ativo
+  const [ativoId,   setAtivoId]   = useState('');
+  const [ativoNome, setAtivoNome] = useState('');
+  const [ativos,    setAtivos]    = useState<{ id: string; nome: string }[]>([]);
+
   // Data Source State
   const [clients, setClients] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
@@ -42,18 +53,12 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
       const fetchData = async () => {
         setLoadingData(true);
         try {
-          // Fetch Clients
           const clientsSnap = await getDocs(collection(db, CollectionName.CLIENTS));
           setClients(clientsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
-
-          // Fetch Users
           const usersSnap = await getDocs(collection(db, CollectionName.USERS));
           setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
-
-          // Fetch Templates
           const tplSnap = await getDocs(collection(db, CollectionName.TASK_TEMPLATES));
           setTemplates(tplSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as TaskTemplate)));
-
         } catch (error) {
           console.error("Error loading form data:", error);
         } finally {
@@ -63,6 +68,28 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
       fetchData();
     }
   }, [isOpen]);
+
+  // Sprint 44 — load ativos when client changes
+  useEffect(() => {
+    if (!clientId) { setAtivos([]); setAtivoId(''); return; }
+    getDocs(query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientId)))
+      .then(snap => setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
+      .catch(() => setAtivos([]));
+  }, [clientId]);
+
+  // Sprint 43 — buscar tipos
+  const buscarTipos = async (val: string) => {
+    if (!val.trim()) { setTipoSugestoes([]); return; }
+    try {
+      const snap = await getDocs(collection(db, CollectionName.SERVICE_TYPES));
+      const all = snap.docs.map(d => (d.data() as any).nome as string);
+      setTipoSugestoes(all.filter(n => n.toLowerCase().includes(val.toLowerCase())).slice(0, 6));
+    } catch { setTipoSugestoes([]); }
+  };
+
+  const selecionarTipo = (tipo: string) => {
+    setTipoServico(tipo); setTipoSugestoes([]);
+  };
 
   // Filter Projects
   useEffect(() => {
@@ -146,11 +173,23 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         startDate: startDate ? Timestamp.fromDate(new Date(startDate)) : null,
         endDate: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
         checklist,
-        tools, // Save tools
+        tools,
+        tipoServico: tipoServico || null,
+        ativoId: ativoId || null,
+        ativoNome: ativoNome || null,
+        ponto: { permiteEntrada: pontoEntrada, permiteSaida: pontoSaida },
         createdAt: serverTimestamp()
       };
 
       await addDoc(collection(db, CollectionName.TASKS), taskPayload);
+
+      // Upsert tipo de serviço
+      if (tipoServico.trim()) {
+        try {
+          const tSnap = await getDocs(query(collection(db, CollectionName.SERVICE_TYPES), where('nome', '==', tipoServico.trim())));
+          if (tSnap.empty) await addDoc(collection(db, CollectionName.SERVICE_TYPES), { nome: tipoServico.trim(), usoCount: 1, criadoEm: Timestamp.now() });
+        } catch { /* silent */ }
+      }
       onSuccess();
       onClose();
     } catch (error) {
@@ -271,6 +310,22 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     </div>
                   </div>
                 )}
+
+                {/* Sprint 43 — Tipo de Serviço */}
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Serviço</label>
+                  <input value={tipoServico} onChange={e => { setTipoServico(e.target.value); buscarTipos(e.target.value); }}
+                    placeholder="Ex: Instalação, Manutenção..."
+                    className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900 text-sm" />
+                  {tipoSugestoes.length > 0 && (
+                    <div className="absolute z-10 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 w-full max-h-36 overflow-y-auto">
+                      {tipoSugestoes.map(s => (
+                        <button key={s} type="button" onClick={() => selecionarTipo(s)}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-brand-50">{s}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Right Column */}
@@ -343,24 +398,43 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
                       <Calendar className="w-4 h-4 mr-1 text-gray-400" /> Início Previsto
                     </label>
-                    <input
-                      type="datetime-local"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900"
-                    />
+                    <input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
                   </div>
                   <div>
                     <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
                       <Calendar className="w-4 h-4 mr-1 text-gray-400" /> Prazo Final
                     </label>
-                    <input
-                      type="datetime-local"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900"
-                    />
+                    <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
                   </div>
+                </div>
+
+                {/* Sprint 44 — Ativo do cliente */}
+                {ativos.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ativo vinculado</label>
+                    <select value={ativoId} onChange={e => {
+                      setAtivoId(e.target.value);
+                      setAtivoNome(ativos.find(a => a.id === e.target.value)?.nome || '');
+                    }} className="w-full rounded-lg border-gray-300 bg-white text-gray-900 text-sm">
+                      <option value="">Nenhum ativo</option>
+                      {ativos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {/* Sprint 41 — Ponto */}
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Registro de Ponto em Campo</p>
+                  <label className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={pontoEntrada} onChange={e => setPontoEntrada(e.target.checked)} className="w-4 h-4 accent-blue-600" />
+                    Permite ponto de entrada neste local
+                  </label>
+                  <label className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={pontoSaida} onChange={e => setPontoSaida(e.target.checked)} className="w-4 h-4 accent-blue-600" />
+                    Permite ponto de saída neste local
+                  </label>
                 </div>
 
                 {/* Checklist Section */}

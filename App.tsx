@@ -52,6 +52,12 @@ const VehicleDetail       = lazy(() => import('./components/VehicleDetail'));
 const VehicleCheckConfig  = lazy(() => import('./components/VehicleCheckConfig'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT 38-45: Módulo O.S. Completo
+// ─────────────────────────────────────────────
+const TaskPhotoConfig = lazy(() => import('./components/TaskPhotoConfig'));
+const OSPrintLayout   = lazy(() => import('./components/OSPrintLayout'));
+
+// ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
 // ─────────────────────────────────────────────
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean; children?: React.ReactNode }) => {
@@ -318,6 +324,14 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageSettings') ? <VehicleCheckConfig /> : <Navigate to="/app/veiculos" />} />
           <Route path="veiculos/:id"
             element={hasPermission('canViewAttendanceReports') ? <VehicleDetail /> : <Navigate to="/app" />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT 38-45 — Módulo O.S. Completo
+          ════════════════════════════════════════ */}
+          <Route path="os-foto-config"
+            element={hasPermission('canManageSettings') ? <TaskPhotoConfig /> : <Navigate to="/app" />} />
+          <Route path="os/:osId/print"
+            element={hasPermission('canViewTasks') ? <OSPrintLayout /> : <Navigate to="/app" />} />
 
         </Route>{/* fim /app */}
 

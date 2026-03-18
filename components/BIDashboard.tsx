@@ -7,8 +7,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, orderBy, getDocs, updateDoc, doc, addDoc, serverTimestamp, Timestamp, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LABELS, CollectionName } from '../types';
-import { BarChart3, Loader2, TrendingUp, Clock, CheckCircle2, AlertTriangle, Zap, RefreshCcw, Lightbulb, ChevronRight } from 'lucide-react';
+import { Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LABELS, CollectionName, OSKpiEntry } from '../types';
+import { BarChart3, Loader2, TrendingUp, Clock, CheckCircle2, AlertTriangle, Zap, RefreshCcw, Lightbulb, ChevronRight, Wrench, Tag } from 'lucide-react';
 import { format, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -223,6 +223,91 @@ const ImprovKanban: React.FC = () => {
     );
 };
 
+// ── Sprint 43 — KPIs de O.S. ──────────────────────────────────────────────
+const OSKpiSection: React.FC = () => {
+    const [kpis, setKpis] = useState<OSKpiEntry[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        getDocs(query(collection(db, CollectionName.TASK_KPIS), orderBy('data', 'desc')))
+            .then(snap => {
+                setKpis(snap.docs.map(d => ({ ...d.data() } as OSKpiEntry)));
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
+    }, []);
+
+    if (loading) return <div className="flex justify-center py-8"><Loader2 className="animate-spin text-brand-600 w-6 h-6" /></div>;
+    if (kpis.length === 0) return null;
+
+    // Tempo médio por tarefa
+    const avgMin = Math.round(kpis.reduce((s, k) => s + (k.tempoDuracaoMinutos || 0), 0) / kpis.length);
+
+    // Ferramentas mais usadas (from tasks)
+    const ferrMap: Record<string, number> = {};
+    // (kpis don't store tools; we use tasks)
+
+    // Volume por tipo
+    const tipoMap: Record<string, number> = {};
+    for (const k of kpis) {
+        const t = k.tipoServico || 'Não categorizado';
+        tipoMap[t] = (tipoMap[t] || 0) + 1;
+    }
+    const tipoRanked = Object.entries(tipoMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const maxTipo = tipoRanked[0]?.[1] || 1;
+
+    // Taxa conclusão (tarefas concluídas vs total)
+    const concluidas = kpis.filter(k => k.tempoDuracaoMinutos > 0).length;
+    const taxa = kpis.length > 0 ? Math.round((concluidas / kpis.length) * 100) : 0;
+
+    return (
+        <>
+            <div className="lg:col-span-2">
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-6 text-brand-600">
+                        <Tag className="w-5 h-5" />
+                        <h2 className="font-bold text-gray-900">KPIs de Tarefas O.S. (Sprint 43)</h2>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                            <p className="text-3xl font-extrabold text-blue-700">{avgMin}<span className="text-sm font-bold">min</span></p>
+                            <p className="text-[10px] font-bold text-blue-500 mt-1">Tempo médio por tarefa</p>
+                        </div>
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                            <p className="text-3xl font-extrabold text-emerald-700">{taxa}<span className="text-sm font-bold">%</span></p>
+                            <p className="text-[10px] font-bold text-emerald-500 mt-1">Taxa de conclusão</p>
+                        </div>
+                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
+                            <p className="text-3xl font-extrabold text-purple-700">{kpis.length}</p>
+                            <p className="text-[10px] font-bold text-purple-500 mt-1">Tarefas registadas</p>
+                        </div>
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+                            <p className="text-3xl font-extrabold text-orange-700">{tipoRanked.length}</p>
+                            <p className="text-[10px] font-bold text-orange-500 mt-1">Tipos de serviço</p>
+                        </div>
+                    </div>
+                    {tipoRanked.length > 0 && (
+                        <div>
+                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Volume por Tipo de Serviço</p>
+                            <div className="space-y-2">
+                                {tipoRanked.map(([tipo, count]) => (
+                                    <div key={tipo} className="flex items-center gap-3">
+                                        <p className="text-xs text-gray-700 flex-1 truncate">{tipo}</p>
+                                        <div className="w-32 bg-gray-100 rounded-full h-2 overflow-hidden">
+                                            <div className="h-full bg-brand-500 rounded-full" style={{ width: `${(count / maxTipo) * 100}%` }} />
+                                        </div>
+                                        <p className="text-xs font-bold text-gray-600 w-6 text-right">{count}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </>
+    );
+};
+
 // ── Main BIDashboard ──────────────────────────────────────────────────────────
 const BIDashboard: React.FC = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -254,6 +339,7 @@ const BIDashboard: React.FC = () => {
                     <div className="lg:col-span-2">
                         <ImprovKanban />
                     </div>
+                    <OSKpiSection />
                 </div>
             )}
         </div>

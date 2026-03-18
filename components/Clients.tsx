@@ -53,6 +53,11 @@ const EMPTY_FORM = {
   contactName: '',
   contacts: [] as ClientContact[],
   status: 'novo' as ClientStatus,
+  // Sprint 40 — geoloc
+  geoLat: '',
+  geoLng: '',
+  geoRaio: '200',
+  geoEndereco: '',
 };
 
 type FormData = typeof EMPTY_FORM;
@@ -67,6 +72,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
   const isEdit = !!initial;
   const { currentUser, userProfile } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [capturandoGPS, setCapturandoGPS] = useState(false);
   const [form, setForm] = useState<FormData>({
     name:         initial?.name         || '',
     document:     initial?.document     || '',
@@ -82,6 +88,10 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
     contactName:  initial?.contactName  || '',
     contacts:     (initial?.contacts    || []) as ClientContact[],
     status:       (initial as any)?.status || 'novo' as ClientStatus,
+    geoLat:       String(initial?.geolocalizacao?.latitude  || ''),
+    geoLng:       String(initial?.geolocalizacao?.longitude || ''),
+    geoRaio:      String(initial?.geolocalizacao?.raioMetros ?? 200),
+    geoEndereco:  initial?.geolocalizacao?.enderecoReferencia || '',
   });
 
   // Multiple contacts management
@@ -129,6 +139,12 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
         contactName:  form.contactName.trim() || null,
         contacts:     form.contacts,
         status:       form.status,
+        geolocalizacao: form.geoLat && form.geoLng ? {
+          latitude:  parseFloat(form.geoLat),
+          longitude: parseFloat(form.geoLng),
+          raioMetros: parseInt(form.geoRaio) || 200,
+          enderecoReferencia: form.geoEndereco.trim() || null,
+        } : null,
         updatedAt:    serverTimestamp(),
       };
 
@@ -255,6 +271,56 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
               <textarea rows={2} value={form.address} onChange={set('address')}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900 resize-none"
                 placeholder="Rua, Número, Bairro, Cidade - UF, CEP" />
+            </div>
+          </section>
+
+          {/* Section: Geolocalizacao Sprint 40 */}
+          <section>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Geolocalização (Check-in O.S.)</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                  <input type="number" step="any" value={form.geoLat} onChange={set('geoLat')}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900"
+                    placeholder="-23.550520" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                  <input type="number" step="any" value={form.geoLng} onChange={set('geoLng')}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900"
+                    placeholder="-46.633309" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Raio de tolerância (m)</label>
+                <input type="number" min={50} max={2000} step={50} value={form.geoRaio} onChange={set('geoRaio')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Endereço de referência</label>
+                <input value={form.geoEndereco} onChange={set('geoEndereco')}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900"
+                  placeholder="Rua X, 100 — São Paulo" />
+              </div>
+              <button type="button" disabled={capturandoGPS}
+                onClick={() => {
+                  setCapturandoGPS(true);
+                  navigator.geolocation.getCurrentPosition(
+                    pos => {
+                      setForm(p => ({ ...p, geoLat: String(pos.coords.latitude), geoLng: String(pos.coords.longitude) }));
+                      setCapturandoGPS(false);
+                    },
+                    () => { alert('Não foi possível obter GPS.'); setCapturandoGPS(false); }
+                  );
+                }}
+                className="flex items-center gap-2 text-sm text-brand-700 bg-brand-50 border border-brand-200 px-3 py-2 rounded-lg hover:bg-brand-100 disabled:opacity-50">
+                <MapPin className="w-4 h-4" />
+                {capturandoGPS ? 'Capturando...' : 'Usar minha localização atual'}
+              </button>
+              {form.geoLat && form.geoLng && (
+                <p className="text-[10px] text-emerald-600 font-semibold">✅ Geoloc cadastrada: {parseFloat(form.geoLat).toFixed(5)}, {parseFloat(form.geoLng).toFixed(5)}</p>
+              )}
             </div>
           </section>
 
