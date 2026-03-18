@@ -105,6 +105,12 @@ export interface UserProfile {
   accumulatedPrize?: number;
   currentPoints?: number;
 
+  // Sprint 44B — Gamification OS
+  xpTotal?: number;           // XP acumulado total
+  xpMes?: number;             // XP acumulado no mês corrente
+  streakOS?: number;          // Sequência de O.S. no prazo
+  lastOSAt?: Timestamp | null; // Data da última O.S. concluída
+
   // Time Bank (Banco de Horas)
   timeBankBalance?: number; // in minutes (positive = credit)
 }
@@ -665,6 +671,9 @@ export interface OSItemTarefa {
   tempoDuracaoMinutos?: number;
   executorId?: string;
   fotos?: Record<string, OSFotoRegistro>;
+  // Sprint 46 — configuração de slots de fotos por tarefa
+  fotoSlots?: FotoSlotConfig[];      // slots configurados pelo gestor
+  fotosEvidencia?: FotoEvidencia[];  // fotos tiradas pelo técnico
 }
 
 export interface OSCheckin {
@@ -779,6 +788,8 @@ export enum CollectionName {
   ORDENS_SERVICO = 'tasks',     // alias (O.S. usa a mesma coleção 'tasks')
   // Sprint 46A — Suporte Primário
   OS_SUPORTE_MSGS = 'os_suporte_msgs',
+  // Sprint 46 — Fotos anotadas
+  OS_FOTO_SLOTS = 'os_foto_slots',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -795,4 +806,44 @@ export interface OSSuporteMsg {
   leitoPorGestor: boolean;
   leitoPorTecnico: boolean;
   isIASugestao?: boolean;
+  solicitouHumano?: boolean;
+  fotosURLs?: string[];
+  audioURL?: string;
 }
+
+// ─── Sprint 46: Fotos de Evidência por Tarefa com Anotações ─────────────────
+
+/** Slot de foto configurado pelo Gestor ao criar/editar a tarefa */
+export interface FotoSlotConfig {
+  id: string;
+  titulo: string;        // ex: "Foto Antes", "Painel elétrico aberto"
+  instrucao: string;     // instrução para o técnico
+  obrigatoria: boolean;
+  ordem: number;
+}
+
+/** Anotação individual (círculo ou seta) adicionada pelo técnico */
+export interface FotoAnotacao {
+  id: string;
+  tipo: 'circulo' | 'seta';
+  x: number;             // posição % da largura da imagem [0-100]
+  y: number;             // posição % da altura da imagem [0-100]
+  raio?: number;         // para círculo — % da largura [0-100]
+  dx?: number;           // vetor seta X — % da largura
+  dy?: number;           // vetor seta Y — % da altura
+  cor: string;           // cor hex, ex: '#22c55e'
+  descricao: string;     // legenda do técnico
+}
+
+/** Foto de evidência salva pelo técnico com anotações */
+export interface FotoEvidencia {
+  id: string;
+  slotId: string;                // referência ao FotoSlotConfig.id
+  slotTitulo: string;            // título do slot (desnormalizado)
+  url: string;                   // URL da imagem no Storage
+  descricaoGeral?: string;       // descrição geral do técnico
+  anotacoes: FotoAnotacao[];     // círculos e setas
+  tiradaPor: string;             // uid do técnico
+  tiradaEm: Timestamp;
+}
+

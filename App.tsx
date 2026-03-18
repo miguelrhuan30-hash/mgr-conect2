@@ -58,6 +58,13 @@ const TaskPhotoConfig = lazy(() => import('./components/TaskPhotoConfig'));
 const OSPrintLayout   = lazy(() => import('./components/OSPrintLayout'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT 46: OS Module Restructuring
+// ─────────────────────────────────────────────
+const OSViewModal    = lazy(() => import('./components/OSViewModal'));
+const OSEditModal    = lazy(() => import('./components/OSEditModal'));
+const PhotoAnnotator = lazy(() => import('./components/PhotoAnnotator'));
+
+// ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
 // ─────────────────────────────────────────────
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean; children?: React.ReactNode }) => {

@@ -22,8 +22,11 @@ import { ptBR } from 'date-fns/locale';
 import {
     Loader2, ChevronLeft, ChevronRight, AlertTriangle, Clock,
     User, Building2, Calendar, Zap, ChevronDown, ChevronUp,
-    ArrowRight, DollarSign, CheckCircle2, Save, X, Kanban
+    ArrowRight, DollarSign, CheckCircle2, Save, X, Kanban, Eye
 } from 'lucide-react';
+import { Suspense, lazy } from 'react';
+
+const OSViewModal = lazy(() => import('./OSViewModal'));
 
 // ── Type helpers ───────────────────────────────────────────────────────────
 const PRIORITY_PILL: Record<PriorityLevel, string> = {
@@ -160,8 +163,9 @@ interface OSCardProps {
     onMove: (task: Task, direction: 'next' | 'prev') => void;
     onPaymentConfirm: (task: Task) => void;
     moving: string | null;
+    onViewOS: (taskId: string) => void;
 }
-const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfirm, moving }) => {
+const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfirm, moving, onViewOS }) => {
     const [expanded, setExpanded] = useState(false);
     const children  = allTasks.filter(t => t.parentOSId === task.id);
     const wfIdx     = WORKFLOW_ORDER.indexOf(task.workflowStatus || WS.TRIAGEM);
@@ -173,19 +177,30 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
     const colorClass = WORKFLOW_COLORS[task.workflowStatus || WS.TRIAGEM];
 
     return (
-        <div className={`rounded-xl border-2 p-4 bg-white shadow-sm transition-all ${isBlocked ? 'border-red-300' : 'border-gray-100'} hover:shadow-md`}>
-            <div className="flex items-start justify-between gap-2 mb-3">
+        <div className={`rounded-xl border-2 p-4 bg-white shadow-sm transition-all cursor-pointer ${isBlocked ? 'border-red-300' : 'border-gray-100'} hover:shadow-md hover:border-brand-200`}
+          onClick={() => onViewOS(task.id)}>
+            <div className="flex items-start justify-between gap-2 mb-3" onClick={e => e.stopPropagation()}>
                 <div className="min-w-0">
                     <p className="text-[10px] font-bold text-gray-400">{task.code || task.id.slice(0, 8)}</p>
-                    <p className="text-sm font-bold text-gray-900 leading-snug truncate">{task.title}</p>
+                    <button
+                      onClick={() => onViewOS(task.id)}
+                      className="text-sm font-bold text-gray-900 leading-snug truncate text-left hover:text-brand-700 transition-colors">
+                      {task.title}
+                    </button>
                     {task.clientName && (
                         <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-0.5">
                             <Building2 size={9} /> {task.clientName}
                         </p>
                     )}
                 </div>
-                <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${PRIORITY_PILL[task.priority]}`}>
-                    {task.priority}
+                <div className="flex items-center gap-1.5">
+                  <button onClick={e => { e.stopPropagation(); onViewOS(task.id); }}
+                    className="p-1 rounded-lg text-brand-400 hover:bg-brand-50 hover:text-brand-600">
+                    <Eye size={13} />
+                  </button>
+                  <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${PRIORITY_PILL[task.priority]}`}>
+                      {task.priority}
+                  </div>
                 </div>
             </div>
 
@@ -227,7 +242,7 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
                 </div>
             )}
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
                 <button onClick={() => onMove(task, 'prev')} disabled={isFirst || isMoving}
                     className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-gray-200 text-gray-500 disabled:opacity-30">
                     <ChevronLeft size={11} /> Recuar
@@ -254,6 +269,7 @@ const Pipeline: React.FC = () => {
     const [schedulingModal, setSchedulingModal] = useState<Task | null>(null);
     const [search, setSearch] = useState('');
     const [filterPriority, setFilterPriority] = useState<PriorityLevel | 'all'>('all');
+    const [viewOSId, setViewOSId] = useState<string | null>(null); // Sprint 46
 
     useEffect(() => {
         const q = query(collection(db, CollectionName.TASKS), orderBy('createdAt', 'desc'));
@@ -455,7 +471,8 @@ const Pipeline: React.FC = () => {
                                     {col.length === 0 && <p className="text-[10px] text-gray-300 text-center py-4">Vazio</p>}
                                     {col.map(task => (
                                         <OSCard key={task.id} task={task} allTasks={tasks}
-                                            onMove={moveTask} onPaymentConfirm={confirmPayment} moving={moving} />
+                                            onMove={moveTask} onPaymentConfirm={confirmPayment}
+                                            moving={moving} onViewOS={setViewOSId} />
                                     ))}
                                 </div>
                             </div>
@@ -473,6 +490,11 @@ const Pipeline: React.FC = () => {
                 <FinancialModal task={financialModal}
                     onConfirm={handleFinancialConfirm}
                     onClose={() => setFinancialModal(null)} />
+            )}
+            {viewOSId && (
+                <Suspense fallback={null}>
+                    <OSViewModal taskId={viewOSId} onClose={() => setViewOSId(null)} />
+                </Suspense>
             )}
         </div>
     );

@@ -38,6 +38,8 @@ import {
   Car,
   Settings,
   Headphones,
+  ChevronRight,
+  ClipboardList,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -55,6 +57,9 @@ const Layout: React.FC = () => {
   // Sprint 46A — Suporte Primário notification badge for Gestores
   const [suporteNaoLidos, setSuporteNaoLidos] = useState(0);
   const isGestorLayout = ['admin', 'gestor', 'manager'].includes(userProfile?.role || '');
+
+  // Sprint 46 — expandable submenu
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isGestorLayout || !currentUser) return;
@@ -175,18 +180,40 @@ const Layout: React.FC = () => {
     return !!userProfile.permissions?.[key];
   };
 
-  // Dynamic Navigation Building
-  const navItems = [
+  // ── Navigation structure with submenu support ────────────────────────────
+  type NavChild = { to: string; icon: React.ElementType; label: string; visible: boolean };
+  type NavItem  = NavChild & { children?: NavChild[]; end?: boolean };
+
+  // O.S. submenu routes for auto-expand detection
+  const OS_ROUTES = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento'];
+  const isInOSGroup = OS_ROUTES.some(r => location.pathname.startsWith(r));
+
+  // Auto-expand O.S. group when on an O.S. route
+  const osGroupOpen = expandedGroup === 'os' || isInOSGroup;
+
+  const navItems: NavItem[] = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
-    { to: '/app/tarefas', icon: CheckSquare, label: 'Tarefas (OS)', visible: can('canViewTasks') },
     { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: true },
-    { to: '/app/agenda', icon: CalendarDays, label: 'Agenda (Gantt)', visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
+    { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/clientes', icon: Building, label: 'Clientes', visible: can('canManageClients') },
     { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
-    { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
-    { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') }, // Renomeado
+    { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
     { to: '/app/inteligencia', icon: Brain, label: 'Inteligência MGR 🧠', visible: ['admin', 'developer', 'intel_admin', 'intel_analyst', 'intel_viewer'].includes(userProfile?.role || '') },
-    
+
+    // ── Ordens de Serviço (grupo com submenu) ──
+    {
+      to: '/app/pipeline',
+      icon: ClipboardList,
+      label: 'Ordens de Serviço',
+      visible: can('canViewTasks') || can('canManageProjects'),
+      children: [
+        { to: '/app/pipeline', icon: Kanban,       label: 'Pipeline',   visible: can('canManageProjects') },
+        { to: '/app/agenda',   icon: CalendarDays, label: 'Agenda',     visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
+        { to: '/app/tarefas',  icon: CheckSquare,  label: 'Tarefas',    visible: can('canViewTasks') },
+        { to: '/app/faturamento', icon: Receipt,   label: 'Faturamento', visible: can('canViewFinancials') },
+      ],
+    },
+
     // Management Section
     { to: '/app/campanhas', icon: Target, label: 'Campanhas (MGR Coins)', visible: can('canManageSettings') },
     { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') },
@@ -194,15 +221,12 @@ const Layout: React.FC = () => {
     { to: '/app/veiculos',         icon: Car,           label: 'Controle de Veículos', visible: can('canViewAttendanceReports') },
     { to: '/app/veiculos/config',  icon: Settings,      label: 'Config. Veículos',     visible: can('canManageSettings') },
     { to: '/app/logs', icon: Activity, label: 'Log do Sistema', visible: userProfile?.permissions?.canViewLogs === true || userProfile?.role === 'admin' },
-    
+
     // Admin Section
     { to: '/app/usuarios', icon: Users, label: 'Equipe & RH', visible: can('canManageUsers') },
     { to: '/app/setores', icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
     { to: '/app/locais', icon: MapPin, label: 'Locais de Trabalho', visible: can('canManageUsers') },
-    // ── Ops 2.0 (Sprint 30-34) ──
-    { to: '/app/pipeline', icon: Kanban, label: 'Pipeline de O.S.', visible: can('canManageProjects') },
     { to: '/app/ativos', icon: Wrench, label: 'Ativos de Clientes', visible: can('canManageClients') },
-    { to: '/app/faturamento', icon: Receipt, label: 'Faturamento', visible: can('canViewFinancials') },
     { to: '/app/bi', icon: BarChart3, label: 'BI / Inteligência', visible: can('canManageSettings') },
   ];
 
@@ -314,23 +338,74 @@ const Layout: React.FC = () => {
 
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-            {visibleItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                onClick={closeSidebar}
-                className={({ isActive }) => `
-                  flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors
-                  ${isActive 
-                    ? 'bg-brand-50 text-brand-700' 
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
-                `}
-              >
-                <item.icon size={20} className="mr-3" />
-                {item.label}
-              </NavLink>
-            ))}
+            {visibleItems.map((item) => {
+              // ── Group item with children (e.g. "Ordens de Serviço") ──
+              if (item.children && item.children.length > 0) {
+                const isGroupKey = item.label === 'Ordens de Serviço' ? 'os' : item.label;
+                const isOpen = item.label === 'Ordens de Serviço' ? osGroupOpen : expandedGroup === isGroupKey;
+                const visibleChildren = item.children.filter(c => c.visible);
+                if (visibleChildren.length === 0) return null;
+                return (
+                  <div key={item.label}>
+                    {/* Parent button */}
+                    <button
+                      onClick={() => setExpandedGroup(isOpen ? null : isGroupKey)}
+                      className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors
+                        ${isInOSGroup
+                          ? 'bg-brand-50 text-brand-700'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                    >
+                      <item.icon size={20} className="mr-3 flex-shrink-0" />
+                      <span className="flex-1 text-left">{item.label}</span>
+                      <ChevronRight
+                        size={16}
+                        className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+                      />
+                    </button>
+                    {/* Children (animated slide) */}
+                    {isOpen && (
+                      <div className="mt-1 ml-4 pl-3 border-l-2 border-brand-100 space-y-0.5">
+                        {visibleChildren.map(child => (
+                          <NavLink
+                            key={child.to}
+                            to={child.to}
+                            onClick={closeSidebar}
+                            className={({ isActive }) => `
+                              flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                              ${isActive
+                                ? 'bg-brand-50 text-brand-700'
+                                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'}
+                            `}
+                          >
+                            <child.icon size={16} className="mr-2.5 flex-shrink-0" />
+                            {child.label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // ── Regular flat NavLink ──
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  onClick={closeSidebar}
+                  className={({ isActive }) => `
+                    flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors
+                    ${isActive
+                      ? 'bg-brand-50 text-brand-700'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
+                  `}
+                >
+                  <item.icon size={20} className="mr-3 flex-shrink-0" />
+                  {item.label}
+                </NavLink>
+              );
+            })}
 
             <div className="pt-4 mt-4 border-t border-gray-100">
               <NavLink
