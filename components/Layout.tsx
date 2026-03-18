@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { logEvent } from '../utils/logger';
 import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { PermissionSet } from '../types';
+import { PermissionSet, CollectionName } from '../types';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
   Clock, 
@@ -35,7 +36,8 @@ import {
   Receipt,
   BarChart3,
   Car,
-  Settings
+  Settings,
+  Headphones,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -49,6 +51,20 @@ const Layout: React.FC = () => {
   const [isClearingCache, setIsClearingCache] = useState(false);
 
   const prevPath = useRef('');
+
+  // Sprint 46A — Suporte Primário notification badge for Gestores
+  const [suporteNaoLidos, setSuporteNaoLidos] = useState(0);
+  const isGestorLayout = ['admin', 'gestor', 'manager'].includes(userProfile?.role || '');
+
+  useEffect(() => {
+    if (!isGestorLayout || !currentUser) return;
+    const q = query(
+      collection(db, CollectionName.OS_SUPORTE_MSGS),
+      where('leitoPorGestor', '==', false),
+      where('solicitouHumano', '==', true),
+    );
+    return onSnapshot(q, snap => setSuporteNaoLidos(snap.size));
+  }, [isGestorLayout, currentUser]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -247,6 +263,20 @@ const Layout: React.FC = () => {
                </div>
              )}
         </button>
+
+        {/* Sprint 46A — Suporte Primário badge para gestores */}
+        {isGestorLayout && suporteNaoLidos > 0 && (
+          <button
+            onClick={() => navigate('/app/pipeline')}
+            className="relative p-2 bg-purple-600 text-white rounded-xl flex items-center gap-1.5 text-xs font-bold shadow animate-pulse"
+            title="Técnico solicitando suporte"
+          >
+            <Headphones size={16} />
+            <span className="bg-red-500 text-white text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
+              {suporteNaoLidos}
+            </span>
+          </button>
+        )}
       </header>
 
       {/* MOBILE OVERLAY (Backdrop) */}

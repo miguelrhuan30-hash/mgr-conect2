@@ -1,7 +1,8 @@
 /**
- * components/OSExecution.tsx — Sprints 38-45
+ * components/OSExecution.tsx — Sprints 38-46A
  * Execução de O.S. com: permissões por role, fotos configuráveis por tarefa,
- * check-in geoloc, digitalização Gemini, KPIs, questionário IA, observações.
+ * check-in geoloc, digitalização Gemini, KPIs, questionário IA, observações,
+ * Suporte Primário IA-First.
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -18,11 +19,12 @@ import {
   OSEdicao, OSKpiEntry,
 } from '../types';
 import { TASK_PHOTO_DEFAULT } from './TaskPhotoConfig';
+import OSSuporteChat from './OSSuporteChat';
 import {
   MapPin, CheckCircle2, AlertCircle, Camera, Loader2, X, ArrowLeft,
   CheckSquare, Square, ClipboardList, Upload, Lock, Unlock, Navigation,
   ShieldCheck, MessageSquare, Send, FileText, Wrench, Zap, Clock,
-  ChevronDown, ChevronUp, Printer, ScanLine,
+  ChevronDown, ChevronUp, Printer, ScanLine, Headphones,
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
@@ -113,15 +115,29 @@ const OSExecution: React.FC = () => {
   const [showDigitalizacao, setShowDigitalizacao] = useState(false);
   const docFileRef = useRef<HTMLInputElement>(null);
 
-  // Sprint 44 — Finalization
+  // Sprint 44 — Finalization questionnaire (complete)
   const [showQuestionario, setShowQuestionario] = useState(false);
-  const [fConcluida, setFConcluida] = useState<boolean | null>(null);
-  const [fImpedimento, setFImpedimento] = useState('');
-  const [fNovoProblema, setFNovoProblema] = useState(false);
-  const [fNovoProblemaDesc, setFNovoProblemaDesc] = useState('');
-  const [fSolucao, setFSolucao] = useState('');
+  const [fConcluida,           setFConcluida]           = useState<boolean | null>(null);
+  // Ramo SIM
+  const [fFerramentasUsadas,   setFFerramentasUsadas]   = useState('');
+  const [fProblemaEncontrado,  setFProblemaEncontrado]  = useState('');
+  const [fProblemaEraMesmo,    setFProblemaEraMesmo]    = useState<boolean | null>(null);
+  const [fComoIdentificou,     setFComoIdentificou]     = useState('');
+  const [fSolucao,             setFSolucao]             = useState('');
+  const [fTarefasExtras,       setFTarefasExtras]       = useState('');
+  const [fNovoProblema,        setFNovoProblema]        = useState(false);
+  const [fNovoProblemaDesc,    setFNovoProblemaDesc]    = useState('');
+  // Ramo NÃO
+  const [fImpedimento,         setFImpedimento]         = useState('');
+  const [fImpedimentoDesc,     setFImpedimentoDesc]     = useState('');
+  const [fProblemaDescMesmo,   setFProblemaDescMesmo]   = useState<boolean | null>(null);
+  const [fComoIdentNao,        setFComoIdentNao]        = useState('');
+  const [fOSFicaAberta,        setFOSFicaAberta]        = useState(true);
 
-  // Legacy execution state
+  // Sprint 46A — Suporte Primário Chat
+  const [showSuporteChat, setShowSuporteChat] = useState(false);
+  const [naoLidasSuporteCount, setNaoLidasSuporteCount] = useState(0);
+
   const [adversidades, setAdversidades] = useState('');
   const [evidencias,   setEvidencias]   = useState<string[]>([]);
   const [uploading,    setUploading]    = useState(false);
@@ -437,47 +453,113 @@ const OSExecution: React.FC = () => {
     if (!task || !taskId || !currentUser) return;
     setSaving(true);
     try {
-      let newStatus: WS = WS.AGUARDANDO_FATURAMENTO;
       let statusOS = 'concluida';
+      let shouldClose = true;
+
       if (fConcluida === false) {
-        if (fImpedimento === 'falta_peca' || fImpedimento === 'falta_ferramenta') statusOS = 'pendente_administrativo';
-        else if (fImpedimento === 'tempo_insuficiente') statusOS = 'reagendar';
-        else if (fImpedimento === 'problema_diferente') statusOS = 'em_revisao_tecnica';
+        if (fImpedimento === 'falta_peca' || fImpedimento === 'falta_ferramenta') {
+          statusOS = 'pendente_administrativo';
+        } else if (fImpedimento === 'tempo_insuficiente') {
+          statusOS = 'reagendar';
+          shouldClose = !fOSFicaAberta; // if user says keep open, stay open
+        } else if (fImpedimento === 'problema_diferente') {
+          statusOS = 'em_revisao_tecnica';
+        } else {
+          statusOS = 'pendente_administrativo';
+        }
       } else if (fNovoProblema) {
         statusOS = 'concluida_nova_os_sugerida';
       }
 
-      // Save tarefasOS back
+      const newWorkflow: WS = shouldClose ? WS.AGUARDANDO_FATURAMENTO : (task.workflowStatus || WS.EM_EXECUCAO);
+      const newTaskStatus = shouldClose ? 'completed' : 'in-progress';
+
+      // Build full answers array
+      const respostas = [
+        { perguntaId: 'foiConcluida',       resposta: fConcluida,           timestamp: Timestamp.now() },
+        ...(fConcluida === true ? [
+          { perguntaId: 'ferramentasUsadas',  resposta: fFerramentasUsadas,   timestamp: Timestamp.now() },
+          { perguntaId: 'problemaEncontrado', resposta: fProblemaEncontrado,  timestamp: Timestamp.now() },
+          { perguntaId: 'problemaEraMesmo',   resposta: fProblemaEraMesmo,    timestamp: Timestamp.now() },
+          { perguntaId: 'comoIdentificou',    resposta: fComoIdentificou,     timestamp: Timestamp.now() },
+          { perguntaId: 'solucaoAplicada',    resposta: fSolucao,             timestamp: Timestamp.now() },
+          { perguntaId: 'tarefasExtras',      resposta: fTarefasExtras,       timestamp: Timestamp.now() },
+          { perguntaId: 'novoProblema',       resposta: fNovoProblema,        timestamp: Timestamp.now() },
+          ...(fNovoProblema ? [{ perguntaId: 'novoProblemaDesc', resposta: fNovoProblemaDesc, timestamp: Timestamp.now() }] : []),
+        ] : [
+          { perguntaId: 'impedimento',        resposta: fImpedimento,         timestamp: Timestamp.now() },
+          { perguntaId: 'impedimentoDesc',    resposta: fImpedimentoDesc,     timestamp: Timestamp.now() },
+          { perguntaId: 'problemaDescMesmo',  resposta: fProblemaDescMesmo,   timestamp: Timestamp.now() },
+          ...(fImpedimento === 'problema_diferente' ? [
+            { perguntaId: 'comoIdentNao',     resposta: fComoIdentNao,        timestamp: Timestamp.now() },
+          ] : []),
+          ...(fImpedimento === 'tempo_insuficiente' ? [
+            { perguntaId: 'osFicaAberta',     resposta: fOSFicaAberta,        timestamp: Timestamp.now() },
+          ] : []),
+        ]),
+      ];
+
+      // Merge ferramentas from questionnaire
+      const ferramentasFinais = fFerramentasUsadas.trim()
+        ? [...new Set([...ferramentas, ...fFerramentasUsadas.split(',').map(f => f.trim()).filter(Boolean)])]
+        : ferramentas;
+
       await updateDoc(doc(db, CollectionName.TASKS, taskId), {
-        workflowStatus: newStatus,
-        status: 'completed',
+        workflowStatus: newWorkflow,
+        status: newTaskStatus,
         statusOS,
         tipoServico,
-        ferramentasUtilizadas: ferramentas,
+        ferramentasUtilizadas: ferramentasFinais,
         tarefasOS,
         'execution.checkOut': Timestamp.now(),
         'execution.adversidades': adversidades,
         'execution.evidencias': evidencias.length > 0 ? arrayUnion(...evidencias) : [],
         checkoutOS: { feito: true, timestamp: Timestamp.now(), userId: currentUser.uid },
-        finalizacaoRespostas: arrayUnion({
-          perguntaId: 'foiConcluida', perguntaTexto: 'Foi possível concluir?',
-          resposta: fConcluida ?? false, timestamp: Timestamp.now(),
-        }),
-        edicoes: arrayUnion(registrarEdicao('status', task.workflowStatus, newStatus)),
-        statusHistory: arrayUnion({ status: newStatus, changedAt: Timestamp.now(), changedBy: currentUser.uid }),
+        finalizacaoRespostas: arrayUnion(...respostas),
+        edicoes: arrayUnion(registrarEdicao('status', task.workflowStatus, newWorkflow)),
+        statusHistory: arrayUnion({ status: newWorkflow, changedAt: Timestamp.now(), changedBy: currentUser.uid }),
         updatedAt: serverTimestamp(),
       });
 
-      // Save asset
+      // Update asset history
       if (task.ativoId) {
         try {
           await updateDoc(doc(db, CollectionName.ASSETS, task.ativoId), {
-            historicoOS: arrayUnion({ osId: taskId, tipo: tipoServico, dataExecucao: Timestamp.now(), status: 'concluida' }),
+            historicoOS: arrayUnion({ osId: taskId, tipo: tipoServico, dataExecucao: Timestamp.now(), status: statusOS }),
           });
         } catch { /* silent */ }
       }
 
-      setStage('done');
+      // Sprint 44B — Gamification XP
+      if (shouldClose && currentUser) {
+        try {
+          const xpGanho =
+            50 + // base
+            (ferramentasFinais.length > 0 ? 10 : 0) +
+            (fSolucao.trim() ? 10 : 0) +
+            (respostas.length >= 6 ? 20 : 0); // questionário completo
+          const userRef = doc(db, CollectionName.USERS, currentUser.uid);
+          const userSnap = await getDoc(userRef);
+          const prev = userSnap.data() || {};
+          const prevStreak = (prev.streakOS || 0) + 1;
+          const multiplier = prevStreak >= 3 ? 1.5 : 1;
+          const xpFinal = Math.round(xpGanho * multiplier);
+          await updateDoc(userRef, {
+            xpTotal: (prev.xpTotal || 0) + xpFinal,
+            xpMes: (prev.xpMes || 0) + xpFinal,
+            streakOS: prevStreak,
+            ultimaOSConcluida: Timestamp.now(),
+          });
+        } catch { /* silent - gamification never blocks finalization */ }
+      }
+
+      if (shouldClose) {
+        setStage('done');
+      } else {
+        // O.S. stays open (reagendar)
+        setShowQuestionario(false);
+        alert(`O.S. marcada como "${statusOS}" e mantida em aberto para reagendamento.`);
+      }
     } finally { setSaving(false); setShowQuestionario(false); }
   };
 
@@ -762,6 +844,22 @@ const OSExecution: React.FC = () => {
         </div>
       )}
 
+      {/* ── FLOATING ACTION BUTTON: Suporte Primário ── */}
+      {stage === 'execution' && (
+        <button
+          onClick={() => setShowSuporteChat(true)}
+          className="fixed bottom-6 right-4 z-40 flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-2xl shadow-xl font-bold text-sm transition-all"
+        >
+          <Headphones size={18} />
+          Suporte
+          {naoLidasSuporteCount > 0 && (
+            <span className="bg-red-500 text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center -ml-1">
+              {naoLidasSuporteCount}
+            </span>
+          )}
+        </button>
+      )}
+
       {/* ────── STAGE: DONE ────── */}
       {stage === 'done' && (
         <div className="bg-white rounded-2xl border border-emerald-200 shadow-sm p-10 text-center space-y-4">
@@ -830,10 +928,10 @@ const OSExecution: React.FC = () => {
         </div>
       )}
 
-      {/* ────── MODAL: Questionário ────── */}
+      {/* ────── MODAL: Questionário de Finalização Completo ────── */}
       {showQuestionario && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5 max-h-[85vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-brand-600" /> Questionário de Finalização
@@ -841,9 +939,9 @@ const OSExecution: React.FC = () => {
               <button onClick={() => setShowQuestionario(false)}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
 
-            {/* Q1 */}
+            {/* Q1 — Concluiu? */}
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-gray-700">Foi possível concluir a O.S.?</p>
+              <p className="text-sm font-semibold text-gray-700">1. Foi possível concluir a O.S.?</p>
               <div className="flex gap-3">
                 <button onClick={() => setFConcluida(true)}
                   className={`flex-1 py-2 rounded-lg text-sm font-bold border ${fConcluida === true ? 'bg-emerald-600 text-white border-emerald-600' : 'border-gray-200 text-gray-600'}`}>
@@ -856,11 +954,53 @@ const OSExecution: React.FC = () => {
               </div>
             </div>
 
-            {/* Se SIM */}
+            {/* ── RAMO SIM ── */}
             {fConcluida === true && (
-              <div className="space-y-4">
+              <div className="space-y-4 border-l-4 border-emerald-400 pl-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">2. Quais ferramentas utilizou?</p>
+                  <input value={fFerramentasUsadas} onChange={e => setFFerramentasUsadas(e.target.value)}
+                    placeholder="Ex: Multímetro, chave de fenda, alicate... (separe por vírgula)"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                  <p className="text-[10px] text-gray-400 mt-0.5">Será mesclado com as ferramentas já registradas na O.S.</p>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">3. Qual problema foi encontrado / deveria ser solucionado?</p>
+                  <textarea rows={2} value={fProblemaEncontrado} onChange={e => setFProblemaEncontrado(e.target.value)}
+                    placeholder="Descreva o problema identificado na visita..."
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
+                </div>
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-gray-700">Foram identificados novos problemas?</p>
+                  <p className="text-sm font-semibold text-gray-700">4. O problema era o mesmo descrito na O.S?</p>
+                  <div className="flex gap-3">
+                    {[true, false].map(v => (
+                      <button key={String(v)} onClick={() => setFProblemaEraMesmo(v)}
+                        className={`flex-1 py-1.5 rounded-lg text-sm font-bold border ${fProblemaEraMesmo === v ? (v ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-amber-500 text-white border-amber-500') : 'border-gray-200 text-gray-600'}`}>
+                        {v ? 'Sim' : 'Não'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">5. Como identificou o problema?</p>
+                  <textarea rows={2} value={fComoIdentificou} onChange={e => setFComoIdentificou(e.target.value)}
+                    placeholder="Descreva o processo de diagnóstico..."
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">6. Qual solução foi aplicada?</p>
+                  <textarea rows={2} value={fSolucao} onChange={e => setFSolucao(e.target.value)}
+                    placeholder="Descreva a solução implementada..."
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">7. Tarefas extras realizadas (além das descritas na O.S.)?</p>
+                  <textarea rows={2} value={fTarefasExtras} onChange={e => setFTarefasExtras(e.target.value)}
+                    placeholder="Descreva qualquer atividade não prevista na O.S. original..."
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-700">8. Foram identificados novos problemas durante a execução?</p>
                   <div className="flex gap-3">
                     <button onClick={() => setFNovoProblema(true)}
                       className={`flex-1 py-1.5 rounded-lg text-sm font-bold border ${fNovoProblema ? 'bg-amber-500 text-white border-amber-500' : 'border-gray-200 text-gray-600'}`}>
@@ -873,48 +1013,98 @@ const OSExecution: React.FC = () => {
                   </div>
                   {fNovoProblema && (
                     <textarea rows={2} value={fNovoProblemaDesc} onChange={e => setFNovoProblemaDesc(e.target.value)}
-                      placeholder="Descreva o novo problema identificado..."
+                      placeholder="Descreva o novo problema encontrado..."
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
                   )}
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-700 mb-1">Qual solução foi aplicada?</p>
-                  <textarea rows={3} value={fSolucao} onChange={e => setFSolucao(e.target.value)}
-                    placeholder="Descreva a solução aplicada..."
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
-                </div>
               </div>
             )}
 
-            {/* Se NÃO */}
+            {/* ── RAMO NÃO ── */}
             {fConcluida === false && (
-              <div className="space-y-3">
-                <p className="text-sm font-semibold text-gray-700">O que impediu a conclusão?</p>
-                {['falta_peca', 'falta_ferramenta', 'tempo_insuficiente', 'problema_diferente', 'outro'].map(imp => (
-                  <label key={imp} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${fImpedimento === imp ? 'bg-brand-50 border-brand-400' : 'border-gray-200 hover:bg-gray-50'}`}>
-                    <input type="radio" name="impedimento" value={imp} checked={fImpedimento === imp} onChange={() => setFImpedimento(imp)} className="accent-brand-600" />
-                    <span className="text-sm text-gray-700">
-                      {imp === 'falta_peca' && 'Falta de peça'}
-                      {imp === 'falta_ferramenta' && 'Falta de ferramenta'}
-                      {imp === 'tempo_insuficiente' && 'Tempo insuficiente'}
-                      {imp === 'problema_diferente' && 'Problema diferente do descrito'}
-                      {imp === 'outro' && 'Outro motivo'}
-                    </span>
-                  </label>
-                ))}
+              <div className="space-y-4 border-l-4 border-red-300 pl-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-700">2. O problema descritivo na O.S. era o mesmo que encontrou?</p>
+                  <div className="flex gap-3">
+                    {[true, false].map(v => (
+                      <button key={String(v)} onClick={() => setFProblemaDescMesmo(v)}
+                        className={`flex-1 py-1.5 rounded-lg text-sm font-bold border ${fProblemaDescMesmo === v ? (v ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-amber-500 text-white border-amber-500') : 'border-gray-200 text-gray-600'}`}>
+                        {v ? 'Sim' : 'Não, era diferente'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">3. O que impediu a conclusão?</p>
+                  {['falta_peca', 'falta_ferramenta', 'tempo_insuficiente', 'problema_diferente', 'outro'].map(imp => (
+                    <label key={imp} className={`flex items-center gap-3 p-3 mb-2 rounded-lg border cursor-pointer ${fImpedimento === imp ? 'bg-brand-50 border-brand-400' : 'border-gray-200 hover:bg-gray-50'}`}>
+                      <input type="radio" name="impedimento" value={imp} checked={fImpedimento === imp} onChange={() => setFImpedimento(imp)} className="accent-brand-600" />
+                      <span className="text-sm text-gray-700">
+                        {imp === 'falta_peca' && '🔩 Falta de peça de reposição'}
+                        {imp === 'falta_ferramenta' && '🔧 Falta de ferramenta'}
+                        {imp === 'tempo_insuficiente' && '⏱️ Tempo insuficiente'}
+                        {imp === 'problema_diferente' && '❓ Problema diferente do descrito'}
+                        {imp === 'outro' && '📝 Outro motivo'}
+                      </span>
+                    </label>
+                  ))}
+                  {fImpedimento && (
+                    <textarea rows={2} value={fImpedimentoDesc} onChange={e => setFImpedimentoDesc(e.target.value)}
+                      placeholder="Descreva com mais detalhes o impedimento..."
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
+                  )}
+                </div>
+
+                {/* Problema diferente → como identificou */}
+                {fImpedimento === 'problema_diferente' && (
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 mb-1">4. Como identificou o problema diferente?</p>
+                    <textarea rows={2} value={fComoIdentNao} onChange={e => setFComoIdentNao(e.target.value)}
+                      placeholder="Descreva como detectou o problema real..."
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" />
+                  </div>
+                )}
+
+                {/* Tempo insuficiente → O.S. fica aberta? */}
+                {fImpedimento === 'tempo_insuficiente' && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-700">4. A O.S. deve ficar em aberto para reagendamento?</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => setFOSFicaAberta(true)}
+                        className={`flex-1 py-1.5 rounded-lg text-sm font-bold border ${fOSFicaAberta ? 'bg-amber-500 text-white border-amber-500' : 'border-gray-200 text-gray-600'}`}>
+                        ✓ Sim, reagendar
+                      </button>
+                      <button onClick={() => setFOSFicaAberta(false)}
+                        className={`flex-1 py-1.5 rounded-lg text-sm font-bold border ${!fOSFicaAberta ? 'bg-gray-700 text-white border-gray-700' : 'border-gray-200 text-gray-600'}`}>
+                        Não, encerrar
+                      </button>
+                    </div>
+                    {fOSFicaAberta && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        ⚠️ A O.S. ficará com status <strong>Reagendar</strong> e permanecerá em aberto no pipeline.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Confirm */}
+            {/* Confirm Button */}
             {fConcluida !== null && (
-              <button onClick={finalizarOS} disabled={saving || (fConcluida === false && !fImpedimento)}
+              <button onClick={finalizarOS}
+                disabled={saving || (fConcluida === false && !fImpedimento)}
                 className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-50 flex items-center justify-center gap-2">
                 {saving ? <Loader2 className="animate-spin w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
-                Confirmar Finalização
+                {fConcluida ? 'Confirmar Finalização' : (fOSFicaAberta && fImpedimento === 'tempo_insuficiente' ? 'Salvar e Reagendar' : 'Registrar Impedimento')}
               </button>
             )}
           </div>
         </div>
+      )}
+
+      {/* Sprint 46A — Suporte Primário Chat Modal */}
+      {showSuporteChat && task && (
+        <OSSuporteChat task={task} onClose={() => setShowSuporteChat(false)} />
       )}
     </div>
   );

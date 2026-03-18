@@ -777,4 +777,22 @@ export enum CollectionName {
   TOOLS_CATALOG = 'tools_catalog',
   TASK_KPIS = 'task_kpis',
   ORDENS_SERVICO = 'tasks',     // alias (O.S. usa a mesma coleção 'tasks')
+  // Sprint 46A — Suporte Primário
+  OS_SUPORTE_MSGS = 'os_suporte_msgs',
+}
+
+// ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
+export interface OSSuporteMsg {
+  id: string;
+  osId: string;
+  osCode?: string;
+  tipoServico?: string;
+  texto: string;
+  autorId: string;
+  autorNome: string;
+  autorRole: 'technician' | 'manager' | 'admin' | 'ia';
+  criadaEm: Timestamp;
+  leitoPorGestor: boolean;
+  leitoPorTecnico: boolean;
+  isIASugestao?: boolean;
 }
