@@ -182,9 +182,16 @@ const OSPrintLayout: React.FC = () => {
             style={{ padding: '10px 24px', background: '#1d4ed8', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold' }}>
             🖨️ Imprimir / Salvar PDF
           </button>
-          <button onClick={() => window.close()}
+          <button
+            onClick={() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                window.close();
+              }
+            }}
             style={{ marginLeft: 12, padding: '10px 24px', background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' }}>
-            Fechar
+            ← Voltar às O.S.
           </button>
         </div>
       </div>

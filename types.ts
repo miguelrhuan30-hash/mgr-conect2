@@ -16,37 +16,44 @@ export interface CampaignConfig {
 export type UserRole = 'admin' | 'gestor' | 'manager' | 'employee' | 'technician' | 'tecnico' | 'pending' | 'developer' | 'intel_viewer' | 'intel_analyst' | 'intel_admin';
 
 export interface PermissionSet {
-  // Administrative
-  canManageUsers: boolean;      // Create, edit, delete users, change sectors
-  canManageSettings: boolean;   // CMS, Landing Page, System Configs
-  canManageSectors: boolean;    // Create/Edit Sectors (Roles)
+  // ── Administrative ─────────────────────────────────────────────────────────
+  canManageUsers: boolean;       // Create, edit, delete users, change sectors
+  canManageSettings: boolean;    // CMS, Landing Page, System Configs
+  canManageSectors: boolean;     // Create/Edit Sectors (Roles)
   canViewLogs?: boolean;
 
-  // Operational (Tasks/OS)
-  canViewTasks: boolean;
-  canCreateTasks: boolean;
-  canEditTasks: boolean;
-  canDeleteTasks: boolean;
-  canViewSchedule: boolean;     // Legacy: View Gantt Chart/Schedule (General Access)
-  canViewFullSchedule: boolean; // NEW: View ALL schedules
-  canViewMySchedule: boolean;   // NEW: View ONLY own schedule
-
-  // Commercial
-  canManageClients: boolean;
-  canManageProjects: boolean;
-
-  // Inventory
-  canViewInventory: boolean;
-  canManageInventory: boolean;
-
-  // HR & Time Tracking
+  // ── HR & Time Tracking ────────────────────────────────────────────────────
   canRegisterAttendance: boolean;       // Clock in/out
   canViewAttendanceReports: boolean;    // View team reports
   canManageAttendance: boolean;         // Edit entries, close shifts manually
-  requiresTimeClock: boolean;           // If true, system access is blocked until user clocks in
+  requiresTimeClock: boolean;           // Block system until check-in
 
-  // Financial
-  canViewFinancials?: boolean;
+  // ── Ordens de Serviço — module access ─────────────────────────────────────
+  canViewTasks: boolean;          // Módulo Tarefas (lista)
+  canCreateTasks: boolean;        // Criar nova O.S.
+  canEditTasks: boolean;          // Editar O.S. existente
+  canDeleteTasks: boolean;        // Excluir O.S.
+  canManageProjects: boolean;     // Pipeline + Projetos
+  canViewSchedule: boolean;       // Agenda/Gantt (acesso geral)
+  canViewFullSchedule: boolean;   // Agenda completa (gerencial)
+  canViewMySchedule: boolean;     // Minha agenda (pessoal)
+  canViewFinancials: boolean;     // Faturamento & dados financeiros
+
+  // ── Commercial ────────────────────────────────────────────────────────────
+  canManageClients: boolean;      // Módulo Clientes + Ativos
+
+  // ── Inventory ─────────────────────────────────────────────────────────────
+  canViewInventory: boolean;
+  canManageInventory: boolean;
+
+  // ── Ranking & Gamification ────────────────────────────────────────────────
+  canViewRanking?: boolean;       // Módulo Ranking da Equipe
+
+  // ── BI / Intelligence ─────────────────────────────────────────────────────
+  canViewBI?: boolean;            // BI Dashboard
+
+  // ── Vehicles ──────────────────────────────────────────────────────────────
+  canViewVehicles?: boolean;      // Controle de Veículos
 }
 
 export interface Sector {

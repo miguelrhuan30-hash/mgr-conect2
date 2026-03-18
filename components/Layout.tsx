@@ -194,7 +194,7 @@ const Layout: React.FC = () => {
 
   const navItems: NavItem[] = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
-    { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: true },
+    { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: can('canViewRanking') || userProfile?.role === 'admin' || userProfile?.role === 'gestor' || userProfile?.role === 'manager' },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/clientes', icon: Building, label: 'Clientes', visible: can('canManageClients') },
     { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
@@ -220,7 +220,7 @@ const Layout: React.FC = () => {
     { to: '/app/campanhas', icon: Target, label: 'Campanhas (MGR Coins)', visible: can('canManageSettings') },
     { to: '/app/modelos', icon: FileText, label: 'Modelos', visible: can('canManageSettings') },
     { to: '/app/relatorios-ponto', icon: CalendarCheck, label: 'Espelho de Ponto', visible: can('canViewAttendanceReports') },
-    { to: '/app/veiculos',         icon: Car,           label: 'Controle de Veículos', visible: can('canViewAttendanceReports') },
+    { to: '/app/veiculos',         icon: Car,           label: 'Controle de Veículos', visible: can('canViewVehicles') || can('canViewAttendanceReports') },
     { to: '/app/veiculos/config',  icon: Settings,      label: 'Config. Veículos',     visible: can('canManageSettings') },
     { to: '/app/logs', icon: Activity, label: 'Log do Sistema', visible: userProfile?.permissions?.canViewLogs === true || userProfile?.role === 'admin' },
 
@@ -229,7 +229,7 @@ const Layout: React.FC = () => {
     { to: '/app/setores', icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
     { to: '/app/locais', icon: MapPin, label: 'Locais de Trabalho', visible: can('canManageUsers') },
     { to: '/app/ativos', icon: Wrench, label: 'Ativos de Clientes', visible: can('canManageClients') },
-    { to: '/app/bi', icon: BarChart3, label: 'BI / Inteligência', visible: can('canManageSettings') },
+    { to: '/app/bi', icon: BarChart3, label: 'BI / Inteligência', visible: can('canViewBI') || can('canManageSettings') },
   ];
 
   // Add "Editar Site" only for Developers/Admins

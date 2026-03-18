@@ -1,379 +1,550 @@
-import React, { useState, useEffect } from 'react';
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy, QuerySnapshot, DocumentData } from 'firebase/firestore';
+/**
+ * components/SectorManagement.tsx — Rebuilt
+ *
+ * Gestão de Cargos/Setores com:
+ * - Cards por MÓDULO da aplicação (não por grupo plano)
+ * - Toggle master por módulo (liga/desliga o módulo inteiro)
+ * - Toggles por ação dentro de cada módulo
+ * - Propagação automática para usuários do setor (sem override individual)
+ */
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot,
+  serverTimestamp, query, orderBy, getDocs, where,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, Sector, PermissionSet } from '../types';
-import { 
-  Shield, Plus, Trash2, Edit2, Check, X, Save, Loader2, 
-  Users, Briefcase, Settings, FileText, Package, DollarSign, Clock 
+import {
+  Shield, Plus, Trash2, Edit2, X, Save, Loader2, Users,
+  ChevronDown, ChevronUp, CheckCircle2, ClipboardList, Clock,
+  Building, Package, DollarSign, Kanban, Trophy, BarChart3,
+  Car, Settings, Activity, ListTodo, Calendar,
 } from 'lucide-react';
 
-// Default state for new sectors
-const INITIAL_PERMISSIONS: PermissionSet = {
+// ── Default permissions ────────────────────────────────────────────────────────
+const EMPTY_PERMS = (): PermissionSet => ({
   canManageUsers: false,
   canManageSettings: false,
   canManageSectors: false,
-  canViewTasks: true,
-  canCreateTasks: false,
-  canEditTasks: false,
-  canDeleteTasks: false,
-  canViewSchedule: false,
-  canViewFullSchedule: false,
-  canViewMySchedule: false,
-  canManageClients: false,
-  canManageProjects: false,
-  canViewInventory: false,
-  canManageInventory: false,
+  canViewLogs: false,
   canRegisterAttendance: true,
   canViewAttendanceReports: false,
   canManageAttendance: false,
   requiresTimeClock: false,
+  canViewTasks: true,
+  canCreateTasks: false,
+  canEditTasks: false,
+  canDeleteTasks: false,
+  canManageProjects: false,
+  canViewSchedule: false,
+  canViewFullSchedule: false,
+  canViewMySchedule: true,
   canViewFinancials: false,
-};
+  canManageClients: false,
+  canViewInventory: false,
+  canManageInventory: false,
+  canViewRanking: true,
+  canViewBI: false,
+  canViewVehicles: false,
+});
 
-// Grouping permissions for better UI UX
-const PERMISSION_GROUPS = [
+// ── Module definitions ─────────────────────────────────────────────────────────
+interface PermAction { key: keyof PermissionSet; label: string; desc?: string }
+interface ModuleDef {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  color: string;        // tailwind bg class for card header
+  textColor: string;    // tailwind text class
+  masterKey?: keyof PermissionSet; // if set, toggling master flips this key + all actions
+  actions: PermAction[];
+}
+
+const MODULES: ModuleDef[] = [
   {
-    id: 'admin',
-    title: 'Administrativo & Sistema',
-    icon: Settings,
-    color: 'text-gray-600 bg-gray-100',
-    perms: [
-      { key: 'canManageUsers', label: 'Gerenciar Usuários' },
-      { key: 'canManageSectors', label: 'Gerenciar Cargos e Setores' },
-      { key: 'canManageSettings', label: 'Configurações do Sistema' },
-    ]
+    id: 'os',
+    label: 'Ordens de Serviço',
+    icon: ClipboardList,
+    color: 'bg-orange-50',
+    textColor: 'text-orange-700',
+    actions: [
+      { key: 'canViewTasks',       label: 'Visualizar Tarefas (Lista)' },
+      { key: 'canManageProjects',  label: 'Pipeline / Kanban' },
+      { key: 'canViewMySchedule',  label: 'Minha Agenda' },
+      { key: 'canViewFullSchedule',label: 'Agenda Completa (Gerencial)' },
+      { key: 'canViewSchedule',    label: 'Agenda / Gantt (Geral)' },
+      { key: 'canCreateTasks',     label: 'Criar Nova O.S.' },
+      { key: 'canEditTasks',       label: 'Editar O.S.' },
+      { key: 'canDeleteTasks',     label: 'Excluir O.S.' },
+      { key: 'canViewFinancials',  label: 'Faturamento & Financeiro' },
+    ],
   },
   {
     id: 'hr',
-    title: 'RH & Ponto',
+    label: 'RH & Ponto',
     icon: Clock,
-    color: 'text-blue-600 bg-blue-100',
-    perms: [
-      { key: 'canRegisterAttendance', label: 'Registrar Ponto' },
-      { key: 'canViewAttendanceReports', label: 'Ver Relatórios de Equipe' },
-      { key: 'canManageAttendance', label: 'Gerenciar/Corrigir Ponto' },
-      { 
-        key: 'requiresTimeClock', 
-        label: 'Exigir Ponto para Acesso ao Sistema?', 
-        description: 'Se desmarcado, o usuário poderá acessar o sistema mesmo sem registrar entrada.'
-      },
-    ]
+    color: 'bg-blue-50',
+    textColor: 'text-blue-700',
+    actions: [
+      { key: 'canRegisterAttendance',    label: 'Registrar Ponto' },
+      { key: 'canViewAttendanceReports', label: 'Espelho de Ponto (Equipe)' },
+      { key: 'canManageAttendance',      label: 'Corrigir / Gerenciar Ponto' },
+      { key: 'requiresTimeClock',        label: 'Exigir Ponto para Acesso', desc: 'Bloqueia entrada no sistema até o colaborador bater ponto' },
+    ],
   },
   {
-    id: 'ops',
-    title: 'Operacional (Tarefas/OS)',
-    icon: FileText,
-    color: 'text-orange-600 bg-orange-100',
-    perms: [
-      { key: 'canViewTasks', label: 'Visualizar Tarefas' },
-      { key: 'canViewSchedule', label: 'Visualizar Agenda/Gantt' },
-      { key: 'canViewFullSchedule', label: 'Agenda Completa (Gerencial)' },
-      { key: 'canViewMySchedule', label: 'Minha Agenda (Pessoal)' },
-      { key: 'canCreateTasks', label: 'Criar Novas Tarefas' },
-      { key: 'canEditTasks', label: 'Editar Tarefas' },
-      { key: 'canDeleteTasks', label: 'Excluir Tarefas' },
-    ]
-  },
-  {
-    id: 'commercial',
-    title: 'Comercial & Projetos',
-    icon: Briefcase,
-    color: 'text-purple-600 bg-purple-100',
-    perms: [
-      { key: 'canManageClients', label: 'Gerenciar Clientes' },
-      { key: 'canManageProjects', label: 'Gerenciar Projetos' },
-    ]
+    id: 'clients',
+    label: 'Clientes & Ativos',
+    icon: Building,
+    color: 'bg-purple-50',
+    textColor: 'text-purple-700',
+    actions: [
+      { key: 'canManageClients',  label: 'Gerenciar Clientes & Ativos' },
+    ],
   },
   {
     id: 'inventory',
-    title: 'Estoque',
+    label: 'Almoxarifado',
     icon: Package,
-    color: 'text-emerald-600 bg-emerald-100',
-    perms: [
-      { key: 'canViewInventory', label: 'Visualizar Estoque' },
-      { key: 'canManageInventory', label: 'Movimentar Estoque' },
-    ]
+    color: 'bg-emerald-50',
+    textColor: 'text-emerald-700',
+    actions: [
+      { key: 'canViewInventory',    label: 'Visualizar Estoque' },
+      { key: 'canManageInventory',  label: 'Movimentar / Gerenciar Estoque' },
+    ],
   },
   {
-    id: 'financial',
-    title: 'Financeiro',
-    icon: DollarSign,
-    color: 'text-green-600 bg-green-100',
-    perms: [
-      { key: 'canViewFinancials', label: 'Acesso a Dados Financeiros', description: 'Visualizar custos, salários e gerar extratos financeiros.' },
-    ]
-  }
+    id: 'ranking',
+    label: 'Ranking da Equipe',
+    icon: Trophy,
+    color: 'bg-yellow-50',
+    textColor: 'text-yellow-700',
+    actions: [
+      { key: 'canViewRanking', label: 'Visualizar Ranking & Gamificação' },
+    ],
+  },
+  {
+    id: 'vehicles',
+    label: 'Controle de Veículos',
+    icon: Car,
+    color: 'bg-cyan-50',
+    textColor: 'text-cyan-700',
+    actions: [
+      { key: 'canViewVehicles', label: 'Acessar Controle de Veículos' },
+    ],
+  },
+  {
+    id: 'bi',
+    label: 'BI & Inteligência',
+    icon: BarChart3,
+    color: 'bg-indigo-50',
+    textColor: 'text-indigo-700',
+    actions: [
+      { key: 'canViewBI',        label: 'Acessar BI / Dashboard Analítico' },
+    ],
+  },
+  {
+    id: 'admin',
+    label: 'Administração do Sistema',
+    icon: Settings,
+    color: 'bg-red-50',
+    textColor: 'text-red-700',
+    actions: [
+      { key: 'canManageUsers',    label: 'Gerenciar Usuários & Equipe' },
+      { key: 'canManageSectors',  label: 'Gerenciar Cargos & Acessos' },
+      { key: 'canManageSettings', label: 'Configurações do Sistema' },
+      { key: 'canViewLogs',       label: 'Log do Sistema' },
+    ],
+  },
 ];
 
+// Module is "enabled" if at least one action key is true
+const isModuleEnabled = (mod: ModuleDef, perms: PermissionSet) =>
+  mod.actions.some(a => !!perms[a.key]);
+
+// ── Toggle component ───────────────────────────────────────────────────────────
+const Toggle: React.FC<{ on: boolean; onChange: () => void; size?: 'sm' | 'md' }> = ({
+  on, onChange, size = 'md',
+}) => (
+  <button
+    type="button"
+    onClick={onChange}
+    className={`relative inline-flex flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+      size === 'md' ? 'h-6 w-11' : 'h-5 w-9'
+    } ${on ? 'bg-brand-600' : 'bg-gray-200'}`}
+    role="switch"
+    aria-checked={on}
+  >
+    <span className={`pointer-events-none inline-block rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+      size === 'md'
+        ? `h-5 w-5 ${on ? 'translate-x-5' : 'translate-x-0'}`
+        : `h-4 w-4 ${on ? 'translate-x-4' : 'translate-x-0'}`
+    }`} />
+  </button>
+);
+
+// ── Module Card ────────────────────────────────────────────────────────────────
+const ModuleCard: React.FC<{
+  mod: ModuleDef;
+  perms: PermissionSet;
+  onToggle: (key: keyof PermissionSet) => void;
+}> = ({ mod, perms, onToggle }) => {
+  const [expanded, setExpanded] = useState(false);
+  const enabled = isModuleEnabled(mod, perms);
+  const Icon = mod.icon;
+  const activeCount = mod.actions.filter(a => !!perms[a.key]).length;
+
+  const handleMasterToggle = () => {
+    // Enable all if currently disabled; disable all if currently enabled
+    if (enabled) {
+      mod.actions.forEach(a => { if (perms[a.key]) onToggle(a.key); });
+    } else {
+      mod.actions.forEach(a => { if (!perms[a.key]) onToggle(a.key); });
+    }
+  };
+
+  return (
+    <div className={`rounded-2xl border overflow-hidden transition-all ${
+      enabled ? 'border-gray-200 shadow-sm' : 'border-gray-100 opacity-60'
+    }`}>
+      {/* Card Header */}
+      <div className={`${mod.color} px-4 py-3 flex items-center gap-3`}>
+        <div className={`p-1.5 rounded-lg bg-white/60`}>
+          <Icon size={16} className={mod.textColor} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-bold ${mod.textColor} truncate`}>{mod.label}</p>
+          <p className="text-[10px] text-gray-500">
+            {activeCount}/{mod.actions.length} ações ativas
+          </p>
+        </div>
+        {/* Master toggle */}
+        <Toggle on={enabled} onChange={handleMasterToggle} />
+        {/* Expand chevron */}
+        <button
+          type="button"
+          onClick={() => setExpanded(p => !p)}
+          className="p-1 rounded-lg hover:bg-white/50 text-gray-500 transition-colors"
+        >
+          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        </button>
+      </div>
+
+      {/* Action list */}
+      {expanded && (
+        <div className="bg-white divide-y divide-gray-50">
+          {mod.actions.map(action => (
+            <div key={action.key} className="px-4 py-2.5 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-700">{action.label}</p>
+                {action.desc && (
+                  <p className="text-[10px] text-gray-400 mt-0.5">{action.desc}</p>
+                )}
+              </div>
+              <Toggle
+                on={!!perms[action.key]}
+                onChange={() => onToggle(action.key)}
+                size="sm"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Sector Card ────────────────────────────────────────────────────────────────
+const SectorCard: React.FC<{
+  sector: Sector;
+  onEdit: () => void;
+  onDelete: () => void;
+}> = ({ sector, onEdit, onDelete }) => {
+  const perms = { ...EMPTY_PERMS(), ...sector.defaultPermissions };
+  const enabledModules = MODULES.filter(m => isModuleEnabled(m, perms));
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+            {sector.name.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900 text-sm">{sector.name}</h3>
+            <p className="text-[10px] text-gray-400">
+              {enabledModules.length} módulo{enabledModules.length !== 1 ? 's' : ''} ativo{enabledModules.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-1 flex-shrink-0">
+          <button onClick={onEdit} className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors">
+            <Edit2 size={14} />
+          </button>
+          <button onClick={onDelete} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+
+      {sector.description && (
+        <p className="text-xs text-gray-500 line-clamp-2">{sector.description}</p>
+      )}
+
+      {/* Enabled modules pills */}
+      <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-gray-100">
+        {enabledModules.length === 0 ? (
+          <span className="text-[10px] text-gray-400 italic">Nenhum módulo ativo</span>
+        ) : (
+          enabledModules.map(m => {
+            const Icon = m.icon;
+            return (
+              <span key={m.id} className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${m.color} ${m.textColor} border-transparent`}>
+                <Icon size={9} /> {m.label}
+              </span>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── Main Component ────────────────────────────────────────────────────────────
 const SectorManagement: React.FC = () => {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Form State
   const [formName, setFormName] = useState('');
   const [formDesc, setFormDesc] = useState('');
-  const [formPerms, setFormPerms] = useState<PermissionSet>(INITIAL_PERMISSIONS);
+  const [formPerms, setFormPerms] = useState<PermissionSet>(EMPTY_PERMS());
 
   useEffect(() => {
     const q = query(collection(db, CollectionName.SECTORS), orderBy('name', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
-      const data = snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...(doc.data() as any) 
-      })) as Sector[];
-      setSectors(data);
+    return onSnapshot(q, snap => {
+      setSectors(snap.docs.map(d => ({ id: d.id, ...d.data() } as Sector)));
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching sectors:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    }, () => setLoading(false));
   }, []);
 
-  const openModal = (sector?: Sector) => {
-    if (sector) {
-      setEditingId(sector.id);
-      setFormName(sector.name);
-      setFormDesc(sector.description || '');
-      // Merge with initial to ensure all keys exist even if new ones were added to the type later
-      setFormPerms({ ...INITIAL_PERMISSIONS, ...sector.defaultPermissions });
-    } else {
-      setEditingId(null);
-      setFormName('');
-      setFormDesc('');
-      setFormPerms(INITIAL_PERMISSIONS);
-    }
-    setIsModalOpen(true);
+  const openNew = () => {
+    setEditingId(null);
+    setFormName('');
+    setFormDesc('');
+    setFormPerms(EMPTY_PERMS());
+    setShowForm(true);
   };
 
-  const handleTogglePerm = (key: keyof PermissionSet) => {
-    setFormPerms(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
+  const openEdit = (sector: Sector) => {
+    setEditingId(sector.id);
+    setFormName(sector.name);
+    setFormDesc(sector.description || '');
+    setFormPerms({ ...EMPTY_PERMS(), ...sector.defaultPermissions });
+    setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este setor? Usuários vinculados perderão as permissões associadas.')) {
-      try {
-        await deleteDoc(doc(db, CollectionName.SECTORS, id));
-      } catch (error) {
-        console.error("Error deleting sector:", error);
-        alert("Erro ao excluir setor.");
-      }
-    }
+  const handleToggle = (key: keyof PermissionSet) => {
+    setFormPerms(p => ({ ...p, [key]: !p[key] }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const propagateToUsers = async (sectorId: string, perms: PermissionSet) => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, CollectionName.USERS), where('sectorId', '==', sectorId))
+      );
+      const batch: Promise<void>[] = [];
+      snap.docs.forEach(d => {
+        const data = d.data() as any;
+        // Skip users with individual permission override
+        if (data.hasCustomPermissions) return;
+        batch.push(updateDoc(doc(db, CollectionName.USERS, d.id), { permissions: perms }));
+      });
+      await Promise.all(batch);
+    } catch { /* silent — propagation is best-effort */ }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) return;
-
-    setIsSubmitting(true);
+    setSaving(true);
     try {
       const payload = {
         name: formName.trim(),
         description: formDesc.trim(),
         defaultPermissions: formPerms,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       };
 
       if (editingId) {
         await updateDoc(doc(db, CollectionName.SECTORS, editingId), payload);
+        // Propagate to users of this sector
+        await propagateToUsers(editingId, formPerms);
       } else {
         await addDoc(collection(db, CollectionName.SECTORS), {
-          ...payload,
-          createdAt: serverTimestamp()
+          ...payload, createdAt: serverTimestamp(),
         });
       }
-      setIsModalOpen(false);
-    } catch (error) {
-      console.error("Error saving sector:", error);
-      alert("Erro ao salvar setor.");
+      setShowForm(false);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao salvar setor.');
     } finally {
-      setIsSubmitting(false);
+      setSaving(false);
     }
   };
 
-  const countActivePerms = (perms: PermissionSet) => {
-    return Object.values(perms).filter(Boolean).length;
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Excluir setor "${name}"? Usuários vinculados perderão as permissões associadas.`)) return;
+    await deleteDoc(doc(db, CollectionName.SECTORS, id));
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestão de Setores e Acessos</h1>
-          <p className="text-gray-500">Crie perfis de acesso (cargos) para padronizar as permissões dos usuários.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Cargos & Acessos</h1>
+          <p className="text-sm text-gray-500">
+            Defina quais módulos e ações cada cargo pode acessar. As permissões se propagam automaticamente para os colaboradores do setor.
+          </p>
         </div>
-        <button 
-          onClick={() => openModal()}
-          className="flex items-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-sm"
+        <button
+          onClick={openNew}
+          className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700 text-sm font-bold shadow-sm"
         >
-          <Plus className="w-5 h-5 mr-2" />
-          Novo Setor
+          <Plus size={16} /> Novo Cargo / Setor
         </button>
       </div>
 
+      {/* Sector cards grid */}
       {loading ? (
-        <div className="flex justify-center p-12"><Loader2 className="animate-spin text-brand-600 w-8 h-8"/></div>
+        <div className="flex justify-center p-20">
+          <Loader2 className="animate-spin text-brand-600 w-8 h-8" />
+        </div>
+      ) : sectors.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
+          <Shield className="mx-auto w-12 h-12 text-gray-300 mb-3" />
+          <h3 className="text-lg font-bold text-gray-900">Nenhum setor criado</h3>
+          <p className="text-sm text-gray-500 mt-1">Crie o primeiro cargo (ex: "Técnico de Campo")</p>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sectors.length === 0 && (
-            <div className="col-span-full text-center py-16 bg-white rounded-xl border border-dashed border-gray-300">
-              <Shield className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-              <h3 className="text-lg font-medium text-gray-900">Nenhum setor definido</h3>
-              <p className="text-gray-500">Crie o primeiro setor (ex: "Administrativo") para começar.</p>
-            </div>
-          )}
-
-          {sectors.map((sector) => (
-            <div key={sector.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col relative group">
-               <div className="flex justify-between items-start mb-2">
-                 <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 font-bold text-lg">
-                      {sector.name.charAt(0).toUpperCase()}
-                   </div>
-                   <div>
-                     <h3 className="font-bold text-gray-900">{sector.name}</h3>
-                     <p className="text-xs text-gray-500">{countActivePerms(sector.defaultPermissions)} permissões ativas</p>
-                   </div>
-                 </div>
-                 <div className="flex gap-1">
-                    <button onClick={() => openModal(sector)} className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors">
-                      <Edit2 size={16} />
-                    </button>
-                    <button onClick={() => handleDelete(sector.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                      <Trash2 size={16} />
-                    </button>
-                 </div>
-               </div>
-               
-               <p className="text-sm text-gray-600 mb-4 line-clamp-2 min-h-[2.5rem]">
-                 {sector.description || <span className="italic text-gray-400">Sem descrição.</span>}
-               </p>
-
-               <div className="mt-auto pt-4 border-t border-gray-100">
-                 <div className="flex flex-wrap gap-1.5">
-                    {/* Permission Pills Preview */}
-                    {sector.defaultPermissions.canManageUsers && <span className="text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100">Gestão Usuários</span>}
-                    {sector.defaultPermissions.canViewFinancials && <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100">Financeiro</span>}
-                    {sector.defaultPermissions.requiresTimeClock && <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">Exige Ponto</span>}
-                 </div>
-               </div>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {sectors.map(sector => (
+            <SectorCard
+              key={sector.id}
+              sector={sector}
+              onEdit={() => openEdit(sector)}
+              onDelete={() => handleDelete(sector.id, sector.name)}
+            />
           ))}
         </div>
       )}
 
-      {/* MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50 rounded-t-2xl">
-              <h2 className="text-xl font-bold text-gray-900">
-                {editingId ? 'Editar Setor' : 'Novo Setor'}
-              </h2>
-              <button onClick={() => setIsModalOpen(false)}><X className="w-6 h-6 text-gray-500" /></button>
+      {/* ── FORM DRAWER ── */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => !saving && setShowForm(false)} />
+
+          {/* Panel */}
+          <div className="w-full max-w-2xl bg-white flex flex-col shadow-2xl h-full overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {editingId ? 'Editar Cargo / Setor' : 'Novo Cargo / Setor'}
+                </h2>
+                <p className="text-xs text-gray-500">Configure quais módulos e ações este cargo pode acessar</p>
+              </div>
+              <button onClick={() => setShowForm(false)} className="p-2 rounded-lg hover:bg-gray-200 text-gray-500">
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
-              <form id="sector-form" onSubmit={handleSubmit} className="space-y-6">
-                
-                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Setor / Cargo</label>
-                    <input 
-                      required 
-                      type="text" 
-                      value={formName} 
-                      onChange={e => setFormName(e.target.value)} 
-                      className="w-full rounded-lg border-gray-300 bg-white text-gray-900" 
-                      placeholder="Ex: Auxiliar Administrativo" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-                    <textarea 
-                      rows={2}
-                      value={formDesc} 
-                      onChange={e => setFormDesc(e.target.value)} 
-                      className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900" 
-                      placeholder="Breve descrição das responsabilidades..." 
-                    />
-                  </div>
+            {/* Body */}
+            <form id="sector-form" onSubmit={handleSave} className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+              {/* Name + Desc */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-600 uppercase tracking-wide block mb-1">
+                    Nome do Cargo *
+                  </label>
+                  <input
+                    required
+                    value={formName}
+                    onChange={e => setFormName(e.target.value)}
+                    placeholder="Ex: Técnico de Campo, Auxiliar Administrativo"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200"
+                  />
                 </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-600 uppercase tracking-wide block mb-1">
+                    Descrição
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={formDesc}
+                    onChange={e => setFormDesc(e.target.value)}
+                    placeholder="Responsabilidades e contexto do cargo..."
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-200"
+                  />
+                </div>
+              </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                    <Shield size={16} className="text-brand-600"/> Definição de Permissões
+              {/* Module cards */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
+                    <Shield size={13} className="text-brand-600" /> Permissões por Módulo
                   </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {PERMISSION_GROUPS.map(group => (
-                      <div key={group.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                        <div className={`px-4 py-3 border-b border-gray-100 flex items-center gap-2 font-bold text-sm ${group.color.split(' ')[1]}`}>
-                          <group.icon size={16} className={group.color.split(' ')[0]} />
-                          <span className="text-gray-800">{group.title}</span>
-                        </div>
-                        <div className="p-4 space-y-3">
-                          {group.perms.map(perm => (
-                            <div key={perm.key} className="flex flex-col">
-                              <label className="flex items-center justify-between cursor-pointer group/toggle">
-                                <span className="text-sm text-gray-600 group-hover/toggle:text-gray-900 transition-colors">{perm.label}</span>
-                                <div className="relative">
-                                  <input 
-                                    type="checkbox" 
-                                    className="sr-only"
-                                    checked={!!formPerms[perm.key as keyof PermissionSet]}
-                                    onChange={() => handleTogglePerm(perm.key as keyof PermissionSet)}
-                                  />
-                                  <div className={`block w-10 h-6 rounded-full transition-colors ${formPerms[perm.key as keyof PermissionSet] ? 'bg-brand-600' : 'bg-gray-300'}`}></div>
-                                  <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${formPerms[perm.key as keyof PermissionSet] ? 'transform translate-x-4' : ''}`}></div>
-                                </div>
-                              </label>
-                              {/* Render Description if Exists */}
-                              {(perm as any).description && (
-                                <p className="text-[10px] text-gray-400 mt-1 ml-0.5 leading-tight">{(perm as any).description}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <span className="text-[10px] text-gray-400">
+                    {MODULES.filter(m => isModuleEnabled(m, formPerms)).length}/{MODULES.length} módulos ativos
+                  </span>
                 </div>
+                <p className="text-[11px] text-gray-500 bg-yellow-50 border border-yellow-200 rounded-xl px-3 py-2">
+                  💡 Módulos <strong>desativados</strong> somem completamente da barra lateral do colaborador. Clique em um card para expandir as ações individuais.
+                </p>
+                {MODULES.map(mod => (
+                  <ModuleCard
+                    key={mod.id}
+                    mod={mod}
+                    perms={formPerms}
+                    onToggle={handleToggle}
+                  />
+                ))}
+              </div>
+            </form>
 
-              </form>
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 bg-white rounded-b-2xl flex justify-end gap-3">
-              <button 
-                type="button" 
-                onClick={() => setIsModalOpen(false)} 
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-              <button 
-                type="submit" 
-                form="sector-form" 
-                disabled={isSubmitting} 
-                className="flex items-center px-6 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-75 shadow-sm"
-              >
-                {isSubmitting ? <Loader2 className="animate-spin mr-2 w-4 h-4" /> : <Save className="mr-2 w-4 h-4" />} 
-                Salvar Setor
-              </button>
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-white flex items-center justify-between gap-3">
+              <div className="text-xs text-gray-500">
+                {editingId && '⚡ Ao salvar, as permissões serão propagadas para todos os colaboradores deste setor sem override individual.'}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="px-4 py-2 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="sector-form"
+                  disabled={saving || !formName.trim()}
+                  className="flex items-center gap-2 px-5 py-2 bg-brand-600 text-white text-sm font-bold rounded-xl hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {saving ? 'Salvando...' : 'Salvar Cargo'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };

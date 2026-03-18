@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -11,108 +11,81 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-// Default permissions structure (same as SectorManagement for consistency)
+// Default permissions matching SectorManagement
 const INITIAL_PERMISSIONS: PermissionSet = {
-  canManageUsers: false,
-  canManageSettings: false,
-  canManageSectors: false,
-  canViewLogs: false,
-  canViewTasks: true,
-  canCreateTasks: false,
-  canEditTasks: false,
-  canDeleteTasks: false,
-  canViewSchedule: false,
-  canViewFullSchedule: false,
-  canViewMySchedule: false,
-  canManageClients: false,
-  canManageProjects: false,
-  canViewInventory: false,
-  canManageInventory: false,
-  canRegisterAttendance: true,
-  canViewAttendanceReports: false,
-  canManageAttendance: false,
-  requiresTimeClock: false,
-  canViewFinancials: false,
+  canManageUsers: false, canManageSettings: false, canManageSectors: false, canViewLogs: false,
+  canRegisterAttendance: true, canViewAttendanceReports: false, canManageAttendance: false, requiresTimeClock: false,
+  canViewTasks: true, canCreateTasks: false, canEditTasks: false, canDeleteTasks: false,
+  canManageProjects: false, canViewSchedule: false, canViewFullSchedule: false, canViewMySchedule: true,
+  canViewFinancials: false, canManageClients: false,
+  canViewInventory: false, canManageInventory: false,
+  canViewRanking: true, canViewBI: false, canViewVehicles: false,
 };
 
-const PERMISSION_GROUPS = [
-  {
-    id: 'admin',
-    title: 'Administrativo & Sistema',
-    icon: Settings,
-    color: 'text-gray-600 bg-gray-100',
-    perms: [
-      { key: 'canManageUsers', label: 'Gerenciar UsuÃ¡rios' },
-      { key: 'canManageSectors', label: 'Gerenciar Cargos e Setores' },
-      { key: 'canManageSettings', label: 'ConfiguraÃ§Ãµes do Sistema' },
-      { key: 'canViewLogs', label: 'Acesso aos Logs do Sistema' },
-    ]
-  },
-  {
-    id: 'hr',
-    title: 'RH & Ponto',
-    icon: Clock,
-    color: 'text-blue-600 bg-blue-100',
-    perms: [
-      { key: 'canRegisterAttendance', label: 'Registrar Ponto' },
-      { 
-        key: 'canViewAttendanceReports', 
-        label: 'Visualizar RelatÃ³rios de Ponto',
-        description: 'Permite acessar e gerar relatÃ³rios de frequÃªncia e ponto dos colaboradores'
-      },
-      { key: 'canManageAttendance', label: 'Gerenciar/Corrigir Ponto' },
-      { 
-        key: 'requiresTimeClock', 
-        label: 'Exigir Ponto para Acesso ao Sistema?', 
-        description: 'Se desmarcado, o usuÃ¡rio poderÃ¡ acessar o sistema mesmo sem registrar entrada.'
-      },
-    ]
-  },
-  {
-    id: 'ops',
-    title: 'Operacional (Tarefas/OS)',
-    icon: FileText,
-    color: 'text-orange-600 bg-orange-100',
-    perms: [
+// Mini toggle used in permission modal
+const MiniToggle: React.FC<{ on: boolean; onChange: () => void }> = ({ on, onChange }) => (
+  <button
+    type="button" onClick={onChange}
+    className={`relative inline-flex flex-shrink-0 h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+      on ? 'bg-brand-600' : 'bg-gray-200'
+    }`}
+  >
+    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+      on ? 'translate-x-4' : 'translate-x-0'
+    }`} />
+  </button>
+);
+
+// Module definitions shared with SectorManagement
+interface UA { key: keyof PermissionSet; label: string; desc?: string }
+interface UM { id: string; label: string; color: string; txtColor: string; actions: UA[] }
+const USER_MODULES: UM[] = [
+  { id: 'os', label: 'Ordens de Serviço', color: 'bg-orange-50', txtColor: 'text-orange-700',
+    actions: [
       { key: 'canViewTasks', label: 'Visualizar Tarefas' },
-      { key: 'canViewSchedule', label: 'Acesso BÃ¡sico Ã  Agenda', description: 'Permite acessar a tela de agenda' },
-      { key: 'canViewFullSchedule', label: 'Agenda Completa (Gerencial)', description: 'VÃª TODAS as OS de todos os colaboradores' },
-      { key: 'canViewMySchedule', label: 'Minha Agenda (Atividades Pessoais)', description: 'VÃª APENAS as OS onde Ã© responsÃ¡vel' },
-      { key: 'canCreateTasks', label: 'Criar Novas Tarefas' },
-      { key: 'canEditTasks', label: 'Editar Tarefas' },
-      { key: 'canDeleteTasks', label: 'Excluir Tarefas' },
+      { key: 'canManageProjects', label: 'Pipeline / Kanban' },
+      { key: 'canViewMySchedule', label: 'Minha Agenda' },
+      { key: 'canViewFullSchedule', label: 'Agenda Completa' },
+      { key: 'canViewSchedule', label: 'Agenda / Gantt' },
+      { key: 'canCreateTasks', label: 'Criar Nova O.S.' },
+      { key: 'canEditTasks', label: 'Editar O.S.' },
+      { key: 'canDeleteTasks', label: 'Excluir O.S.' },
+      { key: 'canViewFinancials', label: 'Faturamento & Financeiro' },
     ]
   },
-  {
-    id: 'commercial',
-    title: 'Comercial & Projetos',
-    icon: Briefcase,
-    color: 'text-purple-600 bg-purple-100',
-    perms: [
-      { key: 'canManageClients', label: 'Gerenciar Clientes' },
-      { key: 'canManageProjects', label: 'Gerenciar Projetos' },
+  { id: 'hr', label: 'RH & Ponto', color: 'bg-blue-50', txtColor: 'text-blue-700',
+    actions: [
+      { key: 'canRegisterAttendance', label: 'Registrar Ponto' },
+      { key: 'canViewAttendanceReports', label: 'Espelho de Ponto' },
+      { key: 'canManageAttendance', label: 'Corrigir / Gerenciar Ponto' },
+      { key: 'requiresTimeClock', label: 'Exigir Ponto para Acesso', desc: 'Bloqueia entrada até bater ponto' },
     ]
   },
-  {
-    id: 'inventory',
-    title: 'Estoque',
-    icon: Package,
-    color: 'text-emerald-600 bg-emerald-100',
-    perms: [
+  { id: 'clients', label: 'Clientes & Ativos', color: 'bg-purple-50', txtColor: 'text-purple-700',
+    actions: [{ key: 'canManageClients', label: 'Gerenciar Clientes & Ativos' }] },
+  { id: 'inventory', label: 'Almoxarifado', color: 'bg-emerald-50', txtColor: 'text-emerald-700',
+    actions: [
       { key: 'canViewInventory', label: 'Visualizar Estoque' },
       { key: 'canManageInventory', label: 'Movimentar Estoque' },
     ]
   },
-  {
-    id: 'financial',
-    title: 'Financeiro',
-    icon: DollarSign,
-    color: 'text-green-600 bg-green-100',
-    perms: [
-      { key: 'canViewFinancials', label: 'Acesso a Dados Financeiros', description: 'Visualizar custos, salÃ¡rios e gerar extratos financeiros.' },
+  { id: 'ranking', label: 'Ranking & Gamificação', color: 'bg-yellow-50', txtColor: 'text-yellow-700',
+    actions: [{ key: 'canViewRanking', label: 'Visualizar Ranking' }] },
+  { id: 'vehicles', label: 'Controle de Veículos', color: 'bg-cyan-50', txtColor: 'text-cyan-700',
+    actions: [{ key: 'canViewVehicles', label: 'Acessar Veículos' }] },
+  { id: 'bi', label: 'BI & Inteligência', color: 'bg-indigo-50', txtColor: 'text-indigo-700',
+    actions: [{ key: 'canViewBI', label: 'BI Dashboard' }] },
+  { id: 'admin', label: 'Administração', color: 'bg-red-50', txtColor: 'text-red-700',
+    actions: [
+      { key: 'canManageUsers', label: 'Gerenciar Usuários' },
+      { key: 'canManageSectors', label: 'Gerenciar Cargos & Acessos' },
+      { key: 'canManageSettings', label: 'Configurações do Sistema' },
+      { key: 'canViewLogs', label: 'Log do Sistema' },
     ]
-  }
+  },
 ];
+
+const modEnabled = (mod: UM, p: PermissionSet) => mod.actions.some(a => !!p[a.key]);
 
 const Users: React.FC = () => {
   const { userProfile } = useAuth();
@@ -344,26 +317,31 @@ const Users: React.FC = () => {
     }));
   };
 
-  const savePermissions = async () => {
+  const savePermissions = async (useCustom = true) => {
     if (!permEditingUser) return;
     setIsSaving(true);
     try {
       const sectorName = sectors.find(s => s.id === selectedSectorId)?.name || '';
-      
       await updateDoc(doc(db, CollectionName.USERS, permEditingUser.uid), {
         sectorId: selectedSectorId,
-        sectorName: sectorName,
-        permissions: currentPermissions
+        sectorName,
+        permissions: currentPermissions,
+        hasCustomPermissions: useCustom,
       });
-      
       setPermissionModalOpen(false);
       setPermEditingUser(null);
     } catch (e) {
-      console.error("Error saving permissions:", e);
-      alert("Erro ao salvar permissÃµes.");
+      console.error('Error saving permissions:', e);
+      alert('Erro ao salvar permissões.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const resetToSector = () => {
+    const sector = sectors.find(s => s.id === selectedSectorId);
+    if (!sector) return;
+    setCurrentPermissions({ ...INITIAL_PERMISSIONS, ...sector.defaultPermissions });
   };
 
   // --- GENERAL ACTIONS ---
@@ -450,7 +428,10 @@ const Users: React.FC = () => {
                           <span className="text-sm font-medium text-gray-900">
                             {user.sectorName || <span className="text-gray-400 italic">Sem setor</span>}
                           </span>
-                          <button 
+                          {(user as any).hasCustomPermissions && (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">Override</span>
+                          )}
+                          <button
                             onClick={() => openPermissionModal(user)}
                             className="text-xs flex items-center gap-1 text-brand-600 hover:text-brand-800 bg-brand-50 px-2 py-1 rounded border border-brand-100 hover:border-brand-200 transition-colors"
                           >
@@ -688,92 +669,119 @@ const Users: React.FC = () => {
 
       {/* PERMISSION MODAL */}
       {permissionModalOpen && permEditingUser && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50 rounded-t-2xl">
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => !isSaving && setPermissionModalOpen(false)} />
+          <div className="w-full max-w-xl bg-white flex flex-col shadow-2xl h-full overflow-hidden">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Acessos: {permEditingUser.displayName}</h2>
-                <p className="text-sm text-gray-500">Defina o setor e personalize as permissÃµes individuais.</p>
+                <h2 className="text-base font-bold text-gray-900">Acessos: {permEditingUser.displayName}</h2>
+                <p className="text-xs text-gray-500">Configure o setor e permissões individuais</p>
               </div>
-              <button onClick={() => setPermissionModalOpen(false)}><X className="w-6 h-6 text-gray-500" /></button>
+              <button onClick={() => setPermissionModalOpen(false)} className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400">
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
-              
-              {/* Sector Selection */}
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
-                 <label className="block text-sm font-bold text-gray-700 mb-2">Setor / Departamento</label>
-                 <select 
-                   value={selectedSectorId}
-                   onChange={(e) => handleSectorChange(e.target.value)}
-                   className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
-                 >
-                   <option value="">Selecione um setor...</option>
-                   {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                 </select>
-                 <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                   <Shield size={12} /> Ao mudar o setor, as permissÃµes abaixo serÃ£o redefinidas para o padrÃ£o daquele setor.
-                 </p>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+              {/* Sector select */}
+              <div>
+                <label className="text-xs font-bold text-gray-600 uppercase block mb-1">Setor / Cargo</label>
+                <select
+                  value={selectedSectorId}
+                  onChange={e => handleSectorChange(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200 bg-white"
+                >
+                  <option value="">Selecione um setor...</option>
+                  {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <p className="text-[10px] text-gray-400 mt-1">Ao mudar o setor, as permissões são redefinidas para o padrão do setor.</p>
               </div>
 
-              {/* Granular Permissions */}
-              <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-brand-600"/> PermissÃµes Individuais
+              {/* Module cards */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-gray-600 uppercase flex items-center gap-1">
+                    <ShieldCheck size={12} className="text-brand-600" /> Permissões por Módulo
                   </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {PERMISSION_GROUPS.map(group => (
-                      <div key={group.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                        <div className={`px-4 py-3 border-b border-gray-100 flex items-center gap-2 font-bold text-sm ${group.color.split(' ')[1]}`}>
-                          <group.icon size={16} className={group.color.split(' ')[0]} />
-                          <span className="text-gray-800">{group.title}</span>
-                        </div>
-                        <div className="p-4 space-y-3">
-                          {group.perms.map(perm => (
-                            <div key={perm.key} className="flex flex-col">
-                              <label className="flex items-center justify-between cursor-pointer group/toggle">
-                                <span className="text-sm text-gray-600 group-hover/toggle:text-gray-900 transition-colors">{perm.label}</span>
-                                <div className="relative">
-                                  <input 
-                                    type="checkbox" 
-                                    className="sr-only"
-                                    checked={!!currentPermissions[perm.key as keyof PermissionSet]}
-                                    onChange={() => togglePermission(perm.key as keyof PermissionSet)}
-                                  />
-                                  <div className={`block w-10 h-6 rounded-full transition-colors ${currentPermissions[perm.key as keyof PermissionSet] ? 'bg-brand-600' : 'bg-gray-300'}`}></div>
-                                  <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${currentPermissions[perm.key as keyof PermissionSet] ? 'transform translate-x-4' : ''}`}></div>
-                                </div>
-                              </label>
-                              {/* Render Description if Exists */}
-                              {(perm as any).description && (
-                                <p className="text-[10px] text-gray-400 mt-1 ml-0.5 leading-tight">{(perm as any).description}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  {selectedSectorId && (
+                    <button
+                      type="button"
+                      onClick={resetToSector}
+                      className="text-[10px] text-brand-600 hover:underline font-bold"
+                    >
+                      ↺ Resetar para o setor
+                    </button>
+                  )}
                 </div>
 
+                {USER_MODULES.map(mod => {
+                  const enabled = modEnabled(mod, currentPermissions);
+                  const activeCount = mod.actions.filter(a => !!currentPermissions[a.key]).length;
+                  return (
+                    <details key={mod.id} className={`rounded-xl border overflow-hidden ${
+                      enabled ? 'border-gray-200' : 'border-gray-100 opacity-60'
+                    }`}>
+                      <summary className={`${mod.color} px-3 py-2.5 flex items-center gap-2 cursor-pointer list-none`}>
+                        <div className="flex-1 min-w-0">
+                          <span className={`text-xs font-bold ${mod.txtColor}`}>{mod.label}</span>
+                          <span className="text-[10px] text-gray-400 ml-2">{activeCount}/{mod.actions.length} ativas</span>
+                        </div>
+                        {/* Master toggle */}
+                        <MiniToggle
+                          on={enabled}
+                          onChange={() => {
+                            if (enabled) {
+                              mod.actions.forEach(a => { if (currentPermissions[a.key]) togglePermission(a.key); });
+                            } else {
+                              mod.actions.forEach(a => { if (!currentPermissions[a.key]) togglePermission(a.key); });
+                            }
+                          }}
+                        />
+                      </summary>
+                      <div className="bg-white divide-y divide-gray-50">
+                        {mod.actions.map(action => (
+                          <div key={action.key} className="px-3 py-2 flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-gray-700">{action.label}</p>
+                              {action.desc && <p className="text-[9px] text-gray-400">{action.desc}</p>}
+                            </div>
+                            <MiniToggle
+                              on={!!currentPermissions[action.key]}
+                              onChange={() => togglePermission(action.key)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-200 bg-white rounded-b-2xl flex justify-end gap-3">
-              <button 
-                onClick={() => setPermissionModalOpen(false)} 
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-gray-200 bg-white flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => { resetToSector(); savePermissions(false); }}
+                disabled={!selectedSectorId || isSaving}
+                className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-xl disabled:opacity-40"
               >
-                Cancelar
+                Usar padrão do setor
               </button>
-              <button 
-                onClick={savePermissions}
-                disabled={isSaving} 
-                className="flex items-center px-6 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-75 shadow-sm"
-              >
-                {isSaving ? <Loader2 className="animate-spin mr-2 w-4 h-4" /> : <Save className="mr-2 w-4 h-4" />} 
-                Salvar Acessos
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setPermissionModalOpen(false)} className="px-3 py-1.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600">
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => savePermissions(true)}
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 px-4 py-1.5 bg-brand-600 text-white text-sm font-bold rounded-xl hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Salvar Acessos
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -26,6 +26,8 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [tools, setTools] = useState<string[]>([]);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [newPhotoTitles, setNewPhotoTitles] = useState<Record<string, string>>({});
 
   // Sprint 43 — tipo de serviço
   const [tipoServico, setTipoServico] = useState('');
@@ -127,14 +129,21 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
     }
   };
 
+  const DEFAULT_FOTO_SLOTS = (): any[] => [
+    { id: `slot_${Date.now()}_antes`, titulo: 'Antes', descricao: 'Foto do estado antes da execução', obrigatoria: true, ordem: 0 },
+    { id: `slot_${Date.now() + 1}_depois`, titulo: 'Depois', descricao: 'Foto do estado após a execução', obrigatoria: true, ordem: 1 },
+  ];
+
   const addChecklistItem = () => {
     if (!newChecklistItem.trim()) return;
+    const id = Math.random().toString(36).substr(2, 9);
     setChecklist([...checklist, {
-      id: Math.random().toString(36).substr(2, 9),
+      id,
       text: newChecklistItem.trim(),
       completed: false,
-      evidenceRequired: 'NONE'
-    }]);
+      evidenceRequired: 'NONE',
+      fotoSlots: DEFAULT_FOTO_SLOTS(),
+    } as any]);
     setNewChecklistItem('');
   };
 
@@ -437,55 +446,184 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                   </label>
                 </div>
 
-                {/* Checklist Section */}
-                <div className="border border-gray-200 rounded-lg p-3 bg-gray-50/50">
-                   <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                      <ListTodo className="w-4 h-4 mr-1 text-brand-500" /> Checklist de Execução
-                   </label>
-                   
-                   <div className="flex gap-2 mb-2">
-                     <input 
-                        type="text" 
+                {/* Checklist / Tarefas com foto slots por tarefa */}
+                 <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/50">
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+                      <label className="flex items-center text-sm font-bold text-gray-700 gap-1">
+                        <ListTodo className="w-4 h-4 text-brand-500" /> Tarefas da O.S.
+                      </label>
+                      <span className="text-[10px] text-gray-400">{checklist.length} tarefa(s)</span>
+                    </div>
+
+                    {/* Add task row */}
+                    <div className="flex gap-2 p-3 border-b border-gray-100">
+                      <input
+                        type="text"
                         value={newChecklistItem}
                         onChange={(e) => setNewChecklistItem(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addChecklistItem())}
-                        placeholder="Adicionar item rápido..."
-                        className="flex-1 text-sm rounded-md border-gray-300 bg-white text-gray-900"
-                     />
-                     <button 
-                        type="button" 
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addChecklistItem())}
+                        placeholder="Descrever nova tarefa e pressionar Enter..."
+                        className="flex-1 text-sm rounded-lg border-gray-200 bg-white text-gray-900 px-3 py-1.5"
+                      />
+                      <button
+                        type="button"
                         onClick={addChecklistItem}
-                        className="p-2 bg-brand-100 text-brand-600 rounded-md hover:bg-brand-200"
-                     >
+                        className="p-2 bg-brand-100 text-brand-600 rounded-lg hover:bg-brand-200"
+                      >
                         <Plus size={16} />
-                     </button>
-                   </div>
+                      </button>
+                    </div>
 
-                   <ul className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {checklist.length === 0 && <p className="text-xs text-gray-400 italic">Nenhum item adicionado.</p>}
-                      {checklist.map(item => (
-                        <li key={item.id} className="text-sm bg-white p-2 rounded border border-gray-100 shadow-sm flex flex-col gap-1">
-                          <div className="flex items-center justify-between">
-                             <span className="font-medium text-gray-800">{item.text}</span>
-                             <button type="button" onClick={() => removeChecklistItem(item.id)} className="text-red-400 hover:text-red-600">
-                               <Trash2 size={14} />
-                             </button>
-                          </div>
-                          {item.description && <p className="text-xs text-gray-500">{item.description}</p>}
-                          {item.evidenceRequired && item.evidenceRequired !== 'NONE' && (
-                            <div className="flex items-center gap-1 mt-1">
-                               <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-1 border border-blue-100">
-                                  {item.evidenceRequired === 'PHOTO' && <Camera size={10} />}
-                                  {item.evidenceRequired === 'TEXT' && <AlignLeft size={10} />}
-                                  {item.evidenceRequired === 'BOTH' && <><Camera size={10}/><AlignLeft size={10}/></>}
-                                  Requer Evidência
-                               </span>
-                            </div>
-                          )}
+                    {/* Task list */}
+                    <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+                      {checklist.length === 0 && (
+                        <li className="px-3 py-4 text-xs text-gray-400 italic text-center">
+                          Nenhuma tarefa adicionada. As fotos padrão (Antes e Depois) são criadas automaticamente por tarefa.
                         </li>
-                      ))}
-                   </ul>
-                </div>
+                      )}
+                      {checklist.map(item => {
+                        const fotoSlots: any[] = (item as any).fotoSlots || [];
+                        const isExpanded = expandedTaskId === item.id;
+                        return (
+                          <li key={item.id} className="bg-white">
+                            {/* Task header row */}
+                            <div className="flex items-center gap-2 px-3 py-2">
+                              <span className="flex-1 text-sm font-medium text-gray-800 truncate">{item.text}</span>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedTaskId(isExpanded ? null : item.id)}
+                                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg font-bold transition-colors ${
+                                  isExpanded ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500 hover:bg-brand-50 hover:text-brand-600'
+                                }`}
+                                title="Configurar fotos desta tarefa"
+                              >
+                                <Camera size={11} />
+                                {fotoSlots.length} foto{fotoSlots.length !== 1 ? 's' : ''}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeChecklistItem(item.id)}
+                                className="p-1 text-gray-300 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+
+                            {/* Expanded photo slots */}
+                            {isExpanded && (
+                              <div className="bg-blue-50/60 border-t border-blue-100 px-3 py-3 space-y-2">
+                                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide flex items-center gap-1">
+                                  <Camera size={10} /> Fotos obrigatórias desta tarefa
+                                </p>
+
+                                {/* Existing slots */}
+                                {fotoSlots.map((slot, si) => (
+                                  <div key={slot.id} className="flex items-center gap-2 bg-white rounded-lg px-2 py-2 border border-blue-100">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`text-[9px] font-extrabold px-1.5 rounded ${
+                                          slot.obrigatoria ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'
+                                        }`}>
+                                          {slot.obrigatoria ? 'OBRIG.' : 'OPC.'}
+                                        </span>
+                                        <span className="text-xs font-bold text-gray-700 truncate">{slot.titulo}</span>
+                                      </div>
+                                      {slot.descricao && (
+                                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">{slot.descricao}</p>
+                                      )}
+                                    </div>
+                                    {/* Toggle obrigatória */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = checklist.map(c => c.id !== item.id ? c : {
+                                          ...c,
+                                          fotoSlots: fotoSlots.map((s, i) => i === si ? { ...s, obrigatoria: !s.obrigatoria } : s),
+                                        } as any);
+                                        setChecklist(updated);
+                                      }}
+                                      className={`text-[10px] px-2 py-0.5 rounded font-bold ${slot.obrigatoria ? 'text-red-600 hover:bg-red-50' : 'text-gray-400 hover:bg-gray-50'}`}
+                                      title={slot.obrigatoria ? 'Tornar opcional' : 'Tornar obrigatória'}
+                                    >
+                                      {slot.obrigatoria ? '🔒' : '🔓'}
+                                    </button>
+                                    {/* Delete slot — can't delete default Antes/Depois */}
+                                    {si >= 2 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = checklist.map(c => c.id !== item.id ? c : {
+                                            ...c,
+                                            fotoSlots: fotoSlots.filter((_, i) => i !== si),
+                                          } as any);
+                                          setChecklist(updated);
+                                        }}
+                                        className="text-gray-300 hover:text-red-500 p-0.5"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+
+                                {/* Add new slot */}
+                                <div className="flex gap-2 mt-2">
+                                  <input
+                                    type="text"
+                                    value={newPhotoTitles[item.id] || ''}
+                                    onChange={e => setNewPhotoTitles(p => ({ ...p, [item.id]: e.target.value }))}
+                                    placeholder="Título da nova foto (ex: Painel elétrico)..."
+                                    className="flex-1 text-xs rounded-lg border-gray-200 bg-white px-2.5 py-1.5"
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        const titulo = (newPhotoTitles[item.id] || '').trim();
+                                        if (!titulo) return;
+                                        const newSlot = {
+                                          id: `slot_${Date.now()}`,
+                                          titulo,
+                                          descricao: '',
+                                          obrigatoria: true,
+                                          ordem: fotoSlots.length,
+                                        };
+                                        const updated = checklist.map(c => c.id !== item.id ? c : {
+                                          ...c, fotoSlots: [...fotoSlots, newSlot],
+                                        } as any);
+                                        setChecklist(updated);
+                                        setNewPhotoTitles(p => ({ ...p, [item.id]: '' }));
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const titulo = (newPhotoTitles[item.id] || '').trim();
+                                      if (!titulo) return;
+                                      const newSlot = {
+                                        id: `slot_${Date.now()}`,
+                                        titulo,
+                                        descricao: '',
+                                        obrigatoria: true,
+                                        ordem: fotoSlots.length,
+                                      };
+                                      const updated = checklist.map(c => c.id !== item.id ? c : {
+                                        ...c, fotoSlots: [...fotoSlots, newSlot],
+                                      } as any);
+                                      setChecklist(updated);
+                                      setNewPhotoTitles(p => ({ ...p, [item.id]: '' }));
+                                    }}
+                                    className="px-2 py-1.5 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700"
+                                  >
+                                    <Plus size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                 </div>
               </div>
             </div>
           </form>
