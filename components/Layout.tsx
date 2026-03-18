@@ -40,6 +40,7 @@ import {
   Headphones,
   ChevronRight,
   ClipboardList,
+  Camera,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -211,6 +212,7 @@ const Layout: React.FC = () => {
         { to: '/app/agenda',   icon: CalendarDays, label: 'Agenda',     visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
         { to: '/app/tarefas',  icon: CheckSquare,  label: 'Tarefas',    visible: can('canViewTasks') },
         { to: '/app/faturamento', icon: Receipt,   label: 'Faturamento', visible: can('canViewFinancials') },
+        { to: '/app/os-foto-config', icon: Camera, label: 'Config. Fotos O.S.', visible: can('canManageSettings') },
       ],
     },
 

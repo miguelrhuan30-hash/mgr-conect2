@@ -22,11 +22,12 @@ import { ptBR } from 'date-fns/locale';
 import {
     Loader2, ChevronLeft, ChevronRight, AlertTriangle, Clock,
     User, Building2, Calendar, Zap, ChevronDown, ChevronUp,
-    ArrowRight, DollarSign, CheckCircle2, Save, X, Kanban, Eye
+    ArrowRight, DollarSign, CheckCircle2, Save, X, Kanban, Eye, Plus
 } from 'lucide-react';
 import { Suspense, lazy } from 'react';
 
 const OSViewModal = lazy(() => import('./OSViewModal'));
+const OSCreationModal = lazy(() => import('./OSCreationModal'));
 
 // ── Type helpers ───────────────────────────────────────────────────────────
 const PRIORITY_PILL: Record<PriorityLevel, string> = {
@@ -270,6 +271,7 @@ const Pipeline: React.FC = () => {
     const [search, setSearch] = useState('');
     const [filterPriority, setFilterPriority] = useState<PriorityLevel | 'all'>('all');
     const [viewOSId, setViewOSId] = useState<string | null>(null); // Sprint 46
+    const [isCreatingOS, setIsCreatingOS] = useState(false);       // Sprint 46
 
     useEffect(() => {
         const q = query(collection(db, CollectionName.TASKS), orderBy('createdAt', 'desc'));
@@ -449,6 +451,12 @@ const Pipeline: React.FC = () => {
                     <option value="medium">Média</option>
                     <option value="low">Baixa</option>
                 </select>
+                <div className="ml-auto">
+                  <button onClick={() => setIsCreatingOS(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 text-sm font-bold shadow-sm">
+                    <Plus size={15} /> Nova O.S.
+                  </button>
+                </div>
             </div>
 
             {loading ? (
@@ -494,6 +502,11 @@ const Pipeline: React.FC = () => {
             {viewOSId && (
                 <Suspense fallback={null}>
                     <OSViewModal taskId={viewOSId} onClose={() => setViewOSId(null)} />
+                </Suspense>
+            )}
+            {isCreatingOS && (
+                <Suspense fallback={null}>
+                    <OSCreationModal isOpen={isCreatingOS} onClose={() => setIsCreatingOS(false)} onSuccess={() => setIsCreatingOS(false)} />
                 </Suspense>
             )}
         </div>
