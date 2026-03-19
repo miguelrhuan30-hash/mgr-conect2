@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, doc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, TimeEntry, UserProfile, TimeBankEntry } from '../types';
+import { CollectionName, TimeEntry, UserProfile, TimeBankEntry, EmployeeOccurrence, OCCURRENCE_LABELS, OCCURRENCE_COLORS } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Calendar, User, Search, AlertCircle, CheckCircle, Clock, 
@@ -67,6 +67,9 @@ const AttendanceReports: React.FC = () => {
   const [editEntryReason, setEditEntryReason] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
+  // Sprint 48 — Ocorrências do colaborador
+  const [occurrencesForReport, setOccurrencesForReport] = useState<EmployeeOccurrence[]>([]);
+
   const isAuthorized = 
     userProfile?.role === 'admin' || 
     userProfile?.role === 'developer' || 
@@ -104,6 +107,22 @@ const AttendanceReports: React.FC = () => {
           fetchOpenShifts();
       }
   }, [activeTab, users, isAuthorized]);
+
+  // Sprint 48 — busca ocorrências ao gerar o relatório mensal
+  useEffect(() => {
+    if (!selectedUser || !selectedMonth || !isAuthorized) return;
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const startStr = `${year}-${String(month).padStart(2,'0')}-01`;
+    const endDay = new Date(year, month, 0).getDate();
+    const endStr = `${year}-${String(month).padStart(2,'0')}-${String(endDay).padStart(2,'0')}`;
+    getDocs(query(
+      collection(db, CollectionName.EMPLOYEE_OCCURRENCES),
+      where('userId', '==', selectedUser),
+      where('data', '>=', startStr),
+      where('data', '<=', endStr)
+    )).then(snap => setOccurrencesForReport(snap.docs.map(d => ({id: d.id, ...(d.data() as any)} as EmployeeOccurrence))))
+      .catch(() => {});
+  }, [selectedUser, selectedMonth, isAuthorized]);
 
   // --- REPORT LOGIC ---
 
@@ -1440,7 +1459,30 @@ const AttendanceReports: React.FC = () => {
                                                 <span className={`text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${dayStatus.color}`}>
                                                     {dayStatus.label}
                                                 </span>
-                                                
+
+                                                {/* Sprint 48 — Ocorrência badge */}
+                                                {(() => {
+                                                  const dayOccs = occurrencesForReport.filter(o => o.data === day.date);
+                                                  if (dayOccs.length === 0) return null;
+                                                  return (
+                                                    <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                                                      {dayOccs.map(occ => (
+                                                        <div key={occ.id} className="flex items-center gap-1">
+                                                          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border ${OCCURRENCE_COLORS[occ.tipo]}`}>
+                                                            {OCCURRENCE_LABELS[occ.tipo]}
+                                                          </span>
+                                                          {occ.arquivoUrl && (
+                                                            <a href={occ.arquivoUrl} target="_blank" rel="noreferrer"
+                                                              className="text-[9px] text-brand-600 hover:underline font-bold" title="Ver atestado">
+                                                              📎
+                                                            </a>
+                                                          )}
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                })()}
+
                                                 {/* Map Links for All Entries */}
                                                 {(day.entry?.mapsUrl || day.lunchStart?.mapsUrl || day.lunchEnd?.mapsUrl || day.exit?.mapsUrl) && (
                                                     <div className="flex flex-col gap-0.5 mt-1">
@@ -1451,17 +1493,17 @@ const AttendanceReports: React.FC = () => {
                                                         )}
                                                         {day.lunchStart?.mapsUrl && (
                                                             <a href={day.lunchStart.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Ida AlmoÃƒÂ§o)
+                                                                <MapPin size={10} /> Mapa (Ida Almoço)
                                                             </a>
                                                         )}
                                                         {day.lunchEnd?.mapsUrl && (
                                                             <a href={day.lunchEnd.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Volta AlmoÃƒÂ§o)
+                                                                <MapPin size={10} /> Mapa (Volta Almoço)
                                                             </a>
                                                         )}
                                                         {day.exit?.mapsUrl && (
                                                             <a href={day.exit.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (SaÃƒÂ­da)
+                                                                <MapPin size={10} /> Mapa (Saída)
                                                             </a>
                                                         )}
                                                     </div>

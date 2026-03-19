@@ -120,6 +120,9 @@ export interface UserProfile {
 
   // Time Bank (Banco de Horas)
   timeBankBalance?: number; // in minutes (positive = credit)
+
+  // Sprint 48 — Nome completo
+  nomeCompleto?: string; // Nome completo do colaborador (auto-preenchido do email se vazio)
 }
 
 export interface WorkLocation {
@@ -891,6 +894,9 @@ export enum CollectionName {
   OS_PROJECTS = 'os_projects',
   PROJECT_DOCS = 'project_documents',
   OS_ORCAMENTOS = 'os_orcamentos',
+  // Sprint 48 — RH: Documentos & Ocorrências
+  EMPLOYEE_DOCS = 'employee_docs',
+  EMPLOYEE_OCCURRENCES = 'employee_occurrences',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -946,5 +952,62 @@ export interface FotoEvidencia {
   anotacoes: FotoAnotacao[];     // círculos e setas
   tiradaPor: string;             // uid do técnico
   tiradaEm: Timestamp;
+}
+
+// ─── Sprint 48: Documentos e Ocorrências de Funcionário ──────────────────────
+
+export type OccurrenceType =
+  | 'falta_justificada'
+  | 'falta_injustificada'
+  | 'atestado'
+  | 'suspensao'
+  | 'folga'
+  | 'ferias'
+  | 'outro';
+
+export const OCCURRENCE_LABELS: Record<OccurrenceType, string> = {
+  falta_justificada: 'Falta Justificada',
+  falta_injustificada: 'Falta Injustificada',
+  atestado: 'Atestado',
+  suspensao: 'Suspensão',
+  folga: 'Folga',
+  ferias: 'Férias',
+  outro: 'Outro',
+};
+
+export const OCCURRENCE_COLORS: Record<OccurrenceType, string> = {
+  falta_justificada: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  falta_injustificada: 'bg-red-100 text-red-700 border-red-200',
+  atestado: 'bg-orange-100 text-orange-700 border-orange-200',
+  suspensao: 'bg-purple-100 text-purple-700 border-purple-200',
+  folga: 'bg-green-100 text-green-700 border-green-200',
+  ferias: 'bg-blue-100 text-blue-700 border-blue-200',
+  outro: 'bg-gray-100 text-gray-600 border-gray-200',
+};
+
+export interface EmployeeDocument {
+  id: string;
+  userId: string;
+  nome: string;
+  tipo: 'documento' | 'atestado' | 'contrato' | 'outro';
+  pasta: string;             // "Documentos", "Atestados", "Contratos"
+  subpasta?: string;         // "RG", "CNH"
+  url: string;
+  tamanhoBytes: number;
+  uploadPor: string;
+  uploadEm: Timestamp;
+}
+
+export interface EmployeeOccurrence {
+  id: string;
+  userId: string;
+  data: string;              // "2026-03-19" (ISO date)
+  tipo: OccurrenceType;
+  descricao?: string;
+  arquivoUrl?: string;       // URL do atestado/imagem
+  arquivoNome?: string;
+  criadoPor: string;
+  criadoEm: Timestamp;
+  atualizadoEm?: Timestamp;
 }
 
