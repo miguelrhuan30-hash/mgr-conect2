@@ -65,6 +65,11 @@ const OSEditModal    = lazy(() => import('./components/OSEditModal'));
 const PhotoAnnotator = lazy(() => import('./components/PhotoAnnotator'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT 47: Orçamento
+// ─────────────────────────────────────────────
+const OrcamentoModule = lazy(() => import('./components/Orcamento'));
+
+// ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
 // ─────────────────────────────────────────────
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean; children?: React.ReactNode }) => {
@@ -339,6 +344,12 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageSettings') ? <TaskPhotoConfig /> : <Navigate to="/app" />} />
           <Route path="os/:osId/print"
             element={hasPermission('canViewTasks') ? <OSPrintLayout /> : <Navigate to="/app" />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT 47 — Orçamento
+          ════════════════════════════════════════ */}
+          <Route path="orcamentos"
+            element={hasPermission('canViewFinancials') ? <OrcamentoModule /> : <Navigate to="/app" />} />
 
         </Route>{/* fim /app */}
 

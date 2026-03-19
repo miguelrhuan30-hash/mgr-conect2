@@ -1,7 +1,7 @@
 /**
- * components/Tasks.tsx — Sprint 46 (Refactored)
+ * components/Tasks.tsx — Sprint 47 (Unified + Archived Tab)
  *
- * Módulo "Tarefas" de O.S. — agora em formato LISTA (Pipeline já é kanban).
+ * Módulo "Tarefas" de O.S. — formato LISTA com aba "Arquivadas".
  * Clicar qualquer linha abre o OSViewModal unificado.
  */
 import React, { useEffect, useState, lazy, Suspense } from 'react';
@@ -10,18 +10,19 @@ import { db } from '../firebase';
 import { CollectionName, Task } from '../types';
 import TaskList from './TaskList';
 import OSCreationModal from './OSCreationModal';
-import { Loader2, Plus, Search, ListFilter } from 'lucide-react';
+import { Loader2, Plus, Search, ListFilter, Archive } from 'lucide-react';
 
 const OSViewModal = lazy(() => import('./OSViewModal'));
 
-type StatusFilter = 'all' | 'pending' | 'in-progress' | 'completed' | 'cancelled';
+type StatusFilter = 'all' | 'pending' | 'in-progress' | 'completed' | 'cancelled' | 'archived';
 
-const STATUS_TABS: { value: StatusFilter; label: string }[] = [
+const STATUS_TABS: { value: StatusFilter; label: string; icon?: React.ReactNode }[] = [
   { value: 'all',         label: 'Todas'        },
   { value: 'pending',     label: 'Pendentes'    },
   { value: 'in-progress', label: 'Em Andamento' },
   { value: 'completed',   label: 'Concluídas'   },
   { value: 'cancelled',   label: 'Canceladas'   },
+  { value: 'archived',    label: 'Arquivadas',  icon: <Archive size={11} className="mr-0.5" /> },
 ];
 
 const Tasks: React.FC = () => {
@@ -56,12 +57,25 @@ const Tasks: React.FC = () => {
       (task.clientName && task.clientName.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (task.code && task.code.toLowerCase().includes(searchTerm.toLowerCase()));
 
+    // Archived tab logic
+    const isArchived = !!(task as any).archived;
+
+    if (filterStatus === 'archived') {
+      return matchesSearch && isArchived;
+    }
+
+    // Non-archived tabs: always exclude archived tasks
+    if (isArchived) return false;
+
     const matchesStatus =
       filterStatus === 'all' ? true :
       task.status === filterStatus;
 
     return matchesSearch && matchesStatus;
   });
+
+  // Count archived separately for badge
+  const archivedCount = tasks.filter(t => !!(t as any).archived).length;
 
   return (
     <div className="max-w-7xl mx-auto space-y-5">
@@ -89,13 +103,21 @@ const Tasks: React.FC = () => {
               key={tab.value}
               onClick={() => setFilterStatus(tab.value)}
               className={`
-                px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap
+                px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap flex items-center
                 ${filterStatus === tab.value
-                  ? 'bg-white text-gray-900 shadow-sm'
+                  ? tab.value === 'archived'
+                    ? 'bg-amber-100 text-amber-800 shadow-sm'
+                    : 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'}
               `}
             >
+              {tab.icon}
               {tab.label}
+              {tab.value === 'archived' && archivedCount > 0 && (
+                <span className="ml-1 text-[9px] bg-amber-200 text-amber-800 px-1.5 rounded-full font-extrabold">
+                  {archivedCount}
+                </span>
+              )}
             </button>
           ))}
         </div>

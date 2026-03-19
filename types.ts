@@ -323,7 +323,7 @@ export interface Task {
   code?: string; // OS-YYYY-NNN
   title: string;
   description: string;
-  status: 'pending' | 'in-progress' | 'completed' | 'blocked';
+  status: 'pending' | 'in-progress' | 'completed' | 'blocked' | 'cancelled';
   priority: PriorityLevel;
   clientId?: string;
   clientName?: string;
@@ -402,6 +402,18 @@ export interface Task {
   statusOS?: OSStatusFinal;
   // Sprint 45 — observações
   observacoes?: OSObservacao[];
+
+  // ─── Sprint 47: Unificação O.S. ──────────────────────────────────────────
+  // Arquivamento
+  archived?: boolean;
+  archivedAt?: Timestamp;
+  archivedBy?: string;
+  // Reagendamento
+  reagendamentoMotivo?: string;     // motivo que levou ao reagendamento
+  reagendamentoDe?: string;         // ID da O.S. original (nesta é a nova)
+  reagendamentoPara?: string;       // ID da nova O.S. criada (nesta é a original)
+  // Orçamento vinculado
+  orcamentoId?: string;
 }
 
 export interface ClientContact {
@@ -476,6 +488,84 @@ export interface Project {
   clientId: string;
   status: 'active' | 'completed';
 }
+
+// ─── Sprint 47: Projeto Completo ─────────────────────────────────────────────
+export type ProjectStatus = 'planejamento' | 'em_andamento' | 'concluido' | 'cancelado';
+
+export interface ProjectFull {
+  id: string;
+  nome: string;
+  descricao?: string;
+  clientId: string;
+  clientName: string;
+  status: ProjectStatus;
+  dataInicio?: Timestamp;
+  dataPrevista?: Timestamp;
+  osIds: string[];                  // IDs de todas as O.S. vinculadas
+  totalOSPrevistas?: number;
+  totalOSConcluidas?: number;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface ProjectDocument {
+  id: string;
+  projectId: string;
+  nome: string;
+  tipo: 'pdf' | 'imagem' | 'outro';
+  url: string;                      // URL Firebase Storage
+  tamanhoBytes?: number;
+  uploadPor: string;
+  uploadPorNome: string;
+  uploadEm: Timestamp;
+}
+
+// ─── Sprint 47: Orçamento ────────────────────────────────────────────────────
+export type OrcamentoStatus = 'rascunho' | 'enviado' | 'aprovado' | 'rejeitado';
+
+export interface OrcamentoItem {
+  id: string;
+  descricao: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;               // quantidade * valorUnitario
+}
+
+export interface Orcamento {
+  id: string;
+  taskId?: string;                  // O.S. vinculada (opcional)
+  taskCode?: string;
+  clientId: string;
+  clientName: string;
+  titulo: string;
+  descricao?: string;
+  itens: OrcamentoItem[];
+  valorTotal: number;
+  status: OrcamentoStatus;
+  validoAte?: Timestamp;
+  observacoes?: string;
+  criadoPor: string;
+  criadoPorNome: string;
+  criadoEm: Timestamp;
+  atualizadoEm?: Timestamp;
+  aprovadoPor?: string;
+  aprovadoPorNome?: string;
+  aprovadoEm?: Timestamp;
+  rejeitadoPor?: string;
+  rejeitadoMotivo?: string;
+  rejeitadoEm?: Timestamp;
+}
+
+// Motivos pré-definidos para reagendamento de O.S.
+export const REAGENDAMENTO_MOTIVOS = [
+  'Falta de ferramentas',
+  'Problema diferente do inicial',
+  'Falta de peças para manutenção',
+  'Falta de tempo total para execução da tarefa',
+  'Adversidades do cliente impossibilitou execução da O.S.',
+  'Outro',
+] as const;
 
 export interface TaskTemplate {
   id: string;
@@ -797,6 +887,10 @@ export enum CollectionName {
   OS_SUPORTE_MSGS = 'os_suporte_msgs',
   // Sprint 46 — Fotos anotadas
   OS_FOTO_SLOTS = 'os_foto_slots',
+  // Sprint 47 — Projetos & Orçamentos
+  OS_PROJECTS = 'os_projects',
+  PROJECT_DOCS = 'project_documents',
+  OS_ORCAMENTOS = 'os_orcamentos',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────

@@ -41,6 +41,7 @@ import {
   ChevronRight,
   ClipboardList,
   Camera,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -113,6 +114,7 @@ const Layout: React.FC = () => {
       '/app/ativos':           'Ativos de Clientes',
       '/app/pipeline':         'Pipeline de O.S.',
       '/app/faturamento':      'Faturamento & Recebíveis',
+      '/app/orcamentos':       'Orçamentos',
       '/app/bi':               'BI & Inteligência',
     };
 
@@ -186,7 +188,7 @@ const Layout: React.FC = () => {
   type NavItem  = NavChild & { children?: NavChild[]; end?: boolean };
 
   // O.S. submenu routes for auto-expand detection
-  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento'];
+  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos'];
   const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos'];
   const VEHICLE_ROUTES  = ['/app/veiculos'];
 
@@ -218,6 +220,7 @@ const Layout: React.FC = () => {
         { to: '/app/agenda',        icon: CalendarDays, label: 'Agenda',              visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
         { to: '/app/tarefas',       icon: CheckSquare,  label: 'Tarefas',             visible: can('canViewTasks') },
         { to: '/app/faturamento',   icon: Receipt,      label: 'Faturamento',         visible: can('canViewFinancials') },
+        { to: '/app/orcamentos',    icon: FileSpreadsheet, label: 'Orçamentos',       visible: can('canViewFinancials') },
         { to: '/app/os-foto-config',icon: Camera,       label: 'Config. Fotos O.S.', visible: can('canManageSettings') },
       ],
     },

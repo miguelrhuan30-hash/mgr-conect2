@@ -1,7 +1,7 @@
 /**
- * components/Pipeline.tsx — Sprint 31
- * Pipeline Kanban de O.S. com statusHistory, modal de agendamento e Sub-OS.
- * Wrapper upgrade do OSPipeline.tsx com as funcionalidades obrigatórias da diretiva.
+ * components/Pipeline.tsx — Sprint 47
+ * Pipeline Kanban de O.S. com auto-avanço, statusHistory, modal de agendamento e Sub-OS.
+ * Filtra O.S. arquivadas. Auto-avança quando 100% tarefas concluídas.
  */
 import React, { useState, useEffect } from 'react';
 import {
@@ -205,6 +205,23 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
                 </div>
             </div>
 
+            {/* Progress bar based on tarefasOS */}
+            {task.tarefasOS && task.tarefasOS.length > 0 && (
+              <div className="flex items-center gap-2 mb-3" onClick={e => e.stopPropagation()}>
+                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${(() => {
+                    const done = task.tarefasOS!.filter((t: any) => t.status === 'concluida').length;
+                    const pct = Math.round((done / task.tarefasOS!.length) * 100);
+                    return pct >= 100 ? 'bg-green-500' : 'bg-brand-500';
+                  })()}`}
+                    style={{ width: `${Math.round((task.tarefasOS!.filter((t: any) => t.status === 'concluida').length / task.tarefasOS!.length) * 100)}%` }} />
+                </div>
+                <span className="text-[9px] font-bold text-gray-400">
+                  {task.tarefasOS!.filter((t: any) => t.status === 'concluida').length}/{task.tarefasOS!.length}
+                </span>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 mb-3 flex-wrap text-[10px] text-gray-500">
                 {task.assigneeName && <span className="flex items-center gap-1"><User size={10} /> {task.assigneeName}</span>}
                 {task.scheduling?.dataPrevista && (
@@ -282,12 +299,40 @@ const Pipeline: React.FC = () => {
     }, []);
 
     const filteredTasks = tasks.filter(t => {
+        // Exclude archived tasks from kanban
+        if ((t as any).archived) return false;
         if (filterPriority !== 'all' && t.priority !== filterPriority) return false;
         if (search && !t.title.toLowerCase().includes(search.toLowerCase()) &&
             !t.clientName?.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
     });
     const rootTasks = filteredTasks.filter(t => !t.parentOSId);
+
+    // ── Auto-advance: when all tarefasOS are 'concluida' and OS is in EM_EXECUCAO ──
+    useEffect(() => {
+      if (!currentUser) return;
+      tasks.forEach(async (task) => {
+        if ((task as any).archived) return;
+        if (task.workflowStatus !== WS.EM_EXECUCAO) return;
+        if (!task.tarefasOS || task.tarefasOS.length === 0) return;
+        const allDone = task.tarefasOS.every((t: any) => t.status === 'concluida');
+        if (!allDone) return;
+        // Auto-advance to AGUARDANDO_FATURAMENTO
+        try {
+          await updateDoc(doc(db, CollectionName.TASKS, task.id), {
+            workflowStatus: WS.AGUARDANDO_FATURAMENTO,
+            updatedAt: serverTimestamp(),
+            statusHistory: arrayUnion({
+              status: WS.AGUARDANDO_FATURAMENTO,
+              changedAt: Timestamp.now(),
+              changedBy: 'auto',
+            }),
+          });
+        } catch (e) {
+          console.error('Auto-advance failed for', task.id, e);
+        }
+      });
+    }, [tasks, currentUser]);
 
     const recordStatusHistory = async (taskId: string, newStatus: WS) => {
         if (!currentUser) return;
