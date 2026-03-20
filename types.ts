@@ -51,6 +51,7 @@ export interface PermissionSet {
 
   // ── BI / Intelligence ─────────────────────────────────────────────────────
   canViewBI?: boolean;            // BI Dashboard
+  canViewIntel?: boolean;         // Inteligência MGR — hub analítico
 
   // ── Vehicles ──────────────────────────────────────────────────────────────
   canViewVehicles?: boolean;      // Controle de Veículos

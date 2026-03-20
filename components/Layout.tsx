@@ -188,26 +188,42 @@ const Layout: React.FC = () => {
   type NavItem  = NavChild & { children?: NavChild[]; end?: boolean };
 
   // O.S. submenu routes for auto-expand detection
-  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos'];
+  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos', '/app/projetos'];
   const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos'];
   const VEHICLE_ROUTES  = ['/app/veiculos'];
+  const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
 
   const isInOSGroup      = OS_ROUTES.some(r => location.pathname.startsWith(r));
   const isInClientGroup  = CLIENT_ROUTES.some(r => location.pathname.startsWith(r));
   const isInVehicleGroup = VEHICLE_ROUTES.some(r => location.pathname.startsWith(r));
+  const isInIntelGroup   = INTEL_ROUTES.some(r => location.pathname.startsWith(r));
 
   // Auto-expand groups when on their routes
   const osGroupOpen      = expandedGroup === 'os'       || isInOSGroup;
   const clientGroupOpen  = expandedGroup === 'clients'  || isInClientGroup;
   const vehicleGroupOpen = expandedGroup === 'vehicles' || isInVehicleGroup;
+  const intelGroupOpen   = expandedGroup === 'intel'    || isInIntelGroup;
 
   const navItems: NavItem[] = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
     { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: can('canViewRanking') || userProfile?.role === 'admin' || userProfile?.role === 'gestor' || userProfile?.role === 'manager' },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
-    { to: '/app/projetos', icon: Briefcase, label: 'Projetos', visible: can('canManageProjects') },
-    { to: '/app/inteligencia', icon: Brain, label: 'Inteligência MGR 🧠', visible: ['admin', 'developer', 'intel_admin', 'intel_analyst', 'intel_viewer'].includes(userProfile?.role || '') },
+
+    // ── Inteligência de Negócios (grupo com submenu) ──
+    {
+      to: '/app/inteligencia',
+      icon: Brain,
+      label: 'Inteligência de Negócios',
+      visible: can('canViewBI') || can('canViewIntel') || can('canManageSettings')
+               || ['admin','developer','intel_admin','intel_analyst','intel_viewer'].includes(userProfile?.role || ''),
+      children: [
+        { to: '/app/inteligencia', icon: Brain,     label: 'Inteligência MGR 🧠',
+          visible: can('canViewIntel') || ['admin','developer','intel_admin','intel_analyst','intel_viewer'].includes(userProfile?.role || '') },
+        { to: '/app/bi',           icon: BarChart3, label: 'BI / Dashboard',
+          visible: can('canViewBI') || can('canManageSettings') },
+      ],
+    },
 
     // ── Ordens de Serviço (grupo com submenu) ──
     {
@@ -216,12 +232,13 @@ const Layout: React.FC = () => {
       label: 'Ordens de Serviço',
       visible: can('canViewTasks') || can('canManageProjects'),
       children: [
-        { to: '/app/pipeline',      icon: Kanban,       label: 'Pipeline',            visible: can('canManageProjects') },
-        { to: '/app/agenda',        icon: CalendarDays, label: 'Agenda',              visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
-        { to: '/app/tarefas',       icon: CheckSquare,  label: 'Tarefas',             visible: can('canViewTasks') },
-        { to: '/app/faturamento',   icon: Receipt,      label: 'Faturamento',         visible: can('canViewFinancials') },
-        { to: '/app/orcamentos',    icon: FileSpreadsheet, label: 'Orçamentos',       visible: can('canViewFinancials') },
-        { to: '/app/os-foto-config',icon: Camera,       label: 'Config. Fotos O.S.', visible: can('canManageSettings') },
+        { to: '/app/pipeline',      icon: Kanban,          label: 'Pipeline',            visible: can('canManageProjects') },
+        { to: '/app/agenda',        icon: CalendarDays,    label: 'Agenda',              visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
+        { to: '/app/tarefas',       icon: CheckSquare,     label: 'Lista de O.S.',       visible: can('canViewTasks') },
+        { to: '/app/projetos',      icon: Briefcase,       label: 'Projetos',            visible: can('canManageProjects') },
+        { to: '/app/faturamento',   icon: Receipt,         label: 'Faturamento',         visible: can('canViewFinancials') },
+        { to: '/app/orcamentos',    icon: FileSpreadsheet, label: 'Orçamentos',          visible: can('canViewFinancials') },
+        { to: '/app/os-foto-config',icon: Camera,          label: 'Config. Fotos O.S.', visible: can('canManageSettings') },
       ],
     },
 
@@ -259,7 +276,6 @@ const Layout: React.FC = () => {
     { to: '/app/usuarios', icon: Users,  label: 'Equipe & RH',      visible: can('canManageUsers') },
     { to: '/app/setores',  icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
     { to: '/app/locais',   icon: MapPin, label: 'Locais de Trabalho',visible: can('canManageUsers') },
-    { to: '/app/bi',       icon: BarChart3, label: 'BI / Inteligência', visible: can('canViewBI') || can('canManageSettings') },
   ];
 
   // Add "Editar Site" only for Developers/Admins
@@ -376,10 +392,12 @@ const Layout: React.FC = () => {
                 const isGroupKey = item.label === 'Ordens de Serviço' ? 'os'
                                  : item.label === 'Gestão de Clientes'  ? 'clients'
                                  : item.label === 'Gestão de Veículos'  ? 'vehicles'
+                                 : item.label === 'Inteligência de Negócios' ? 'intel'
                                  : item.label;
-                const isOpen = item.label === 'Ordens de Serviço'    ? osGroupOpen
-                             : item.label === 'Gestão de Clientes'   ? clientGroupOpen
-                             : item.label === 'Gestão de Veículos'   ? vehicleGroupOpen
+                const isOpen = item.label === 'Ordens de Serviço'         ? osGroupOpen
+                             : item.label === 'Gestão de Clientes'        ? clientGroupOpen
+                             : item.label === 'Gestão de Veículos'        ? vehicleGroupOpen
+                             : item.label === 'Inteligência de Negócios'  ? intelGroupOpen
                              : expandedGroup === isGroupKey;
                 const visibleChildren = item.children.filter(c => c.visible);
                 if (visibleChildren.length === 0) return null;

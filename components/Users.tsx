@@ -30,7 +30,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canManageProjects: false, canViewSchedule: false, canViewFullSchedule: false, canViewMySchedule: true,
   canViewFinancials: false, canManageClients: false,
   canViewInventory: false, canManageInventory: false,
-  canViewRanking: true, canViewBI: false, canViewVehicles: false,
+  canViewRanking: true, canViewBI: false, canViewIntel: false, canViewVehicles: false,
 };
 
 const MiniToggle: React.FC<{ on: boolean; onChange: () => void }> = ({ on, onChange }) => (
@@ -65,8 +65,11 @@ const USER_MODULES: UM[] = [
     actions: [{ key: 'canViewRanking', label: 'Visualizar Ranking' }] },
   { id: 'vehicles', label: 'Controle de Veículos', color: 'bg-cyan-50', txtColor: 'text-cyan-700',
     actions: [{ key: 'canViewVehicles', label: 'Acessar Veículos' }] },
-  { id: 'bi', label: 'BI & Inteligência', color: 'bg-indigo-50', txtColor: 'text-indigo-700',
-    actions: [{ key: 'canViewBI', label: 'BI Dashboard' }] },
+  { id: 'intel', label: 'Inteligência de Negócios', color: 'bg-indigo-50', txtColor: 'text-indigo-700',
+    actions: [
+      { key: 'canViewBI',    label: 'BI / Dashboard' },
+      { key: 'canViewIntel', label: 'Inteligência MGR 🧠', desc: 'Acesso ao hub de análise estratégica' },
+    ] },
   { id: 'admin', label: 'Administração', color: 'bg-red-50', txtColor: 'text-red-700',
     actions: [
       { key: 'canManageUsers', label: 'Gerenciar Usuários' }, { key: 'canManageSectors', label: 'Gerenciar Cargos & Acessos' },
