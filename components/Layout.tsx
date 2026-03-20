@@ -42,6 +42,7 @@ import {
   ClipboardList,
   Camera,
   FileSpreadsheet,
+  UtensilsCrossed,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -116,6 +117,8 @@ const Layout: React.FC = () => {
       '/app/faturamento':      'Faturamento & Recebíveis',
       '/app/orcamentos':       'Orçamentos',
       '/app/bi':               'BI & Inteligência',
+      '/app/meu-almoco':       'Meu Almoço',
+      '/app/gestao-almoco':    'Gestão de Almoços',
     };
 
     const pageTitle = PAGE_TITLES[location.pathname] ?? location.pathname;
@@ -206,6 +209,7 @@ const Layout: React.FC = () => {
 
   const navItems: NavItem[] = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
+    { to: '/app/meu-almoco', icon: UtensilsCrossed, label: 'Meu Almoço', visible: true },
     { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: can('canViewRanking') || userProfile?.role === 'admin' || userProfile?.role === 'gestor' || userProfile?.role === 'manager' },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
@@ -276,6 +280,7 @@ const Layout: React.FC = () => {
     { to: '/app/usuarios', icon: Users,  label: 'Equipe & RH',      visible: can('canManageUsers') },
     { to: '/app/setores',  icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
     { to: '/app/locais',   icon: MapPin, label: 'Locais de Trabalho',visible: can('canManageUsers') },
+    { to: '/app/gestao-almoco', icon: UtensilsCrossed, label: 'Gestão de Almoços', visible: can('canManageLunch') },
   ];
 
   // Add "Editar Site" only for Developers/Admins

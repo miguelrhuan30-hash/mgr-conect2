@@ -55,6 +55,9 @@ export interface PermissionSet {
 
   // ── Vehicles ──────────────────────────────────────────────────────────────
   canViewVehicles?: boolean;      // Controle de Veículos
+
+  // ── Lunch Management ───────────────────────────────────────────────────────
+  canManageLunch?: boolean;       // Gestão de Almoços (cardápio + relatórios)
 }
 
 export interface Sector {
@@ -898,6 +901,11 @@ export enum CollectionName {
   // Sprint 48 — RH: Documentos & Ocorrências
   EMPLOYEE_DOCS = 'employee_docs',
   EMPLOYEE_OCCURRENCES = 'employee_occurrences',
+  // Sprint 49 — Módulo Meu Almoço
+  LUNCH_MENUS = 'lunch_menus',
+  LUNCH_CHOICES = 'lunch_choices',
+  LUNCH_LOCATIONS = 'lunch_locations',
+  LUNCH_CONFIG = 'lunch_config',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -1010,5 +1018,69 @@ export interface EmployeeOccurrence {
   criadoPor: string;
   criadoEm: Timestamp;
   atualizadoEm?: Timestamp;
+}
+
+// ─── Sprint 49: Módulo Meu Almoço ───────────────────────────────────────────
+
+export interface LunchConfig {
+  id: string;
+  sedeNome: string;            // "Sede MGR"
+  sedeEndereco: string;        // "Rua Exemplo, 123, Centro, Cidade"
+  horarioLimite?: string;      // "10:00" — horário limite para informar localização
+  atualizadoPor?: string;
+  atualizadoEm?: Timestamp;
+}
+
+export interface LunchDish {
+  id: string;
+  nome: string;                // "Frango Grelhado com Legumes"
+  descricao?: string;          // "Acompanha arroz e salada"
+  ordem: number;
+}
+
+export interface LunchMenu {
+  id: string;
+  weekStart: string;           // "2026-03-23" (segunda-feira ISO)
+  weekEnd: string;             // "2026-03-27" (sexta-feira ISO)
+  status: 'rascunho' | 'ativo' | 'encerrado';
+  pratos: LunchDish[];
+  criadoPor: string;
+  criadoPorNome: string;
+  criadoEm: Timestamp;
+  atualizadoEm?: Timestamp;
+}
+
+export interface LunchChoice {
+  id: string;
+  menuId: string;              // FK → lunch_menus
+  userId: string;
+  userName: string;
+  userSector?: string;
+  escolhas: {
+    segunda?: { pratoId: string; pratoNome: string } | null;
+    terca?: { pratoId: string; pratoNome: string } | null;
+    quarta?: { pratoId: string; pratoNome: string } | null;
+    quinta?: { pratoId: string; pratoNome: string } | null;
+    sexta?: { pratoId: string; pratoNome: string } | null;
+  };
+  enviadoEm: Timestamp;
+}
+
+export type LunchLocationType = 'sede' | 'campo' | 'fora_cidade';
+
+export interface LunchLocation {
+  id: string;
+  userId: string;
+  userName: string;
+  data: string;                // "2026-03-24" (ISO date)
+  tipo: LunchLocationType;
+  endereco?: string;
+  clienteNome?: string;
+  coordenadas?: {
+    lat: number;
+    lng: number;
+  };
+  informadoEm: Timestamp;
+  menuId: string;              // FK → lunch_menus
 }
 

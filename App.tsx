@@ -70,6 +70,12 @@ const PhotoAnnotator = lazy(() => import('./components/PhotoAnnotator'));
 const OrcamentoModule = lazy(() => import('./components/Orcamento'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT 49: Módulo Meu Almoço
+// ─────────────────────────────────────────────
+const LunchManagement = lazy(() => import('./components/LunchManagement'));
+const MyLunch         = lazy(() => import('./components/MyLunch'));
+
+// ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
 // ─────────────────────────────────────────────
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean; children?: React.ReactNode }) => {
@@ -350,6 +356,13 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="orcamentos"
             element={hasPermission('canViewFinancials') ? <OrcamentoModule /> : <Navigate to="/app" />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT 49 — Módulo Meu Almoço
+          ════════════════════════════════════════ */}
+          <Route path="gestao-almoco"
+            element={hasPermission('canManageLunch') ? <LunchManagement /> : <Navigate to="/app" />} />
+          <Route path="meu-almoco" element={<MyLunch />} />
 
         </Route>{/* fim /app */}
 
