@@ -45,6 +45,7 @@ const EMPTY_PERMS = (): PermissionSet => ({
   canManageInventory: false,
   canViewRanking: true,
   canViewBI: false,
+  canViewIntel: false,
   canViewVehicles: false,
 });
 
@@ -134,13 +135,14 @@ const MODULES: ModuleDef[] = [
     ],
   },
   {
-    id: 'bi',
-    label: 'BI & Inteligência',
+    id: 'intel',
+    label: 'Inteligência de Negócios',
     icon: BarChart3,
     color: 'bg-indigo-50',
     textColor: 'text-indigo-700',
     actions: [
-      { key: 'canViewBI',        label: 'Acessar BI / Dashboard Analítico' },
+      { key: 'canViewBI',    label: 'BI / Dashboard Analítico' },
+      { key: 'canViewIntel', label: 'Inteligência MGR 🧠', desc: 'Acesso ao hub de análise estratégica' },
     ],
   },
   {
