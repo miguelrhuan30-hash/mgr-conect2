@@ -188,7 +188,7 @@ const Layout: React.FC = () => {
   type NavItem  = NavChild & { children?: NavChild[]; end?: boolean };
 
   // O.S. submenu routes for auto-expand detection
-  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos', '/app/projetos'];
+  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos', '/app/projetos', '/app/modelos'];
   const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos'];
   const VEHICLE_ROUTES  = ['/app/veiculos'];
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
@@ -238,6 +238,7 @@ const Layout: React.FC = () => {
         { to: '/app/projetos',      icon: Briefcase,       label: 'Projetos',            visible: can('canManageProjects') },
         { to: '/app/faturamento',   icon: Receipt,         label: 'Faturamento',         visible: can('canViewFinancials') },
         { to: '/app/orcamentos',    icon: FileSpreadsheet, label: 'Orçamentos',          visible: can('canViewFinancials') },
+        { to: '/app/modelos',       icon: FileText,        label: 'Modelos de O.S.',     visible: can('canManageSettings') },
         { to: '/app/os-foto-config',icon: Camera,          label: 'Config. Fotos O.S.', visible: can('canManageSettings') },
       ],
     },
@@ -268,7 +269,6 @@ const Layout: React.FC = () => {
 
     // Management Section
     { to: '/app/campanhas',        icon: Target,       label: 'Campanhas (MGR Coins)', visible: can('canManageSettings') },
-    { to: '/app/modelos',          icon: FileText,     label: 'Modelos',               visible: can('canManageSettings') },
     { to: '/app/relatorios-ponto', icon: CalendarCheck,label: 'Espelho de Ponto',      visible: can('canViewAttendanceReports') },
     { to: '/app/logs',             icon: Activity,     label: 'Log do Sistema',        visible: userProfile?.permissions?.canViewLogs === true || userProfile?.role === 'admin' },
 
