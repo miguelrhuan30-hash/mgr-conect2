@@ -9,8 +9,10 @@ import { CollectionName, LunchMenu, LunchDish, LunchChoice, LunchLocation, Lunch
 import {
   UtensilsCrossed, Plus, Trash2, Save, Copy, Check,
   CheckCircle2, MapPin, Building2, Plane, AlertTriangle,
-  Calendar, ClipboardList, Settings2, Filter, Layers
+  Calendar, ClipboardList, Settings2, Filter, Layers,
+  Map as MapIcon
 } from 'lucide-react';
+import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
 /* ════════════════════════════════════════════════════════════════
    HELPERS
@@ -87,6 +89,7 @@ const LunchManagement: React.FC = () => {
   const [horarioLimite, setHorarioLimite] = useState('10:00');
   const [savingSede, setSavingSede] = useState(false);
   const [showSedeConfig, setShowSedeConfig] = useState(false);
+  const [showSedeMapPicker, setShowSedeMapPicker] = useState(false);
 
   /* ─── Load HQ config ─── */
   useEffect(() => {
@@ -462,12 +465,31 @@ const LunchManagement: React.FC = () => {
               <Save size={14} /> {savingSede ? 'Salvando...' : 'Salvar Configurações'}
             </button>
             <button
+              onClick={() => setShowSedeMapPicker(true)}
+              className="flex items-center gap-2 px-5 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
+            >
+              <MapIcon size={14} /> Abrir Mapa
+            </button>
+            <button
               onClick={() => setShowSedeConfig(false)}
               className="px-4 py-2 text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm"
             >
               Fechar
             </button>
           </div>
+
+          {/* Google Maps Picker for Sede */}
+          {showSedeMapPicker && (
+            <GoogleMapPicker
+              initialSearch={sedeEndereco || sedeNome}
+              title="Selecionar Localização da Sede"
+              onConfirm={(data: MapPickerResult) => {
+                setSedeEndereco(data.address);
+                setShowSedeMapPicker(false);
+              }}
+              onCancel={() => setShowSedeMapPicker(false)}
+            />
+          )}
         </div>
       )}
 

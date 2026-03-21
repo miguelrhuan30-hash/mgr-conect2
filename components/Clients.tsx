@@ -10,9 +10,10 @@ import { Analytics } from '../utils/mgr-analytics';
 import {
   Building, Plus, Trash2, Search, Phone, MapPin, User,
   Loader2, Save, X, Pencil, ChevronDown, ChevronUp,
-  Globe, Mail, Tag, Users, Thermometer
+  Globe, Mail, Tag, Users, Thermometer, Map as MapIcon
 } from 'lucide-react';
 import ClientAssets from './ClientAssets';
+import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
 // ── Status config ─────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<ClientStatus, { label: string; cls: string }> = {
@@ -73,6 +74,8 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
   const { currentUser, userProfile } = useAuth();
   const [saving, setSaving] = useState(false);
   const [capturandoGPS, setCapturandoGPS] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [mapSearchMode, setMapSearchMode] = useState<'coords' | 'name'>('coords');
   const [form, setForm] = useState<FormData>({
     name:         initial?.name         || '',
     document:     initial?.document     || '',
@@ -318,8 +321,56 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
                 <MapPin className="w-4 h-4" />
                 {capturandoGPS ? 'Capturando...' : 'Usar minha localização atual'}
               </button>
+              <div className="flex gap-2 flex-wrap">
+                <button type="button"
+                  onClick={() => {
+                    setMapSearchMode('coords');
+                    setShowMapPicker(true);
+                  }}
+                  className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 px-3 py-2 rounded-lg hover:bg-green-100">
+                  <MapIcon className="w-4 h-4" />
+                  🗺️ Abrir Mapa
+                </button>
+                <button type="button"
+                  onClick={() => {
+                    setMapSearchMode('name');
+                    setShowMapPicker(true);
+                  }}
+                  className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 px-3 py-2 rounded-lg hover:bg-blue-100">
+                  <Search className="w-4 h-4" />
+                  🔍 Buscar no Maps
+                </button>
+              </div>
               {form.geoLat && form.geoLng && (
                 <p className="text-[10px] text-emerald-600 font-semibold">✅ Geoloc cadastrada: {parseFloat(form.geoLat).toFixed(5)}, {parseFloat(form.geoLng).toFixed(5)}</p>
+              )}
+
+              {/* Google Maps Picker Modal */}
+              {showMapPicker && (
+                <GoogleMapPicker
+                  initialLat={form.geoLat ? parseFloat(form.geoLat) : undefined}
+                  initialLng={form.geoLng ? parseFloat(form.geoLng) : undefined}
+                  initialSearch={
+                    mapSearchMode === 'name'
+                      ? (form.name || form.nomeFantasia || form.razaoSocial || '')
+                      : (form.geoEndereco || form.address || undefined)
+                  }
+                  title={
+                    mapSearchMode === 'name'
+                      ? `Buscar: ${form.name || 'Cliente'}`
+                      : 'Selecionar Localização do Cliente'
+                  }
+                  onConfirm={(data: MapPickerResult) => {
+                    setForm(p => ({
+                      ...p,
+                      geoLat: String(data.lat),
+                      geoLng: String(data.lng),
+                      geoEndereco: data.address,
+                    }));
+                    setShowMapPicker(false);
+                  }}
+                  onCancel={() => setShowMapPicker(false)}
+                />
               )}
             </div>
           </section>

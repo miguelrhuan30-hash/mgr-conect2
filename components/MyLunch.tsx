@@ -9,8 +9,9 @@ import { CollectionName, LunchMenu, LunchChoice, LunchLocation, LunchLocationTyp
 import {
   UtensilsCrossed, CheckCircle2, MapPin, Building2, Plane,
   AlertTriangle, Navigation, Pencil, Send, ArrowRight, Clock,
-  Info, ChevronDown
+  Info, ChevronDown, Map as MapIcon
 } from 'lucide-react';
+import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
 /* ════════════════════════════════════════════════════════════════
    HELPERS
@@ -67,6 +68,7 @@ const MyLunch: React.FC = () => {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [submittingLoc, setSubmittingLoc] = useState(false);
   const [showForaCidadeConfirm, setShowForaCidadeConfirm] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   // ── Sede config ──
   const [sedeNome, setSedeNome] = useState('Sede MGR');
@@ -421,7 +423,7 @@ const MyLunch: React.FC = () => {
 
                     {locationType === 'campo' && (
                       <div className="px-4 pb-4 space-y-3 border-t border-green-100 pt-3">
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleGetLocation(); }}
                             disabled={gettingGPS}
@@ -429,6 +431,13 @@ const MyLunch: React.FC = () => {
                           >
                             <Navigation size={14} />
                             {gettingGPS ? 'Buscando GPS...' : 'Usar Minha Localização'}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setShowMapPicker(true); }}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+                          >
+                            <MapIcon size={14} />
+                            Abrir Mapa
                           </button>
                         </div>
                         <div>
@@ -461,6 +470,21 @@ const MyLunch: React.FC = () => {
                           <Send size={14} /> {submittingLoc ? 'Enviando...' : 'Confirmar Localização'}
                         </button>
                       </div>
+                    )}
+
+                    {/* Google Maps Picker Modal */}
+                    {showMapPicker && (
+                      <GoogleMapPicker
+                        initialLat={coords?.lat}
+                        initialLng={coords?.lng}
+                        title="Selecionar Localização em Campo"
+                        onConfirm={(data: MapPickerResult) => {
+                          setAddress(data.address);
+                          setCoords({ lat: data.lat, lng: data.lng });
+                          setShowMapPicker(false);
+                        }}
+                        onCancel={() => setShowMapPicker(false)}
+                      />
                     )}
                   </div>
 
