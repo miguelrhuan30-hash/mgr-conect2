@@ -238,7 +238,21 @@ const OSKpiSection: React.FC = () => {
     }, []);
 
     if (loading) return <div className="flex justify-center py-8"><Loader2 className="animate-spin text-brand-600 w-6 h-6" /></div>;
-    if (kpis.length === 0) return null;
+    if (kpis.length === 0) return (
+        <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <div className="flex items-center gap-2 mb-4 text-brand-600">
+                    <Tag className="w-5 h-5" />
+                    <h2 className="font-bold text-gray-900">KPIs de Tarefas O.S.</h2>
+                </div>
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Wrench className="w-10 h-10 text-gray-300 mb-3" />
+                    <p className="text-sm font-medium text-gray-400">Nenhum KPI registrado ainda</p>
+                    <p className="text-xs text-gray-300 mt-1">Complete tarefas de O.S. para gerar métricas automaticamente.</p>
+                </div>
+            </div>
+        </div>
+    );
 
     // Tempo médio por tarefa
     const avgMin = Math.round(kpis.reduce((s, k) => s + (k.tempoDuracaoMinutos || 0), 0) / kpis.length);
