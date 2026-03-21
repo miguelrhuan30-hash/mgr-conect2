@@ -91,6 +91,12 @@ const LunchManagement: React.FC = () => {
   const [showSedeConfig, setShowSedeConfig] = useState(false);
   const [showSedeMapPicker, setShowSedeMapPicker] = useState(false);
 
+  // ── Deadline awareness for manager ──
+  const todayISOMgmt = new Date().toISOString().split('T')[0];
+  const nowMgmt = new Date();
+  const currentTimeMgmt = `${String(nowMgmt.getHours()).padStart(2, '0')}:${String(nowMgmt.getMinutes()).padStart(2, '0')}`;
+  const isPastDeadlineMgmt = currentTimeMgmt >= horarioLimite;
+
   /* ─── Load HQ config ─── */
   useEffect(() => {
     const docRef = doc(db, CollectionName.LUNCH_CONFIG, 'sede');
@@ -638,6 +644,33 @@ const LunchManagement: React.FC = () => {
       {/* ── TAB: Relatório de Pedidos ── */}
       {activeTab === 'pedidos' && (
         <div className="space-y-5">
+          {/* Deadline warning for manager */}
+          {!isPastDeadlineMgmt && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+              <AlertTriangle size={20} className="text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">
+                  ⏳ Aguarde até as {horarioLimite} para gerar o pedido final
+                </p>
+                <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                  Os colaboradores podem informar ou alterar a localização até as <strong>{horarioLimite}</strong>. 
+                  Copiar a lista antes desse horário pode resultar em pedidos incorretos, 
+                  pois nem todos podem ter informado ou alguém pode alterar a localização.
+                </p>
+                <p className="text-[10px] text-amber-600 mt-2 font-medium">
+                  Horário atual: {currentTimeMgmt} • Limite: {horarioLimite}
+                </p>
+              </div>
+            </div>
+          )}
+          {isPastDeadlineMgmt && (
+            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-2">
+              <Check size={16} className="text-green-600 flex-shrink-0" />
+              <p className="text-sm text-green-800">
+                <strong>✅ Horário limite ({horarioLimite}) atingido.</strong> Os relatórios estão prontos para serem copiados.
+              </p>
+            </div>
+          )}
           {/* Filters */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="flex flex-col sm:flex-row gap-4">

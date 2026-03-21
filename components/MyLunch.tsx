@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, getDocs,
-  Timestamp, limit, doc
+  deleteDoc, Timestamp, limit, doc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -250,6 +250,22 @@ const MyLunch: React.FC = () => {
     }
   };
 
+  /* ─── Reset location (re-inform) ─── */
+  const handleResetLocation = async () => {
+    if (!todayLocation) return;
+    if (!confirm('Deseja alterar sua localização de hoje? A informação anterior será removida.')) return;
+    try {
+      await deleteDoc(doc(db, CollectionName.LUNCH_LOCATIONS, todayLocation.id));
+      setLocationType('');
+      setAddress('');
+      setClientName('');
+      setCoords(null);
+    } catch (err) {
+      console.error('Erro ao resetar localização:', err);
+      alert('Erro ao resetar localização.');
+    }
+  };
+
   /* ════════════════════════════════════════════════════════════════
      RENDER STATES
      ════════════════════════════════════════════════════════════════ */
@@ -387,6 +403,15 @@ const MyLunch: React.FC = () => {
                 <p className="text-xs text-gray-400">
                   Informado às {todayLocation.informadoEm?.toDate?.()?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) || '—'}
                 </p>
+                {!isPastDeadline && (
+                  <button
+                    onClick={handleResetLocation}
+                    className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+                  >
+                    <Pencil size={14} />
+                    Reinformar Localização
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
