@@ -27,7 +27,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { GoogleGenAI } from "@google/genai";
 import { 
   Clock, MapPin, ShieldCheck, Loader2, AlertTriangle, 
-  History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2, Car 
+  History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2, Car, Bell 
 } from 'lucide-react';
 import { logEvent } from '../utils/logger';
 import { Analytics } from '../utils/mgr-analytics';
@@ -35,6 +35,18 @@ import VehicleCheck from './VehicleCheck';
 
 // Tipos de Ação do Ponto
 type ActionType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
+
+// ── Helper: Google Calendar reminder URL ──
+const buildCalendarReminderUrl = (title: string, minutesFromNow: number): string => {
+  const start = new Date(Date.now() + minutesFromNow * 60000);
+  const end = new Date(start.getTime() + 10 * 60000);
+  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  return `https://www.google.com/calendar/render?action=TEMPLATE`
+    + `&text=${encodeURIComponent(title)}`
+    + `&dates=${fmt(start)}/${fmt(end)}`
+    + `&details=${encodeURIComponent('Lembrete automático — MGR Conect')}`
+    + `&sf=true`;
+};
 
 interface ActionState {
   type: ActionType;
@@ -863,6 +875,15 @@ const Ponto: React.FC = () => {
                         <div className="text-[10px] text-gray-400 mt-2">
                             Almoço mínimo de 1 hora obrigatório
                         </div>
+                        <a
+                          href={buildCalendarReminderUrl('Retorno do Almoço — MGR', 60)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-700 transition-colors shadow-sm"
+                        >
+                          <Bell size={14} />
+                          🔔 Criar lembrete de retorno
+                        </a>
                     </div>
                 )}
 
@@ -890,6 +911,19 @@ const Ponto: React.FC = () => {
                       <span className="text-[10px] text-amber-500 font-bold">
                         {entryCountdown === '00:00' ? '✅ Pronto para começar!' : 'Tempo restante de preparo'}
                       </span>
+                    </div>
+
+                    {/* Lembrete Google Calendar — Fim do Café */}
+                    <div className="mt-3">
+                      <a
+                        href={buildCalendarReminderUrl('Fim do Café — Iniciar Atividades', 20)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 transition-colors shadow-sm"
+                      >
+                        <Bell size={14} />
+                        🔔 Criar lembrete fim do café
+                      </a>
                     </div>
 
                     {/* ── Atalho de abertura de veículo ── */}
