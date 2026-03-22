@@ -311,30 +311,33 @@ const GoogleMapPicker: React.FC<GoogleMapPickerProps> = ({
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-2">
+            {/* Row 1: GPS button (full width on mobile) */}
             <button
               onClick={handleUseMyLocation}
               disabled={gettingGPS}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 disabled:opacity-50 transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 disabled:opacity-50 transition-colors"
             >
-              <Navigation className="w-4 h-4" />
-              {gettingGPS ? 'Buscando...' : 'Minha Localização'}
+              <Navigation className="w-4 h-4 flex-shrink-0" />
+              {gettingGPS ? 'Buscando localização...' : 'Minha Localização'}
             </button>
-            <div className="flex-1" />
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleConfirm}
-              disabled={!selectedAddress}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
-            >
-              <Check className="w-4 h-4" />
-              Confirmar Local
-            </button>
+            {/* Row 2: Cancel + Confirm */}
+            <div className="flex gap-2">
+              <button
+                onClick={onCancel}
+                className="flex-1 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={!selectedAddress}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
+              >
+                <Check className="w-4 h-4 flex-shrink-0" />
+                Confirmar Localização
+              </button>
+            </div>
           </div>
         </div>
       </div>

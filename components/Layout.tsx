@@ -195,21 +195,35 @@ const Layout: React.FC = () => {
   const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos'];
   const VEHICLE_ROUTES  = ['/app/veiculos'];
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
+  const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
 
   const isInOSGroup      = OS_ROUTES.some(r => location.pathname.startsWith(r));
   const isInClientGroup  = CLIENT_ROUTES.some(r => location.pathname.startsWith(r));
   const isInVehicleGroup = VEHICLE_ROUTES.some(r => location.pathname.startsWith(r));
   const isInIntelGroup   = INTEL_ROUTES.some(r => location.pathname.startsWith(r));
+  const isInLunchGroup   = LUNCH_ROUTES.some(r => location.pathname.startsWith(r));
 
   // Auto-expand groups when on their routes
   const osGroupOpen      = expandedGroup === 'os'       || isInOSGroup;
   const clientGroupOpen  = expandedGroup === 'clients'  || isInClientGroup;
   const vehicleGroupOpen = expandedGroup === 'vehicles' || isInVehicleGroup;
   const intelGroupOpen   = expandedGroup === 'intel'    || isInIntelGroup;
+  const lunchGroupOpen   = expandedGroup === 'lunch'    || isInLunchGroup;
 
   const navItems: NavItem[] = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
-    { to: '/app/meu-almoco', icon: UtensilsCrossed, label: 'Meu Almoço', visible: true },
+
+    // ── Almoço MGR (grupo com submenu) ──
+    {
+      to: '/app/meu-almoco',
+      icon: UtensilsCrossed,
+      label: 'Almoço MGR',
+      visible: true,
+      children: [
+        { to: '/app/meu-almoco',    icon: UtensilsCrossed, label: 'Meu Almoço',        visible: true },
+        { to: '/app/gestao-almoco', icon: UtensilsCrossed, label: 'Gestão de Almoços', visible: can('canManageLunch') },
+      ],
+    },
     { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: can('canViewRanking') || userProfile?.role === 'admin' || userProfile?.role === 'gestor' || userProfile?.role === 'manager' },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
@@ -280,7 +294,6 @@ const Layout: React.FC = () => {
     { to: '/app/usuarios', icon: Users,  label: 'Equipe & RH',      visible: can('canManageUsers') },
     { to: '/app/setores',  icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
     { to: '/app/locais',   icon: MapPin, label: 'Locais de Trabalho',visible: can('canManageUsers') },
-    { to: '/app/gestao-almoco', icon: UtensilsCrossed, label: 'Gestão de Almoços', visible: can('canManageLunch') },
   ];
 
   // Add "Editar Site" only for Developers/Admins
@@ -398,11 +411,13 @@ const Layout: React.FC = () => {
                                  : item.label === 'Gestão de Clientes'  ? 'clients'
                                  : item.label === 'Gestão de Veículos'  ? 'vehicles'
                                  : item.label === 'Inteligência de Negócios' ? 'intel'
+                                 : item.label === 'Almoço MGR'           ? 'lunch'
                                  : item.label;
                 const isOpen = item.label === 'Ordens de Serviço'         ? osGroupOpen
                              : item.label === 'Gestão de Clientes'        ? clientGroupOpen
                              : item.label === 'Gestão de Veículos'        ? vehicleGroupOpen
                              : item.label === 'Inteligência de Negócios'  ? intelGroupOpen
+                             : item.label === 'Almoço MGR'                ? lunchGroupOpen
                              : expandedGroup === isGroupKey;
                 const visibleChildren = item.children.filter(c => c.visible);
                 if (visibleChildren.length === 0) return null;

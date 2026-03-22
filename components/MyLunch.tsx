@@ -230,20 +230,28 @@ const MyLunch: React.FC = () => {
     if (!currentUser || !userProfile) return;
     setSubmittingLoc(true);
     try {
-      await addDoc(collection(db, CollectionName.LUNCH_LOCATIONS), {
+      // Build the document — only include geo data for 'campo'
+      const docData: Record<string, any> = {
         userId: currentUser.uid,
-        userName: userProfile.nomeCompleto || userProfile.displayName,
+        userName: userProfile.nomeCompleto || userProfile.displayName || '',
+        userSector: userProfile.sectorName || '',
         data: todayISO,
         tipo,
-        endereco: tipo === 'campo' ? address : undefined,
-        clienteNome: tipo === 'campo' ? clientName : undefined,
-        coordenadas: tipo === 'campo' && coords ? coords : undefined,
         informadoEm: Timestamp.now(),
         menuId: activeMenu?.id || '',
-      });
+      };
+
+      if (tipo === 'campo') {
+        if (address) docData.endereco = address;
+        if (clientName) docData.clienteNome = clientName;
+        if (coords) docData.coordenadas = coords;
+      }
+      // For 'sede' and 'fora_cidade', NO location data is needed
+
+      await addDoc(collection(db, CollectionName.LUNCH_LOCATIONS), docData);
     } catch (err) {
       console.error('Erro ao enviar localização:', err);
-      alert('Erro ao enviar localização.');
+      alert('Erro ao enviar localização. Tente novamente.');
     } finally {
       setSubmittingLoc(false);
       setShowForaCidadeConfirm(false);
