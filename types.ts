@@ -908,6 +908,7 @@ export enum CollectionName {
   SURVEYS = 'surveys',
   SURVEY_RESPONSES = 'survey_responses',
   SURVEY_PARTICIPATION = 'survey_participation',
+  SURVEY_TEMPLATES = 'survey_templates',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -1146,6 +1147,8 @@ export interface Survey {
   criadoEm: Timestamp;
   encerradoEm?: Timestamp;
   totalRespostas?: number;    // calculado
+  templateId?: string;        // FK → survey_templates (se criada a partir de modelo)
+  edicao?: number;            // edição/rodada contínua (1, 2, 3...)
 }
 
 /** Uma única resposta anônima (sem userId) */
@@ -1165,4 +1168,14 @@ export interface SurveyParticipation {
   respondeuEm: Timestamp;
 }
 
-
+/** Modelo de Pesquisa reutilizável — define a estrutura padrão de perguntas */
+export interface SurveyTemplate {
+  id: string;
+  nome: string;                 // Ex: 'Pesquisa de Transição'
+  descricao: string;
+  tipo: SurveyType;
+  perguntas: SurveyQuestion[];  // perguntas padrão do modelo
+  criadoPor: string;
+  criadoEm: Timestamp;
+  builtIn?: boolean;            // true = modelo pré-cadastrado pelo sistema
+}
