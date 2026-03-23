@@ -468,12 +468,12 @@ const MyLunch: React.FC = () => {
         </div>
       </div>
 
-      {/* Day-by-day selection */}
+      {/* Day-by-day selection — mobile-first */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="bg-orange-50 px-5 py-4 border-b border-orange-100">
+        <div className="bg-orange-50 px-4 py-4 border-b border-orange-100">
           <h3 className="text-sm font-bold text-orange-800">Monte sua marmita para cada dia</h3>
           <p className="text-xs text-orange-600 mt-1">
-            Escolha até {MAX_PER_CATEGORY} misturas e até {MAX_PER_CATEGORY} guarnições por dia · Deixe em branco para não almoçar naquele dia
+            Escolha até {MAX_PER_CATEGORY} misturas e até {MAX_PER_CATEGORY} guarnições por dia
           </p>
         </div>
 
@@ -481,65 +481,99 @@ const MyLunch: React.FC = () => {
           {DAY_KEYS.map(day => {
             const sel = selections[day];
             return (
-              <div key={day} className="px-5 py-5">
-                <p className="text-sm font-bold text-gray-800 mb-3">📅 {DAY_LABELS[day]}</p>
+              <div key={day} className="px-4 py-4">
+                {/* Day header */}
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-bold text-gray-800">📅 {DAY_LABELS[day]}</p>
+                  {(sel.misturas.length > 0 || sel.guarnicoes.length > 0) && (
+                    <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+                      {sel.misturas.length + sel.guarnicoes.length} item(s)
+                    </span>
+                  )}
+                </div>
 
-                {/* Misturas */}
+                {/* ── Misturas ── */}
                 <div className="mb-3">
-                  <p className="text-xs font-semibold text-orange-600 mb-2 flex items-center gap-1">
-                    🥩 Misturas
-                    <span className="text-gray-400 font-normal">(escolha até {MAX_PER_CATEGORY})</span>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-bold text-orange-600 uppercase tracking-wide">🥩 Misturas</span>
+                    <span className="text-xs text-gray-400">até {MAX_PER_CATEGORY}</span>
                     {sel.misturas.length > 0 && (
-                      <span className="ml-auto bg-orange-100 text-orange-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                        {sel.misturas.length}/{MAX_PER_CATEGORY}
+                      <span className="ml-auto text-[10px] font-bold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
+                        {sel.misturas.length}/{MAX_PER_CATEGORY} ✓
                       </span>
                     )}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {meatOptions.map(p => {
                       const selected = sel.misturas.includes(p.id);
                       const limitReached = !selected && sel.misturas.length >= MAX_PER_CATEGORY;
                       return (
-                        <button key={p.id} onClick={() => toggleItem(day, 'misturas', p.id)} disabled={limitReached}
-                          className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                        <button
+                          key={p.id}
+                          onClick={() => toggleItem(day, 'misturas', p.id)}
+                          disabled={limitReached}
+                          className={`flex items-center gap-3 w-full text-left px-3 py-3 rounded-xl border-2 transition-all active:scale-[0.98] ${
                             selected
-                              ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                              ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
                               : limitReached
-                              ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
-                              : 'bg-white text-gray-700 border-gray-300 hover:border-orange-400 hover:bg-orange-50'
+                              ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed opacity-50'
+                              : 'bg-white border-gray-200 text-gray-800 hover:border-orange-300 hover:bg-orange-50'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
+                            selected ? 'bg-white border-white' : limitReached ? 'border-gray-200' : 'border-gray-300'
                           }`}>
-                          {selected ? '✓ ' : ''}{p.nome}
+                            {selected && (
+                              <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="text-orange-500">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            )}
+                          </div>
+                          <span className="text-sm font-medium leading-tight">{p.nome}</span>
                         </button>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* Guarnições */}
+                {/* ── Guarnições ── */}
                 <div>
-                  <p className="text-xs font-semibold text-green-600 mb-2 flex items-center gap-1">
-                    🥗 Guarnições
-                    <span className="text-gray-400 font-normal">(escolha até {MAX_PER_CATEGORY})</span>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-bold text-green-600 uppercase tracking-wide">🥗 Guarnições</span>
+                    <span className="text-xs text-gray-400">até {MAX_PER_CATEGORY}</span>
                     {sel.guarnicoes.length > 0 && (
-                      <span className="ml-auto bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                        {sel.guarnicoes.length}/{MAX_PER_CATEGORY}
+                      <span className="ml-auto text-[10px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                        {sel.guarnicoes.length}/{MAX_PER_CATEGORY} ✓
                       </span>
                     )}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {sideOptions.map(p => {
                       const selected = sel.guarnicoes.includes(p.id);
                       const limitReached = !selected && sel.guarnicoes.length >= MAX_PER_CATEGORY;
                       return (
-                        <button key={p.id} onClick={() => toggleItem(day, 'guarnicoes', p.id)} disabled={limitReached}
-                          className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                        <button
+                          key={p.id}
+                          onClick={() => toggleItem(day, 'guarnicoes', p.id)}
+                          disabled={limitReached}
+                          className={`flex items-center gap-3 w-full text-left px-3 py-3 rounded-xl border-2 transition-all active:scale-[0.98] ${
                             selected
-                              ? 'bg-green-500 text-white border-green-500 shadow-sm'
+                              ? 'bg-green-500 border-green-500 text-white shadow-sm'
                               : limitReached
-                              ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
-                              : 'bg-white text-gray-700 border-gray-300 hover:border-green-400 hover:bg-green-50'
+                              ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed opacity-50'
+                              : 'bg-white border-gray-200 text-gray-800 hover:border-green-300 hover:bg-green-50'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
+                            selected ? 'bg-white border-white' : limitReached ? 'border-gray-200' : 'border-gray-300'
                           }`}>
-                          {selected ? '✓ ' : ''}{p.nome}
+                            {selected && (
+                              <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            )}
+                          </div>
+                          <span className="text-sm font-medium leading-tight">{p.nome}</span>
                         </button>
                       );
                     })}
@@ -550,10 +584,10 @@ const MyLunch: React.FC = () => {
           })}
         </div>
 
-        <div className="px-5 py-4 bg-gray-50 border-t border-gray-100">
+        <div className="px-4 py-4 bg-gray-50 border-t border-gray-100">
           <button onClick={handleSubmitChoices} disabled={submitting || !hasAnySelection}
-            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-sm shadow-sm">
-            <Send size={16} /> {submitting ? 'Enviando...' : 'Enviar Escolhas da Semana'}
+            className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-orange-500 text-white rounded-xl hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-base shadow-sm active:scale-[0.98]">
+            <Send size={18} /> {submitting ? 'Enviando...' : 'Enviar Escolhas da Semana'}
           </button>
           {!hasAnySelection && (
             <p className="text-center text-xs text-gray-400 mt-2">Selecione ao menos 1 item para enviar</p>

@@ -70,12 +70,11 @@ const LunchManagement: React.FC = () => {
   // ── Form: novo cardápio ──
   const [showForm, setShowForm] = useState(false);
   const [weekStart, setWeekStart] = useState(getNextMonday());
-  const [misturas, setMisturas] = useState<LunchDish[]>([
-    { id: generateId(), nome: '', descricao: '', ordem: 1, categoria: 'mistura' },
-  ]);
-  const [guarnicoes, setGuarnicoes] = useState<LunchDish[]>([
-    { id: generateId(), nome: '', descricao: '', ordem: 1, categoria: 'guarnicao' },
-  ]);
+  // tags (strings com o nome de cada item)
+  const [misturasTags, setMisturasTags] = useState<string[]>([]);
+  const [guarnicoesTags, setGuarnicoesTags] = useState<string[]>([]);
+  const [misturaDraft, setMisturaDraft] = useState('');
+  const [guarnicaoDraft, setGuarnicaoDraft] = useState('');
   const [saving, setSaving] = useState(false);
 
   // ── Choices ──
@@ -144,21 +143,19 @@ const LunchManagement: React.FC = () => {
     });
   }, [locDate]);
 
-  /* ─── Prato CRUD — Misturas ─── */
-  const addMistura = () =>
-    setMisturas(prev => [...prev, { id: generateId(), nome: '', descricao: '', ordem: prev.length + 1, categoria: 'mistura' }]);
-  const removeMistura = (id: string) =>
-    setMisturas(prev => prev.filter(p => p.id !== id).map((p, i) => ({ ...p, ordem: i + 1 })));
-  const updateMistura = (id: string, field: 'nome' | 'descricao', value: string) =>
-    setMisturas(prev => prev.map(p => (p.id === id ? { ...p, [field]: value } : p)));
-
-  /* ─── Prato CRUD — Guarnições ─── */
-  const addGuarnicao = () =>
-    setGuarnicoes(prev => [...prev, { id: generateId(), nome: '', descricao: '', ordem: prev.length + 1, categoria: 'guarnicao' }]);
-  const removeGuarnicao = (id: string) =>
-    setGuarnicoes(prev => prev.filter(p => p.id !== id).map((p, i) => ({ ...p, ordem: i + 1 })));
-  const updateGuarnicao = (id: string, field: 'nome' | 'descricao', value: string) =>
-    setGuarnicoes(prev => prev.map(p => (p.id === id ? { ...p, [field]: value } : p)));
+  /* ─── Tag helpers ─── */
+  const commitMistura = () => {
+    const v = misturaDraft.trim();
+    if (v && !misturasTags.includes(v)) setMisturasTags(prev => [...prev, v]);
+    setMisturaDraft('');
+  };
+  const commitGuarnicao = () => {
+    const v = guarnicaoDraft.trim();
+    if (v && !guarnicoesTags.includes(v)) setGuarnicoesTags(prev => [...prev, v]);
+    setGuarnicaoDraft('');
+  };
+  const removeMisturaTag = (nome: string) => setMisturasTags(prev => prev.filter(t => t !== nome));
+  const removeGuarnicaoTag = (nome: string) => setGuarnicoesTags(prev => prev.filter(t => t !== nome));
 
   /* ─── Save HQ config ─── */
   const handleSaveSede = async () => {
@@ -180,10 +177,15 @@ const LunchManagement: React.FC = () => {
   /* ─── Save new menu ─── */
   const handleSaveMenu = async () => {
     if (!currentUser || !userProfile) return;
-    const cleanMisturas  = misturas.filter(p => p.nome.trim());
-    const cleanGuarnicoes = guarnicoes.filter(p => p.nome.trim());
-    if (cleanMisturas.length === 0)  return alert('Adicione ao menos 1 mistura.');
-    if (cleanGuarnicoes.length === 0) return alert('Adicione ao menos 1 guarnição.');
+    // commit any pending draft before saving
+    const allMisturas = misturaDraft.trim()
+      ? [...misturasTags, misturaDraft.trim()]
+      : misturasTags;
+    const allGuarnicoes = guarnicaoDraft.trim()
+      ? [...guarnicoesTags, guarnicaoDraft.trim()]
+      : guarnicoesTags;
+    if (allMisturas.length === 0)  return alert('Adicione ao menos 1 mistura.');
+    if (allGuarnicoes.length === 0) return alert('Adicione ao menos 1 guarnição.');
 
     setSaving(true);
     try {
@@ -192,8 +194,8 @@ const LunchManagement: React.FC = () => {
         await updateDoc(doc(db, CollectionName.LUNCH_MENUS, m.id), { status: 'encerrado' });
       }
       const allPratos: LunchDish[] = [
-        ...cleanMisturas.map((p, i) => ({ ...p, ordem: i + 1, categoria: 'mistura' as const })),
-        ...cleanGuarnicoes.map((p, i) => ({ ...p, ordem: i + 1, categoria: 'guarnicao' as const })),
+        ...allMisturas.map((nome, i) => ({ id: generateId(), nome, descricao: '', ordem: i + 1, categoria: 'mistura' as const })),
+        ...allGuarnicoes.map((nome, i) => ({ id: generateId(), nome, descricao: '', ordem: i + 1, categoria: 'guarnicao' as const })),
       ];
       await addDoc(collection(db, CollectionName.LUNCH_MENUS), {
         weekStart,
@@ -205,8 +207,10 @@ const LunchManagement: React.FC = () => {
         criadoEm: Timestamp.now(),
       });
       setShowForm(false);
-      setMisturas([{ id: generateId(), nome: '', descricao: '', ordem: 1, categoria: 'mistura' }]);
-      setGuarnicoes([{ id: generateId(), nome: '', descricao: '', ordem: 1, categoria: 'guarnicao' }]);
+      setMisturasTags([]);
+      setGuarnicoesTags([]);
+      setMisturaDraft('');
+      setGuarnicaoDraft('');
     } catch (err) {
       console.error('Erro ao salvar cardápio:', err);
       alert('Erro ao salvar cardápio.');
@@ -493,72 +497,85 @@ const LunchManagement: React.FC = () => {
 
               {/* ── Seção Misturas ── */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                {/* ── Misturas — tag input ── */}
+                <div>
+                  <label className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-2">
                     <span className="text-lg">🥩</span> Misturas da Semana
-                    <span className="text-xs font-normal text-gray-400 ml-1">proteínas / pratos principais</span>
+                    <span className="text-xs font-normal text-gray-400">proteínas / pratos principais</span>
                   </label>
-                  <button onClick={addMistura} className="flex items-center gap-1 text-sm text-orange-600 hover:text-orange-700 font-medium">
-                    <Plus size={14} /> Adicionar Mistura
-                  </button>
-                </div>
-                {misturas.map((prato, idx) => (
-                  <div key={prato.id} className="flex gap-3 items-start bg-orange-50/50 rounded-lg p-3 border border-orange-100">
-                    <span className="text-sm font-bold text-orange-400 mt-2 w-6 text-center">{idx + 1}</span>
-                    <div className="flex-1 space-y-2">
-                      <input type="text" placeholder="Nome da mistura (ex: Frango Grelhado)" value={prato.nome}
-                        onChange={e => updateMistura(prato.id, 'nome', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none" />
-                      <input type="text" placeholder="Descrição (opcional)" value={prato.descricao || ''}
-                        onChange={e => updateMistura(prato.id, 'descricao', e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none text-gray-600" />
+                  {/* Chips existentes */}
+                  {misturasTags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {misturasTags.map(tag => (
+                        <span key={tag}
+                          className="inline-flex items-center gap-1.5 bg-orange-100 text-orange-800 border border-orange-300 px-3 py-1.5 rounded-full text-sm font-medium">
+                          🥩 {tag}
+                          <button onClick={() => removeMisturaTag(tag)}
+                            className="text-orange-500 hover:text-red-600 transition-colors ml-0.5 font-bold text-xs">✕</button>
+                        </span>
+                      ))}
                     </div>
-                    {misturas.length > 1 && (
-                      <button onClick={() => removeMistura(prato.id)} className="mt-2 text-red-400 hover:text-red-600">
-                        <Trash2 size={18} />
-                      </button>
-                    )}
+                  )}
+                  {/* Input para adicionar */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={misturaDraft}
+                      onChange={e => setMisturaDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitMistura(); } }}
+                      placeholder="Digite o nome da mistura e pressione Enter... (ex: Frango Grelhado)"
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 outline-none"
+                    />
+                    <button onClick={commitMistura} disabled={!misturaDraft.trim()}
+                      className="px-4 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-40 transition-colors text-sm font-medium flex items-center gap-1">
+                      <Plus size={14} /> Add
+                    </button>
                   </div>
-                ))}
-              </div>
+                  <p className="text-xs text-gray-400 mt-1">Pressione <kbd className="bg-gray-100 border border-gray-300 rounded px-1 text-[10px]">Enter</kbd> ou clique em Add para incluir cada mistura</p>
+                </div>
 
-              {/* ── Seção Guarnições ── */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                {/* ── Guarnições — tag input ── */}
+                <div>
+                  <label className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-2">
                     <span className="text-lg">🥗</span> Guarnições da Semana
-                    <span className="text-xs font-normal text-gray-400 ml-1">acompanhamentos / saladas</span>
+                    <span className="text-xs font-normal text-gray-400">acompanhamentos / saladas</span>
                   </label>
-                  <button onClick={addGuarnicao} className="flex items-center gap-1 text-sm text-green-600 hover:text-green-700 font-medium">
-                    <Plus size={14} /> Adicionar Guarnição
-                  </button>
-                </div>
-                {guarnicoes.map((prato, idx) => (
-                  <div key={prato.id} className="flex gap-3 items-start bg-green-50/50 rounded-lg p-3 border border-green-100">
-                    <span className="text-sm font-bold text-green-500 mt-2 w-6 text-center">{idx + 1}</span>
-                    <div className="flex-1 space-y-2">
-                      <input type="text" placeholder="Nome da guarnição (ex: Arroz Branco)" value={prato.nome}
-                        onChange={e => updateGuarnicao(prato.id, 'nome', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-300 outline-none" />
-                      <input type="text" placeholder="Descrição (opcional)" value={prato.descricao || ''}
-                        onChange={e => updateGuarnicao(prato.id, 'descricao', e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none text-gray-600" />
+                  {guarnicoesTags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {guarnicoesTags.map(tag => (
+                        <span key={tag}
+                          className="inline-flex items-center gap-1.5 bg-green-100 text-green-800 border border-green-300 px-3 py-1.5 rounded-full text-sm font-medium">
+                          🥗 {tag}
+                          <button onClick={() => removeGuarnicaoTag(tag)}
+                            className="text-green-500 hover:text-red-600 transition-colors ml-0.5 font-bold text-xs">✕</button>
+                        </span>
+                      ))}
                     </div>
-                    {guarnicoes.length > 1 && (
-                      <button onClick={() => removeGuarnicao(prato.id)} className="mt-2 text-red-400 hover:text-red-600">
-                        <Trash2 size={18} />
-                      </button>
-                    )}
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={guarnicaoDraft}
+                      onChange={e => setGuarnicaoDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitGuarnicao(); } }}
+                      placeholder="Digite o nome da guarnição e pressione Enter... (ex: Arroz Branco)"
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none"
+                    />
+                    <button onClick={commitGuarnicao} disabled={!guarnicaoDraft.trim()}
+                      className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 transition-colors text-sm font-medium flex items-center gap-1">
+                      <Plus size={14} /> Add
+                    </button>
                   </div>
-                ))}
-              </div>
+                  <p className="text-xs text-gray-400 mt-1">Pressione <kbd className="bg-gray-100 border border-gray-300 rounded px-1 text-[10px]">Enter</kbd> ou clique em Add para incluir cada guarnição</p>
+                </div>
+              </div>{/* end space-y-3 */}
 
               <div className="flex gap-3 pt-2 border-t border-gray-100">
                 <button onClick={handleSaveMenu} disabled={saving}
                   className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors font-medium">
                   <Save size={16} /> {saving ? 'Salvando...' : 'Salvar e Ativar Cardápio'}
                 </button>
-                <button onClick={() => setShowForm(false)}
+                <button onClick={() => { setShowForm(false); setMisturasTags([]); setGuarnicoesTags([]); setMisturaDraft(''); setGuarnicaoDraft(''); }}
                   className="px-5 py-2.5 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">
                   Cancelar
                 </button>
