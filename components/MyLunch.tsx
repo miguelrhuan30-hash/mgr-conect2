@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, getDocs,
-  deleteDoc, updateDoc, Timestamp, limit, doc
+  deleteDoc, updateDoc, setDoc, Timestamp, limit, doc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   CollectionName, LunchMenu, LunchDish, LunchChoice, LunchDayChoice,
-  LunchLocation, LunchLocationType, LunchConfig,
+  LunchLocation, LunchLocationType, LunchConfig, MarmitaSize,
 } from '../types';
 import {
   UtensilsCrossed, CheckCircle2, MapPin, Building2, Plane,
@@ -38,6 +38,12 @@ type DaySelection = { misturas: string[]; guarnicoes: string[] };
 
 const emptyDaySelection = (): DaySelection => ({ misturas: [], guarnicoes: [] });
 
+const MARMITA_SIZES: { value: MarmitaSize; label: string; emoji: string }[] = [
+  { value: 'pequena', label: 'Pequena', emoji: '🥣' },
+  { value: 'media',   label: 'Média',   emoji: '🍛' },
+  { value: 'grande',  label: 'Grande',  emoji: '🍲' },
+];
+
 /* ════════════════════════════════════════════════════════════════
    COMPONENT
    ════════════════════════════════════════════════════════════════ */
@@ -57,6 +63,9 @@ const MyLunch: React.FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [marmitaSizes, setMarmitaSizes] = useState<Record<DayKey, MarmitaSize>>({
+    segunda: 'media', terca: 'media', quarta: 'media', quinta: 'media', sexta: 'media',
+  });
 
   // Edit an existing day choice
   const [editingDay, setEditingDay] = useState<DayKey | null>(null);
@@ -213,6 +222,7 @@ const MyLunch: React.FC = () => {
               const dish = sideOptions.find(p => p.id === id);
               return { id, nome: dish?.nome ?? id };
             }),
+            tamanho: marmitaSizes[day],
           };
           escolhas[day] = dc;
         } else {
@@ -275,7 +285,9 @@ const MyLunch: React.FC = () => {
         if (clientName) docData.clienteNome = clientName;
         if (coords) docData.coordenadas = coords;
       }
-      await addDoc(collection(db, CollectionName.LUNCH_LOCATIONS), docData);
+      // Upsert: setDoc com ID determinístico para evitar duplicação ao trocar endereço
+      const locationDocId = `${currentUser.uid}_${todayISO}`;
+      await setDoc(doc(db, CollectionName.LUNCH_LOCATIONS, locationDocId), docData);
     } catch (err) {
       console.error('Erro ao enviar localização:', err);
       alert('Erro ao enviar localização.');
@@ -770,6 +782,25 @@ const MyLunch: React.FC = () => {
                     })}
                   </div>
                 </div>
+
+                {/* ── Tamanho da marmita ── */}
+                <div>
+                  <span className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-2 block">📦 Tamanho da Marmita</span>
+                  <div className="flex gap-2">
+                    {MARMITA_SIZES.map(sz => (
+                      <button key={sz.value}
+                        onClick={() => setMarmitaSizes(prev => ({ ...prev, [day]: sz.value }))}
+                        className={`flex-1 flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl border-2 transition-all active:scale-[0.98] ${
+                          marmitaSizes[day] === sz.value
+                            ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-sm'
+                            : 'border-gray-200 text-gray-600 hover:border-purple-300 hover:bg-purple-50/30'
+                        }`}>
+                        <span className="text-lg">{sz.emoji}</span>
+                        <span className="text-xs font-bold">{sz.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -842,16 +873,10 @@ const LocationForm: React.FC<LocationFormProps> = ({
         </div>
         {locationType === 'campo' && (
           <div className="px-4 pb-4 space-y-3 border-t border-green-100 pt-3">
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={e => { e.stopPropagation(); handleGetLocation(); }} disabled={gettingGPS}
-                className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors text-sm font-medium">
-                <Navigation size={14} /> {gettingGPS ? 'Buscando GPS...' : 'Usar Minha Localização'}
-              </button>
               <button onClick={e => { e.stopPropagation(); setShowMapPicker(true); }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium">
-                <MapIcon size={14} /> Abrir Mapa
+                <MapIcon size={14} /> Abrir Mapa para Localizar
               </button>
-            </div>
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Endereço</label>
               <input type="text" value={address} onChange={e => setAddress(e.target.value)} onClick={e => e.stopPropagation()}

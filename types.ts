@@ -1054,9 +1054,12 @@ export interface LunchMenu {
 }
 
 /** Seleção diária de misturas e guarnições (até 2 de cada) */
+export type MarmitaSize = 'pequena' | 'media' | 'grande';
+
 export interface LunchDayChoice {
   misturas: { id: string; nome: string }[];    // até 2 misturas
   guarnicoes: { id: string; nome: string }[];  // até 2 guarnições
+  tamanho?: MarmitaSize;                       // tamanho da marmita
 }
 
 export interface LunchChoice {

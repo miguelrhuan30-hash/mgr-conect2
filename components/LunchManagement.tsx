@@ -7,7 +7,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   CollectionName, LunchMenu, LunchDish, LunchChoice, LunchDayChoice,
-  LunchLocation, LunchLocationType, LunchConfig,
+  LunchLocation, LunchLocationType, LunchConfig, MarmitaSize,
 } from '../types';
 import {
   UtensilsCrossed, Plus, Trash2, Save, Copy, Check,
@@ -244,12 +244,21 @@ const LunchManagement: React.FC = () => {
     return parts.join(', ') || '—';
   };
 
-  /* ─── Pedidos: filtrados para o dia ─── */
+  /* ─── Pedidos: filtrados para o dia (dedup por userId) ─── */
   const filteredChoices = useMemo(() => {
-    return choices.filter(c => {
+    const withChoice = choices.filter(c => {
       const dc = c.escolhas[selectedDay] as LunchDayChoice | null | undefined;
       return dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0);
     });
+    // Dedup: manter somente o último por userId (mais recente = enviadoEm mais novo)
+    const byUser = new Map<string, LunchChoice>();
+    withChoice.forEach(c => {
+      const existing = byUser.get(c.userId);
+      if (!existing || (c.enviadoEm?.toMillis?.() ?? 0) > (existing.enviadoEm?.toMillis?.() ?? 0)) {
+        byUser.set(c.userId, c);
+      }
+    });
+    return Array.from(byUser.values());
   }, [choices, selectedDay]);
 
   /* ─── Locations split ─── */
@@ -271,25 +280,51 @@ const LunchManagement: React.FC = () => {
   }, [locations, selectedDay, selectedMenuId, menus]);
 
   /* ─── Clipboard: lista simples ─── */
+  const getDayDateISO = (): string => {
+    const menuObj = menus.find(m => m.id === selectedMenuId);
+    if (!menuObj) return '';
+    const dayIndex = DAY_KEYS.indexOf(selectedDay);
+    const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
+    menuDate.setDate(menuDate.getDate() + dayIndex);
+    return menuDate.toISOString().split('T')[0];
+  };
+
+  const TAMANHO_LABELS: Record<string, string> = {
+    pequena: 'pequena', media: 'média', grande: 'grande',
+  };
+
   const buildClipboardText = (): string => {
     const menuObj = menus.find(m => m.id === selectedMenuId);
     const weekLabel = menuObj ? `${formatDateBR(menuObj.weekStart)} a ${formatDateBR(menuObj.weekEnd)}` : '';
-    let text = `📋 Pedidos ${DAY_LABELS[selectedDay]} (${weekLabel}):\n\n`;
+    const dayDateLabel = getDayDateISO() ? formatDateBR(getDayDateISO()) : '';
+    let text = `📋 Pedidos ${DAY_LABELS[selectedDay]} (${dayDateLabel}):\n\n`;
     filteredChoices.forEach((c, i) => {
       const dc = c.escolhas[selectedDay] as LunchDayChoice | null;
       const mistStr  = dc?.misturas?.map(m => m.nome).join(' + ')  || '—';
       const garnStr  = dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—';
-      text += `${i + 1}. ${c.userName}\n   🥩 ${mistStr}\n   🥗 ${garnStr}\n`;
+      const tamLabel = dc?.tamanho ? TAMANHO_LABELS[dc.tamanho] || dc.tamanho : 'média';
+      text += `${i + 1} ${tamLabel}: ${c.userName}\n   🥩 ${mistStr}\n   🥗 ${garnStr}\n`;
     });
-    text += `\nTotal: ${filteredChoices.length} pedido(s)`;
+    text += `\nTotal: ${filteredChoices.length} marmita(s)`;
     return text;
   };
 
   /* ─── Clipboard: agrupado por endereço ─── */
   const groupedByAddress = useMemo(() => {
     const sedeLabel = `${sedeNome}${sedeEndereco ? ' - ' + sedeEndereco : ''}`;
-    type MealInfo = { userName: string; misturas: string; guarnicoes: string };
+    type MealInfo = { userName: string; misturas: string; guarnicoes: string; tamanho: string };
     const groups: Record<string, { address: string; meals: MealInfo[] }> = {};
+
+    // Dedup locations: apenas o mais recente por userId+data
+    const latestLocs = new Map<string, LunchLocation>();
+    locations.forEach(l => {
+      const key = `${l.userId}_${l.data}`;
+      const existing = latestLocs.get(key);
+      if (!existing || (l.informadoEm?.toMillis?.() ?? 0) > (existing.informadoEm?.toMillis?.() ?? 0)) {
+        latestLocs.set(key, l);
+      }
+    });
+    const dedupedLocations = Array.from(latestLocs.values());
 
     filteredChoices.forEach(c => {
       const menuObj = menus.find(m => m.id === selectedMenuId);
@@ -298,12 +333,13 @@ const LunchManagement: React.FC = () => {
       const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
       menuDate.setDate(menuDate.getDate() + dayIndex);
       const dateISO = menuDate.toISOString().split('T')[0];
-      const loc = locations.find(l => l.userId === c.userId && l.data === dateISO);
+      const loc = dedupedLocations.find(l => l.userId === c.userId && l.data === dateISO);
       if (loc?.tipo === 'fora_cidade') return;
 
       const dc = c.escolhas[selectedDay] as LunchDayChoice | null;
       const mistStr  = dc?.misturas?.map(m => m.nome).join(' + ')  || '—';
       const garnStr  = dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—';
+      const tamLabel = dc?.tamanho ? (TAMANHO_LABELS[dc.tamanho] || dc.tamanho) : 'média';
 
       let addressKey: string;
       if (!loc || loc.tipo === 'sede') {
@@ -313,7 +349,7 @@ const LunchManagement: React.FC = () => {
         addressKey = addrParts || 'Endereço não informado';
       }
       if (!groups[addressKey]) groups[addressKey] = { address: addressKey, meals: [] };
-      groups[addressKey].meals.push({ userName: c.userName, misturas: mistStr, guarnicoes: garnStr });
+      groups[addressKey].meals.push({ userName: c.userName, misturas: mistStr, guarnicoes: garnStr, tamanho: tamLabel });
     });
     return Object.values(groups);
   }, [filteredChoices, locations, selectedDay, selectedMenuId, menus, sedeNome, sedeEndereco]);
@@ -321,11 +357,12 @@ const LunchManagement: React.FC = () => {
   const buildGroupedClipboardText = (): string => {
     const menuObj = menus.find(m => m.id === selectedMenuId);
     const weekLabel = menuObj ? `${formatDateBR(menuObj.weekStart)} a ${formatDateBR(menuObj.weekEnd)}` : '';
-    let text = `📋 Pedidos por Endereço — ${DAY_LABELS[selectedDay]} (${weekLabel}):\n`;
+    const dayDateLabel = getDayDateISO() ? formatDateBR(getDayDateISO()) : '';
+    let text = `📋 Pedidos por Endereço — ${DAY_LABELS[selectedDay]} (${dayDateLabel}):\n`;
     groupedByAddress.forEach(group => {
       text += `\n📍 ${group.address}\n`;
-      group.meals.forEach(m => {
-        text += `   • ${m.userName}\n     🥩 ${m.misturas}\n     🥗 ${m.guarnicoes}\n`;
+      group.meals.forEach((m, i) => {
+        text += `   ${i + 1} ${m.tamanho}:  ${m.userName}\n     🥩 ${m.misturas}\n     🥗 ${m.guarnicoes}\n`;
       });
     });
     const foraChoices = filteredChoices.filter(c => {
@@ -342,6 +379,9 @@ const LunchManagement: React.FC = () => {
       text += `\n✈️ Fora da Cidade (NÃO pedir):\n`;
       foraChoices.forEach(c => { text += `   ❌ ${c.userName}\n`; });
     }
+    // Totalizar marmitas por endereço
+    const totalMarmitas = groupedByAddress.reduce((sum, g) => sum + g.meals.length, 0);
+    text += `\n📦 Total: ${totalMarmitas} marmita(s)`;
     return text;
   };
 
