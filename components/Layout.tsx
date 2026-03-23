@@ -43,6 +43,7 @@ import {
   Camera,
   FileSpreadsheet,
   UtensilsCrossed,
+  SmilePlus,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -119,6 +120,9 @@ const Layout: React.FC = () => {
       '/app/bi':               'BI & Inteligência',
       '/app/meu-almoco':       'Meu Almoço',
       '/app/gestao-almoco':    'Gestão de Almoços',
+      '/app/pesquisas':           'Pesquisas Internas',
+      '/app/pesquisas/responder': 'Responder Pesquisa',
+      '/app/pesquisas/dashboard': 'Dashboard People Analytics',
     };
 
     const pageTitle = PAGE_TITLES[location.pathname] ?? location.pathname;
@@ -196,12 +200,14 @@ const Layout: React.FC = () => {
   const VEHICLE_ROUTES  = ['/app/veiculos'];
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
   const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
+  const PEOPLE_ROUTES   = ['/app/usuarios', '/app/relatorios-ponto', '/app/pesquisas', '/app/setores', '/app/locais'];
 
   const isInOSGroup      = OS_ROUTES.some(r => location.pathname.startsWith(r));
   const isInClientGroup  = CLIENT_ROUTES.some(r => location.pathname.startsWith(r));
   const isInVehicleGroup = VEHICLE_ROUTES.some(r => location.pathname.startsWith(r));
   const isInIntelGroup   = INTEL_ROUTES.some(r => location.pathname.startsWith(r));
   const isInLunchGroup   = LUNCH_ROUTES.some(r => location.pathname.startsWith(r));
+  const isInPeopleGroup  = PEOPLE_ROUTES.some(r => location.pathname.startsWith(r));
 
   // Auto-expand groups when on their routes
   const osGroupOpen      = expandedGroup === 'os'       || isInOSGroup;
@@ -209,6 +215,7 @@ const Layout: React.FC = () => {
   const vehicleGroupOpen = expandedGroup === 'vehicles' || isInVehicleGroup;
   const intelGroupOpen   = expandedGroup === 'intel'    || isInIntelGroup;
   const lunchGroupOpen   = expandedGroup === 'lunch'    || isInLunchGroup;
+  const peopleGroupOpen  = expandedGroup === 'people'   || isInPeopleGroup;
 
   const navItems: NavItem[] = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
@@ -287,13 +294,24 @@ const Layout: React.FC = () => {
 
     // Management Section
     { to: '/app/campanhas',        icon: Target,       label: 'Campanhas (MGR Coins)', visible: can('canManageSettings') },
-    { to: '/app/relatorios-ponto', icon: CalendarCheck,label: 'Espelho de Ponto',      visible: can('canViewAttendanceReports') },
     { to: '/app/logs',             icon: Activity,     label: 'Log do Sistema',        visible: userProfile?.permissions?.canViewLogs === true || userProfile?.role === 'admin' },
 
-    // Admin Section
-    { to: '/app/usuarios', icon: Users,  label: 'Equipe & RH',      visible: can('canManageUsers') },
-    { to: '/app/setores',  icon: Shield, label: 'Cargos & Acessos', visible: can('canManageSectors') },
-    { to: '/app/locais',   icon: MapPin, label: 'Locais de Trabalho',visible: can('canManageUsers') },
+    // ── Gestão de Pessoas (grupo com submenu) ──
+    {
+      to: '/app/usuarios',
+      icon: SmilePlus,
+      label: 'Gestão de Pessoas',
+      visible: can('canManageUsers') || can('canViewAttendanceReports') || can('canManageSurveys') || true, // pesquisas visível p/ todos
+      children: [
+        { to: '/app/usuarios',           icon: Users,        label: 'Equipe & RH',           visible: can('canManageUsers') },
+        { to: '/app/setores',            icon: Shield,       label: 'Cargos & Acessos',       visible: can('canManageSectors') },
+        { to: '/app/locais',             icon: MapPin,       label: 'Locais de Trabalho',     visible: can('canManageUsers') },
+        { to: '/app/relatorios-ponto',   icon: CalendarCheck,label: 'Folha de Ponto',         visible: can('canViewAttendanceReports') },
+        { to: '/app/pesquisas/responder',icon: ClipboardList, label: 'Responder Pesquisa',    visible: true },
+        { to: '/app/pesquisas',          icon: BarChart3,     label: 'Gestão de Pesquisas',   visible: can('canManageSurveys') },
+        { to: '/app/pesquisas/dashboard',icon: BarChart3,     label: 'Dashboard Analytics',   visible: can('canManageSurveys') },
+      ],
+    },
   ];
 
   // Add "Editar Site" only for Developers/Admins
@@ -412,12 +430,14 @@ const Layout: React.FC = () => {
                                  : item.label === 'Gestão de Veículos'  ? 'vehicles'
                                  : item.label === 'Inteligência de Negócios' ? 'intel'
                                  : item.label === 'Almoço MGR'           ? 'lunch'
+                                 : item.label === 'Gestão de Pessoas'  ? 'people'
                                  : item.label;
                 const isOpen = item.label === 'Ordens de Serviço'         ? osGroupOpen
                              : item.label === 'Gestão de Clientes'        ? clientGroupOpen
                              : item.label === 'Gestão de Veículos'        ? vehicleGroupOpen
                              : item.label === 'Inteligência de Negócios'  ? intelGroupOpen
                              : item.label === 'Almoço MGR'                ? lunchGroupOpen
+                             : item.label === 'Gestão de Pessoas'         ? peopleGroupOpen
                              : expandedGroup === isGroupKey;
                 const visibleChildren = item.children.filter(c => c.visible);
                 if (visibleChildren.length === 0) return null;

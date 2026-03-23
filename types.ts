@@ -58,6 +58,9 @@ export interface PermissionSet {
 
   // ── Lunch Management ───────────────────────────────────────────────────────
   canManageLunch?: boolean;       // Gestão de Almoços (cardápio + relatórios)
+
+  // ── People Analytics / Surveys ─────────────────────────────────────────────
+  canManageSurveys?: boolean;     // Criar/publicar/ver dashboard de pesquisas
 }
 
 export interface Sector {
@@ -901,6 +904,10 @@ export enum CollectionName {
   LUNCH_CHOICES = 'lunch_choices',
   LUNCH_LOCATIONS = 'lunch_locations',
   LUNCH_CONFIG = 'lunch_config',
+  // Sprint 50 — Módulo People Analytics
+  SURVEYS = 'surveys',
+  SURVEY_RESPONSES = 'survey_responses',
+  SURVEY_PARTICIPATION = 'survey_participation',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -1085,4 +1092,74 @@ export interface LunchLocation {
   informadoEm: Timestamp;
   menuId: string;              // FK → lunch_menus
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sprint 50 — Módulo People Analytics / Pesquisas Internas
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SurveyQuestionType =
+  | 'escala_0_10'         // Slider 0–10 → média numérica
+  | 'multipla_ordenada'   // Opções pior→melhor → % favorável
+  | 'multipla_categorica' // Opções sem ordem → distribuição %
+  | 'satisfacao'          // Muito Insatisfeito→Muito Satisfeito → % satisfeito
+  | 'dificuldade_1_5'     // 1 Muito Difícil’5 Muito Fácil → Índice Fricção
+  | 'campo_livre'         // Caixa de texto livre → Mural qualitativo
+  | 'enps';               // Escala 0–10 com motor Detrator/Neutro/Promotor
+
+export type SurveyKpiType =
+  | 'media_numerica'
+  | 'percentual_favoravel'
+  | 'distribuicao_categorica'
+  | 'taxa_satisfacao'
+  | 'indice_friccao'
+  | 'mural_qualitativo'
+  | 'enps_score'
+  | 'delta_melhoria_antes'
+  | 'delta_melhoria_depois';
+
+export type SurveyType = 'pulso' | 'transicao' | 'inovacao';
+export type SurveyStatus = 'rascunho' | 'ativo' | 'encerrado';
+
+export interface SurveyQuestion {
+  id: string;
+  texto: string;
+  tipo: SurveyQuestionType;
+  kpiTipo: SurveyKpiType;
+  opcoes?: string[];          // Para multipla_ordenada / multipla_categorica / satisfacao / dificuldade_1_5
+  obrigatorio: boolean;
+  ordem: number;
+  permitirOutro?: boolean;    // Mostrar campo 'Outro (descreva)'
+}
+
+export interface Survey {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  tipo: SurveyType;
+  status: SurveyStatus;
+  perguntas: SurveyQuestion[];
+  criadoPor: string;          // userId do admin
+  criadoEm: Timestamp;
+  encerradoEm?: Timestamp;
+  totalRespostas?: number;    // calculado
+}
+
+/** Uma única resposta anônima (sem userId) */
+export interface SurveyResponse {
+  id: string;
+  surveyId: string;
+  respostas: Record<string, string | number | string[]>; // questionId → valor
+  respondidoEm: Timestamp;
+  // userId intencionalmente AUSENTE — anonimato absoluto
+}
+
+/** Flag de participação — só registra SE já respondeu, sem vincular ao conteúdo */
+export interface SurveyParticipation {
+  id: string;
+  userId: string;
+  surveyId: string;
+  respondeuEm: Timestamp;
+}
+
 

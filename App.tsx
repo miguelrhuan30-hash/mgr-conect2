@@ -76,6 +76,13 @@ const LunchManagement = lazy(() => import('./components/LunchManagement'));
 const MyLunch         = lazy(() => import('./components/MyLunch'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT 50: People Analytics
+// ─────────────────────────────────────────────
+const SurveyManagement = lazy(() => import('./components/SurveyManagement'));
+const SurveyResponder  = lazy(() => import('./components/SurveyResponder'));
+const SurveyDashboard  = lazy(() => import('./components/SurveyDashboard'));
+
+// ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
 // ─────────────────────────────────────────────
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean; children?: React.ReactNode }) => {
@@ -363,6 +370,15 @@ const AppContent: React.FC = () => {
           <Route path="gestao-almoco"
             element={hasPermission('canManageLunch') ? <LunchManagement /> : <Navigate to="/app" />} />
           <Route path="meu-almoco" element={<MyLunch />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT 50 — People Analytics
+          ════════════════════════════════════════ */}
+          <Route path="pesquisas"
+            element={hasPermission('canManageSurveys') ? <SurveyManagement /> : <Navigate to="/app" />} />
+          <Route path="pesquisas/responder" element={<SurveyResponder />} />
+          <Route path="pesquisas/dashboard"
+            element={hasPermission('canManageSurveys') ? <SurveyDashboard /> : <Navigate to="/app" />} />
 
         </Route>{/* fim /app */}
 
