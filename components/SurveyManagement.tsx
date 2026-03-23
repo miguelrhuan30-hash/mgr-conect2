@@ -13,6 +13,7 @@ import {
   ClipboardList, Plus, Trash2, Edit, Play, Square, ChevronDown, ChevronRight,
   Users, BarChart3, AlertTriangle, X, CheckCircle2, Loader2, Eye, Copy,
   LayoutTemplate, RefreshCw, Rocket, FileText, Save, PlusCircle,
+  ArrowUp, ArrowDown,
 } from 'lucide-react';
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -291,6 +292,15 @@ const SurveyManagement: React.FC = () => {
 
   const addTplQuestion = () => setTplPerguntas(p => [...p, { ...blankQuestion(), ordem: p.length + 1 }]);
   const removeTplQuestion = (id: string) => setTplPerguntas(p => p.filter(q => q.id !== id));
+  const moveTplQuestion = (idx: number, dir: 'up' | 'down') => {
+    setTplPerguntas(prev => {
+      const arr = [...prev];
+      const target = dir === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= arr.length) return arr;
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      return arr;
+    });
+  };
   const updateTplQuestion = (id: string, patch: Partial<SurveyQuestion>) =>
     setTplPerguntas(p => p.map(q => q.id === id ? { ...q, ...patch } : q));
 
@@ -774,10 +784,12 @@ const SurveyManagement: React.FC = () => {
                 </div>
                 <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                   {tplPerguntas.map((q, idx) => (
-                    <QuestionEditor key={q.id} q={q} idx={idx}
+                    <QuestionEditor key={q.id} q={q} idx={idx} total={tplPerguntas.length}
                       onChange={patch => updateTplQuestion(q.id, patch)}
                       onChangeType={t => handleTplTypeChange(q.id, t)}
-                      onDelete={() => removeTplQuestion(q.id)} />
+                      onDelete={() => removeTplQuestion(q.id)}
+                      onMoveUp={() => moveTplQuestion(idx, 'up')}
+                      onMoveDown={() => moveTplQuestion(idx, 'down')} />
                   ))}
                   {tplPerguntas.length === 0 && (
                     <p className="text-xs text-gray-400 text-center py-6 border border-dashed border-gray-200 rounded-xl">
@@ -811,11 +823,14 @@ const SurveyManagement: React.FC = () => {
 interface QuestionEditorProps {
   q: SurveyQuestion;
   idx: number;
+  total?: number;
   onChange: (patch: Partial<SurveyQuestion>) => void;
   onChangeType: (tipo: SurveyQuestionType) => void;
   onDelete: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
-const QuestionEditor: React.FC<QuestionEditorProps> = ({ q, idx, onChange, onChangeType, onDelete }) => {
+const QuestionEditor: React.FC<QuestionEditorProps> = ({ q, idx, total = 0, onChange, onChangeType, onDelete, onMoveUp, onMoveDown }) => {
   const needsOpcoes = ['multipla_ordenada','multipla_categorica','satisfacao','dificuldade_1_5'].includes(q.tipo);
   const [opcoesText, setOpcoesText] = useState((q.opcoes ?? []).join('\n'));
 
@@ -827,7 +842,20 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({ q, idx, onChange, onCha
   return (
     <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-violet-500 bg-violet-50 rounded-full px-2 py-0.5">Pergunta {idx + 1}</span>
+        <div className="flex items-center gap-1.5">
+          {/* Reorder buttons */}
+          <div className="flex flex-col gap-0.5">
+            <button onClick={onMoveUp} disabled={idx === 0} title="Mover para cima"
+              className="p-0.5 text-gray-400 hover:text-violet-600 disabled:opacity-20 disabled:cursor-not-allowed rounded transition-colors">
+              <ArrowUp size={12} />
+            </button>
+            <button onClick={onMoveDown} disabled={idx >= total - 1} title="Mover para baixo"
+              className="p-0.5 text-gray-400 hover:text-violet-600 disabled:opacity-20 disabled:cursor-not-allowed rounded transition-colors">
+              <ArrowDown size={12} />
+            </button>
+          </div>
+          <span className="text-xs font-bold text-violet-500 bg-violet-50 rounded-full px-2 py-0.5">Pergunta {idx + 1}</span>
+        </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-mono text-gray-400">KPI: {q.kpiTipo}</span>
           <button onClick={onDelete} className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"><Trash2 size={14} /></button>
