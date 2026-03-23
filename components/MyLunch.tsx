@@ -5,11 +5,14 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { CollectionName, LunchMenu, LunchChoice, LunchLocation, LunchLocationType, LunchConfig } from '../types';
+import {
+  CollectionName, LunchMenu, LunchDish, LunchChoice, LunchDayChoice,
+  LunchLocation, LunchLocationType, LunchConfig,
+} from '../types';
 import {
   UtensilsCrossed, CheckCircle2, MapPin, Building2, Plane,
   AlertTriangle, Navigation, Pencil, Send, ArrowRight, Clock,
-  Info, ChevronDown, Map as MapIcon
+  Info, ChevronDown, Map as MapIcon,
 } from 'lucide-react';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
@@ -28,13 +31,12 @@ const DAY_LABELS: Record<DayKey, string> = {
   sexta: 'Sexta-feira',
 };
 
-const DAY_EMOJIS: Record<DayKey, string> = {
-  segunda: '📅',
-  terca: '📅',
-  quarta: '📅',
-  quinta: '📅',
-  sexta: '📅',
-};
+const MAX_PER_CATEGORY = 2;
+
+/** Seleção de um dia: lista de IDs de misturas e guarnições escolhidas */
+type DaySelection = { misturas: string[]; guarnicoes: string[] };
+
+const emptyDaySelection = (): DaySelection => ({ misturas: [], guarnicoes: [] });
 
 /* ════════════════════════════════════════════════════════════════
    COMPONENT
@@ -43,22 +45,20 @@ const DAY_EMOJIS: Record<DayKey, string> = {
 const MyLunch: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
 
-  // ── Active menu ──
   const [activeMenu, setActiveMenu] = useState<LunchMenu | null>(null);
   const [loadingMenu, setLoadingMenu] = useState(true);
-
-  // ── User's choices ──
   const [existingChoice, setExistingChoice] = useState<LunchChoice | null>(null);
   const [loadingChoice, setLoadingChoice] = useState(true);
 
-  // ── Selection form ──
-  const [selections, setSelections] = useState<Record<DayKey, string>>({
-    segunda: '', terca: '', quarta: '', quinta: '', sexta: '',
+  // Local selections: for each day, which mistura IDs and guarnicao IDs are chosen
+  const [selections, setSelections] = useState<Record<DayKey, DaySelection>>({
+    segunda: emptyDaySelection(), terca: emptyDaySelection(), quarta: emptyDaySelection(),
+    quinta: emptyDaySelection(), sexta: emptyDaySelection(),
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  // ── Location form ──
+  // Location
   const [todayLocation, setTodayLocation] = useState<LunchLocation | null>(null);
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [locationType, setLocationType] = useState<LunchLocationType | ''>('');
@@ -70,7 +70,7 @@ const MyLunch: React.FC = () => {
   const [showForaCidadeConfirm, setShowForaCidadeConfirm] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
 
-  // ── Sede config ──
+  // Sede config
   const [sedeNome, setSedeNome] = useState('Sede MGR');
   const [sedeEndereco, setSedeEndereco] = useState('');
   const [horarioLimite, setHorarioLimite] = useState('10:00');
@@ -80,7 +80,7 @@ const MyLunch: React.FC = () => {
   const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const isPastDeadline = currentTimeStr >= horarioLimite;
 
-  /* ─── Load sede config ─── */
+  // ── Load sede config ──
   useEffect(() => {
     const docRef = doc(db, CollectionName.LUNCH_CONFIG, 'sede');
     return onSnapshot(docRef, snap => {
@@ -93,7 +93,7 @@ const MyLunch: React.FC = () => {
     });
   }, []);
 
-  /* ─── Real-time: active menu ─── */
+  // ── Active menu ──
   useEffect(() => {
     const q = query(
       collection(db, CollectionName.LUNCH_MENUS),
@@ -102,21 +102,14 @@ const MyLunch: React.FC = () => {
       limit(1),
     );
     return onSnapshot(q, snap => {
-      if (!snap.empty) {
-        setActiveMenu({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchMenu);
-      } else {
-        setActiveMenu(null);
-      }
+      setActiveMenu(snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchMenu));
       setLoadingMenu(false);
     });
   }, []);
 
-  /* ─── Real-time: existing choice for current user + menu ─── */
+  // ── Existing choice ──
   useEffect(() => {
-    if (!activeMenu || !currentUser) {
-      setLoadingChoice(false);
-      return;
-    }
+    if (!activeMenu || !currentUser) { setLoadingChoice(false); return; }
     const q = query(
       collection(db, CollectionName.LUNCH_CHOICES),
       where('menuId', '==', activeMenu.id),
@@ -124,21 +117,14 @@ const MyLunch: React.FC = () => {
       limit(1),
     );
     return onSnapshot(q, snap => {
-      if (!snap.empty) {
-        setExistingChoice({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchChoice);
-      } else {
-        setExistingChoice(null);
-      }
+      setExistingChoice(snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchChoice));
       setLoadingChoice(false);
     });
   }, [activeMenu, currentUser]);
 
-  /* ─── Real-time: today's location ─── */
+  // ── Today's location ──
   useEffect(() => {
-    if (!currentUser) {
-      setLoadingLocation(false);
-      return;
-    }
+    if (!currentUser) { setLoadingLocation(false); return; }
     const q = query(
       collection(db, CollectionName.LUNCH_LOCATIONS),
       where('userId', '==', currentUser.uid),
@@ -146,28 +132,53 @@ const MyLunch: React.FC = () => {
       limit(1),
     );
     return onSnapshot(q, snap => {
-      if (!snap.empty) {
-        setTodayLocation({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchLocation);
-      } else {
-        setTodayLocation(null);
-      }
+      setTodayLocation(snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchLocation));
       setLoadingLocation(false);
     });
   }, [currentUser, todayISO]);
 
-  /* ─── Submit choices ─── */
+  // ── Derived: pratos by category ──
+  const meatOptions  = useMemo(() => activeMenu?.pratos.filter(p => p.categoria === 'mistura')   ?? [], [activeMenu]);
+  const sideOptions  = useMemo(() => activeMenu?.pratos.filter(p => p.categoria === 'guarnicao') ?? [], [activeMenu]);
+
+  // ── Toggle item in selection ──
+  const toggleItem = (day: DayKey, categoria: 'misturas' | 'guarnicoes', itemId: string) => {
+    setSelections(prev => {
+      const daySel = { ...prev[day] };
+      const arr = [...daySel[categoria]];
+      const idx = arr.indexOf(itemId);
+      if (idx >= 0) {
+        arr.splice(idx, 1); // remove
+      } else {
+        if (arr.length >= MAX_PER_CATEGORY) return prev; // limit reached
+        arr.push(itemId);
+      }
+      daySel[categoria] = arr;
+      return { ...prev, [day]: daySel };
+    });
+  };
+
+  // ── Submit choices ──
   const handleSubmitChoices = async () => {
     if (!currentUser || !userProfile || !activeMenu) return;
     setSubmitting(true);
     try {
       const escolhas: LunchChoice['escolhas'] = {};
       for (const day of DAY_KEYS) {
-        const pratoId = selections[day];
-        if (pratoId) {
-          const prato = activeMenu.pratos.find(p => p.id === pratoId);
-          if (prato) {
-            escolhas[day] = { pratoId: prato.id, pratoNome: prato.nome };
-          }
+        const sel = selections[day];
+        const hasAny = sel.misturas.length > 0 || sel.guarnicoes.length > 0;
+        if (hasAny) {
+          const dc: LunchDayChoice = {
+            misturas: sel.misturas.map(id => {
+              const dish = meatOptions.find(p => p.id === id);
+              return { id, nome: dish?.nome ?? id };
+            }),
+            guarnicoes: sel.guarnicoes.map(id => {
+              const dish = sideOptions.find(p => p.id === id);
+              return { id, nome: dish?.nome ?? id };
+            }),
+          };
+          escolhas[day] = dc;
         } else {
           escolhas[day] = null;
         }
@@ -181,7 +192,6 @@ const MyLunch: React.FC = () => {
         escolhas,
         enviadoEm: Timestamp.now(),
       });
-
       setSubmitted(true);
     } catch (err) {
       console.error('Erro ao enviar escolhas:', err);
@@ -191,96 +201,71 @@ const MyLunch: React.FC = () => {
     }
   };
 
-  /* ─── GPS location ─── */
+  // ── GPS ──
   const handleGetLocation = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocalização não é suportada pelo seu navegador.');
-      return;
-    }
+    if (!navigator.geolocation) { alert('Geolocalização não suportada.'); return; }
     setGettingGPS(true);
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
+      async pos => {
         const { latitude, longitude } = pos.coords;
         setCoords({ lat: latitude, lng: longitude });
-        // Reverse geocoding via Nominatim (free)
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
-          );
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`);
           const data = await res.json();
-          if (data.display_name) {
-            setAddress(data.display_name);
-          }
-        } catch (err) {
-          console.error('Erro ao buscar endereço:', err);
-        }
+          if (data.display_name) setAddress(data.display_name);
+        } catch (err) { console.error('Erro geocoding:', err); }
         setGettingGPS(false);
       },
-      (err) => {
-        console.error('Erro de GPS:', err);
-        alert('Não foi possível obter sua localização. Verifique as permissões do navegador.');
-        setGettingGPS(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000 }
+      err => { console.error('GPS error:', err); alert('Não foi possível obter localização.'); setGettingGPS(false); },
+      { enableHighAccuracy: true, timeout: 15000 },
     );
   };
 
-  /* ─── Submit location ─── */
+  // ── Submit location ──
   const handleSubmitLocation = async (tipo: LunchLocationType) => {
     if (!currentUser || !userProfile) return;
     setSubmittingLoc(true);
     try {
-      // Build the document — only include geo data for 'campo'
       const docData: Record<string, any> = {
         userId: currentUser.uid,
         userName: userProfile.nomeCompleto || userProfile.displayName || '',
         userSector: userProfile.sectorName || '',
-        data: todayISO,
-        tipo,
+        data: todayISO, tipo,
         informadoEm: Timestamp.now(),
         menuId: activeMenu?.id || '',
       };
-
       if (tipo === 'campo') {
         if (address) docData.endereco = address;
         if (clientName) docData.clienteNome = clientName;
         if (coords) docData.coordenadas = coords;
       }
-      // For 'sede' and 'fora_cidade', NO location data is needed
-
       await addDoc(collection(db, CollectionName.LUNCH_LOCATIONS), docData);
     } catch (err) {
       console.error('Erro ao enviar localização:', err);
-      alert('Erro ao enviar localização. Tente novamente.');
+      alert('Erro ao enviar localização.');
     } finally {
       setSubmittingLoc(false);
       setShowForaCidadeConfirm(false);
     }
   };
 
-  /* ─── Reset location (re-inform) ─── */
+  // ── Reset location ──
   const handleResetLocation = async () => {
     if (!todayLocation) return;
-    if (!confirm('Deseja alterar sua localização de hoje? A informação anterior será removida.')) return;
+    if (!confirm('Deseja alterar sua localização de hoje?')) return;
     try {
       await deleteDoc(doc(db, CollectionName.LUNCH_LOCATIONS, todayLocation.id));
-      setLocationType('');
-      setAddress('');
-      setClientName('');
-      setCoords(null);
-    } catch (err) {
-      console.error('Erro ao resetar localização:', err);
-      alert('Erro ao resetar localização.');
-    }
+      setLocationType(''); setAddress(''); setClientName(''); setCoords(null);
+    } catch (err) { alert('Erro ao resetar localização.'); }
   };
 
   /* ════════════════════════════════════════════════════════════════
      RENDER STATES
      ════════════════════════════════════════════════════════════════ */
 
-  const isLoading = loadingMenu || loadingChoice || loadingLocation;
+  const hasAnySelection = DAY_KEYS.some(d => selections[d].misturas.length > 0 || selections[d].guarnicoes.length > 0);
 
-  if (isLoading) {
+  if (loadingMenu || loadingChoice || loadingLocation) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex items-center gap-3 text-gray-400">
@@ -291,22 +276,18 @@ const MyLunch: React.FC = () => {
     );
   }
 
-  // ── No active menu ──
   if (!activeMenu) {
     return (
       <div className="max-w-lg mx-auto mt-12">
         <div className="text-center bg-white rounded-2xl border border-gray-200 shadow-sm p-10 space-y-4">
           <UtensilsCrossed size={48} className="mx-auto text-gray-300" />
           <h2 className="text-xl font-bold text-gray-800">Nenhum cardápio disponível</h2>
-          <p className="text-gray-500 text-sm">
-            O cardápio da semana ainda não foi cadastrado pela gestão. Aguarde a publicação.
-          </p>
+          <p className="text-gray-500 text-sm">O cardápio da semana ainda não foi cadastrado pela gestão. Aguarde a publicação.</p>
         </div>
       </div>
     );
   }
 
-  // ── Success screen ──
   if (submitted) {
     return (
       <div className="max-w-lg mx-auto mt-12">
@@ -318,10 +299,8 @@ const MyLunch: React.FC = () => {
           <p className="text-gray-500 text-sm">
             Seus pratos da semana foram registrados. Lembre-se de informar sua localização diariamente até as {horarioLimite}.
           </p>
-          <button
-            onClick={() => setSubmitted(false)}
-            className="mt-4 px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium text-sm"
-          >
+          <button onClick={() => setSubmitted(false)}
+            className="mt-4 px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium text-sm">
             Ir para Localização do Dia
           </button>
         </div>
@@ -329,13 +308,13 @@ const MyLunch: React.FC = () => {
     );
   }
 
-  // ── Already chose: show location form ──
-  if (existingChoice) {
-    const weekDays = `${activeMenu.weekStart.split('-').reverse().join('/')} a ${activeMenu.weekEnd.split('-').reverse().join('/')}`;
+  const formatDateBR = (iso: string) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+  const weekDays = `${formatDateBR(activeMenu.weekStart)} a ${formatDateBR(activeMenu.weekEnd)}`;
 
+  /* ─── Already chose: show location form ─── */
+  if (existingChoice) {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
-        {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <UtensilsCrossed className="text-orange-500" /> Meu Almoço
@@ -343,25 +322,34 @@ const MyLunch: React.FC = () => {
           <p className="text-gray-500 text-sm mt-1">Semana {weekDays}</p>
         </div>
 
-        {/* Your choices summary */}
+        {/* Summary of existing choices */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="text-sm font-bold text-gray-700 mb-3">Seus pratos da semana</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <h3 className="text-sm font-bold text-gray-700 mb-3">Seus pedidos da semana</h3>
+          <div className="space-y-3">
             {DAY_KEYS.map(day => {
-              const choice = existingChoice.escolhas[day];
+              const dc = existingChoice.escolhas[day] as LunchDayChoice | null | undefined;
               return (
-                <div key={day} className="flex items-center gap-2 bg-orange-50/50 rounded-lg px-3 py-2 border border-orange-100">
-                  <span className="text-xs font-bold text-orange-400 w-14">{DAY_LABELS[day].split('-')[0]}</span>
-                  <span className="text-sm text-gray-700 flex-1">
-                    {choice ? `🍽️ ${choice.pratoNome}` : <span className="text-gray-400">—</span>}
-                  </span>
+                <div key={day} className="bg-orange-50/50 rounded-lg px-3 py-2.5 border border-orange-100">
+                  <p className="text-xs font-bold text-orange-500 mb-1">{DAY_LABELS[day]}</p>
+                  {dc ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {dc.misturas?.map(m => (
+                        <span key={m.id} className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full">🥩 {m.nome}</span>
+                      ))}
+                      {dc.guarnicoes?.map(g => (
+                        <span key={g.id} className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">🥗 {g.nome}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-400">— Não vai almoçar</span>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* ── LOCATION SECTION ── */}
+        {/* Location section */}
         <div className="bg-white rounded-xl border border-orange-200 shadow-sm overflow-hidden">
           <div className="bg-orange-50 px-5 py-4 border-b border-orange-100">
             <div className="flex items-center gap-2">
@@ -373,25 +361,21 @@ const MyLunch: React.FC = () => {
             <div className="flex items-center gap-1.5 mt-2">
               <Clock size={14} className="text-orange-500" />
               <span className={`text-xs font-medium ${isPastDeadline ? 'text-red-600' : 'text-orange-600'}`}>
-                {isPastDeadline
-                  ? `⚠️ O prazo para informar (${horarioLimite}) já passou!`
-                  : `Informe até as ${horarioLimite}`}
+                {isPastDeadline ? `⚠️ O prazo para informar (${horarioLimite}) já passou!` : `Informe até as ${horarioLimite}`}
               </span>
             </div>
           </div>
 
-          {/* Warning banner */}
           <div className="mx-5 mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
             <div className="flex items-start gap-2">
               <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
               <p className="text-xs text-amber-800 leading-relaxed">
-                <strong>ATENÇÃO:</strong> Se estiver fora da cidade e <strong>NÃO informar</strong>, sua marmita será pedida normalmente e você <strong>perderá o direito ao vale-alimentação</strong> para refeições fora da cidade.
+                <strong>ATENÇÃO:</strong> Se estiver fora da cidade e <strong>NÃO informar</strong>, sua marmita será pedida normalmente e você <strong>perderá o direito ao vale-alimentação</strong>.
               </p>
             </div>
           </div>
 
           <div className="p-5">
-            {/* Already informed today */}
             {todayLocation ? (
               <div className="text-center py-6 space-y-3">
                 <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto">
@@ -412,181 +396,26 @@ const MyLunch: React.FC = () => {
                   Informado às {todayLocation.informadoEm?.toDate?.()?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) || '—'}
                 </p>
                 {!isPastDeadline && (
-                  <button
-                    onClick={handleResetLocation}
-                    className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
-                  >
-                    <Pencil size={14} />
-                    Reinformar Localização
+                  <button onClick={handleResetLocation}
+                    className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors">
+                    <Pencil size={14} /> Reinformar Localização
                   </button>
                 )}
               </div>
             ) : (
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600 font-medium">Onde você vai almoçar hoje?</p>
-
-                {/* Option buttons */}
-                <div className="grid grid-cols-1 gap-3">
-
-                  {/* GPS / Manual location */}
-                  <div
-                    className={`rounded-xl border-2 transition-all cursor-pointer ${
-                      locationType === 'campo'
-                        ? 'border-green-400 bg-green-50/50 shadow-sm'
-                        : 'border-gray-200 hover:border-green-300 hover:bg-green-50/30'
-                    }`}
-                    onClick={() => setLocationType('campo')}
-                  >
-                    <div className="flex items-center gap-3 p-4">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        locationType === 'campo' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-600'
-                      }`}>
-                        <MapPin size={20} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-bold text-gray-800">📍 Estou em campo</p>
-                        <p className="text-xs text-gray-500">Informar endereço e nome do cliente</p>
-                      </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        locationType === 'campo' ? 'border-green-500 bg-green-500' : 'border-gray-300'
-                      }`}>
-                        {locationType === 'campo' && <Check size={12} className="text-white" />}
-                      </div>
-                    </div>
-
-                    {locationType === 'campo' && (
-                      <div className="px-4 pb-4 space-y-3 border-t border-green-100 pt-3">
-                        <div className="flex gap-2 flex-wrap">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleGetLocation(); }}
-                            disabled={gettingGPS}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors text-sm font-medium"
-                          >
-                            <Navigation size={14} />
-                            {gettingGPS ? 'Buscando GPS...' : 'Usar Minha Localização'}
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setShowMapPicker(true); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
-                          >
-                            <MapIcon size={14} />
-                            Abrir Mapa
-                          </button>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-gray-600 mb-1 block">Endereço</label>
-                          <input
-                            type="text"
-                            value={address}
-                            onChange={e => setAddress(e.target.value)}
-                            onClick={e => e.stopPropagation()}
-                            placeholder="Rua, número, bairro, cidade..."
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-gray-600 mb-1 block">Nome do Cliente</label>
-                          <input
-                            type="text"
-                            value={clientName}
-                            onChange={e => setClientName(e.target.value)}
-                            onClick={e => e.stopPropagation()}
-                            placeholder="Ex: Supermercado Bom Preço"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none"
-                          />
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleSubmitLocation('campo'); }}
-                          disabled={submittingLoc || (!address && !clientName)}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors text-sm font-bold"
-                        >
-                          <Send size={14} /> {submittingLoc ? 'Enviando...' : 'Confirmar Localização'}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Google Maps Picker Modal */}
-                    {showMapPicker && (
-                      <GoogleMapPicker
-                        initialLat={coords?.lat}
-                        initialLng={coords?.lng}
-                        title="Selecionar Localização em Campo"
-                        onConfirm={(data: MapPickerResult) => {
-                          setAddress(data.address);
-                          setCoords({ lat: data.lat, lng: data.lng });
-                          setShowMapPicker(false);
-                        }}
-                        onCancel={() => setShowMapPicker(false)}
-                      />
-                    )}
-                  </div>
-
-                  {/* Sede */}
-                  <button
-                    onClick={() => handleSubmitLocation('sede')}
-                    disabled={submittingLoc}
-                    className="rounded-xl border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 p-4 flex items-center gap-3 transition-all text-left"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
-                      <Building2 size={20} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-gray-800">🏢 Vou almoçar na sede</p>
-                      <p className="text-xs text-gray-500">{sedeNome}{sedeEndereco ? ` — ${sedeEndereco}` : ''}</p>
-                    </div>
-                    <ArrowRight size={16} className="text-gray-400" />
-                  </button>
-
-                  {/* Fora da cidade */}
-                  <div
-                    className={`rounded-xl border-2 transition-all ${
-                      showForaCidadeConfirm
-                        ? 'border-orange-400 bg-orange-50/50'
-                        : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/30'
-                    }`}
-                  >
-                    <button
-                      onClick={() => setShowForaCidadeConfirm(!showForaCidadeConfirm)}
-                      className="w-full p-4 flex items-center gap-3 text-left"
-                    >
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        showForaCidadeConfirm ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-600'
-                      }`}>
-                        <Plane size={20} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-bold text-gray-800">✈️ Estou fora da cidade</p>
-                        <p className="text-xs text-gray-500">Marmita não será pedida, receberá vale-alimentação</p>
-                      </div>
-                      <ChevronDown size={16} className={`text-gray-400 transition-transform ${showForaCidadeConfirm ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showForaCidadeConfirm && (
-                      <div className="px-4 pb-4 border-t border-orange-100 pt-3 space-y-3">
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
-                            <div className="text-xs text-red-800 space-y-1">
-                              <p className="font-bold">Ao confirmar "Fora da cidade":</p>
-                              <ul className="list-disc ml-4 space-y-0.5">
-                                <li>Sua marmita <strong>NÃO será pedida</strong> hoje</li>
-                                <li>Você receberá o <strong>vale-alimentação do dia</strong></li>
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleSubmitLocation('fora_cidade')}
-                          disabled={submittingLoc}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors text-sm font-bold"
-                        >
-                          <Plane size={14} /> {submittingLoc ? 'Enviando...' : 'Confirmar — Estou Fora da Cidade'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <LocationForm
+                locationType={locationType} setLocationType={setLocationType}
+                address={address} setAddress={setAddress}
+                clientName={clientName} setClientName={setClientName}
+                gettingGPS={gettingGPS} handleGetLocation={handleGetLocation}
+                showMapPicker={showMapPicker} setShowMapPicker={setShowMapPicker}
+                coords={coords} setCoords={setCoords} setAddress2={setAddress}
+                submittingLoc={submittingLoc}
+                handleSubmitLocation={handleSubmitLocation}
+                showForaCidadeConfirm={showForaCidadeConfirm}
+                setShowForaCidadeConfirm={setShowForaCidadeConfirm}
+                sedeNome={sedeNome} sedeEndereco={sedeEndereco}
+              />
             )}
           </div>
         </div>
@@ -594,87 +423,140 @@ const MyLunch: React.FC = () => {
     );
   }
 
-  // ── Selection form: choose weekly meals ──
-  const formatDateBR = (iso: string): string => {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  };
-  const weekDays = `${formatDateBR(activeMenu.weekStart)} a ${formatDateBR(activeMenu.weekEnd)}`;
-
-  const hasAnySelection = DAY_KEYS.some(d => selections[d]);
-
+  /* ─── Selection form ─── */
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <UtensilsCrossed className="text-orange-500" /> Meu Almoço
         </h1>
-        <p className="text-gray-500 text-sm mt-1">Escolha seus pratos para a semana {weekDays}</p>
+        <p className="text-gray-500 text-sm mt-1">Monte sua marmita para a semana {weekDays}</p>
       </div>
 
-      {/* Menu overview */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-          <UtensilsCrossed size={16} className="text-orange-500" />
-          Cardápio da Semana
+      {/* Cardápio overview */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+          <UtensilsCrossed size={16} className="text-orange-500" /> Cardápio da Semana
         </h3>
-        <div className="flex flex-wrap gap-2">
-          {activeMenu.pratos.map(p => (
-            <div key={p.id} className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-              <p className="text-sm font-medium text-orange-800">🍽️ {p.nome}</p>
-              {p.descricao && (
-                <p className="text-xs text-orange-600 mt-0.5">{p.descricao}</p>
-              )}
+        <div className="space-y-3">
+          {meatOptions.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-orange-500 uppercase tracking-wide mb-1.5">🥩 Misturas disponíveis</p>
+              <div className="flex flex-wrap gap-2">
+                {meatOptions.map(p => (
+                  <div key={p.id} className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                    <p className="text-sm font-medium text-orange-800">{p.nome}</p>
+                    {p.descricao && <p className="text-xs text-orange-600 mt-0.5">{p.descricao}</p>}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
+          {sideOptions.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-green-600 uppercase tracking-wide mb-1.5">🥗 Guarnições disponíveis</p>
+              <div className="flex flex-wrap gap-2">
+                {sideOptions.map(p => (
+                  <div key={p.id} className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    <p className="text-sm font-medium text-green-800">{p.nome}</p>
+                    {p.descricao && <p className="text-xs text-green-600 mt-0.5">{p.descricao}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Day-by-day selection */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="bg-orange-50 px-5 py-4 border-b border-orange-100">
-          <h3 className="text-sm font-bold text-orange-800">
-            Escolha seu prato para cada dia da semana
-          </h3>
+          <h3 className="text-sm font-bold text-orange-800">Monte sua marmita para cada dia</h3>
           <p className="text-xs text-orange-600 mt-1">
-            Selecione o prato desejado ou deixe em branco se não for almoçar naquele dia
+            Escolha até {MAX_PER_CATEGORY} misturas e até {MAX_PER_CATEGORY} guarnições por dia · Deixe em branco para não almoçar naquele dia
           </p>
         </div>
 
-        <div className="divide-y divide-gray-50">
-          {DAY_KEYS.map(day => (
-            <div key={day} className="px-5 py-4">
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                {DAY_EMOJIS[day]} {DAY_LABELS[day]}
-              </label>
-              <select
-                value={selections[day]}
-                onChange={e => setSelections(prev => ({ ...prev, [day]: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 outline-none bg-white appearance-none"
-              >
-                <option value="">— Selecione o prato —</option>
-                {activeMenu.pratos.map(p => (
-                  <option key={p.id} value={p.id}>🍽️ {p.nome}</option>
-                ))}
-                <option value="nao_almoco">❌ Não vou almoçar neste dia</option>
-              </select>
-            </div>
-          ))}
+        <div className="divide-y divide-gray-100">
+          {DAY_KEYS.map(day => {
+            const sel = selections[day];
+            return (
+              <div key={day} className="px-5 py-5">
+                <p className="text-sm font-bold text-gray-800 mb-3">📅 {DAY_LABELS[day]}</p>
+
+                {/* Misturas */}
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-orange-600 mb-2 flex items-center gap-1">
+                    🥩 Misturas
+                    <span className="text-gray-400 font-normal">(escolha até {MAX_PER_CATEGORY})</span>
+                    {sel.misturas.length > 0 && (
+                      <span className="ml-auto bg-orange-100 text-orange-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {sel.misturas.length}/{MAX_PER_CATEGORY}
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {meatOptions.map(p => {
+                      const selected = sel.misturas.includes(p.id);
+                      const limitReached = !selected && sel.misturas.length >= MAX_PER_CATEGORY;
+                      return (
+                        <button key={p.id} onClick={() => toggleItem(day, 'misturas', p.id)} disabled={limitReached}
+                          className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                            selected
+                              ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                              : limitReached
+                              ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-orange-400 hover:bg-orange-50'
+                          }`}>
+                          {selected ? '✓ ' : ''}{p.nome}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Guarnições */}
+                <div>
+                  <p className="text-xs font-semibold text-green-600 mb-2 flex items-center gap-1">
+                    🥗 Guarnições
+                    <span className="text-gray-400 font-normal">(escolha até {MAX_PER_CATEGORY})</span>
+                    {sel.guarnicoes.length > 0 && (
+                      <span className="ml-auto bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {sel.guarnicoes.length}/{MAX_PER_CATEGORY}
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {sideOptions.map(p => {
+                      const selected = sel.guarnicoes.includes(p.id);
+                      const limitReached = !selected && sel.guarnicoes.length >= MAX_PER_CATEGORY;
+                      return (
+                        <button key={p.id} onClick={() => toggleItem(day, 'guarnicoes', p.id)} disabled={limitReached}
+                          className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                            selected
+                              ? 'bg-green-500 text-white border-green-500 shadow-sm'
+                              : limitReached
+                              ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-green-400 hover:bg-green-50'
+                          }`}>
+                          {selected ? '✓ ' : ''}{p.nome}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="px-5 py-4 bg-gray-50 border-t border-gray-100">
-          <button
-            onClick={handleSubmitChoices}
-            disabled={submitting || !hasAnySelection}
-            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-sm shadow-sm"
-          >
+          <button onClick={handleSubmitChoices} disabled={submitting || !hasAnySelection}
+            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-sm shadow-sm">
             <Send size={16} /> {submitting ? 'Enviando...' : 'Enviar Escolhas da Semana'}
           </button>
           {!hasAnySelection && (
-            <p className="text-center text-xs text-gray-400 mt-2">
-              Selecione ao menos um prato para enviar
-            </p>
+            <p className="text-center text-xs text-gray-400 mt-2">Selecione ao menos 1 item para enviar</p>
           )}
         </div>
       </div>
@@ -682,11 +564,154 @@ const MyLunch: React.FC = () => {
   );
 };
 
-// Helper icon — checklist for choice options
-const Check: React.FC<{ size: number; className?: string }> = ({ size, className }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
+/* ════════════════════════════════════════════════════════════════
+   LOCATION FORM — sub-component
+   ════════════════════════════════════════════════════════════════ */
+
+interface LocationFormProps {
+  locationType: LunchLocationType | '';
+  setLocationType: (t: LunchLocationType | '') => void;
+  address: string;
+  setAddress: (a: string) => void;
+  clientName: string;
+  setClientName: (c: string) => void;
+  gettingGPS: boolean;
+  handleGetLocation: () => void;
+  showMapPicker: boolean;
+  setShowMapPicker: (v: boolean) => void;
+  coords: { lat: number; lng: number } | null;
+  setCoords: (c: { lat: number; lng: number } | null) => void;
+  setAddress2: (a: string) => void;
+  submittingLoc: boolean;
+  handleSubmitLocation: (tipo: LunchLocationType) => void;
+  showForaCidadeConfirm: boolean;
+  setShowForaCidadeConfirm: (v: boolean) => void;
+  sedeNome: string;
+  sedeEndereco: string;
+}
+
+const LocationForm: React.FC<LocationFormProps> = ({
+  locationType, setLocationType, address, setAddress, clientName, setClientName,
+  gettingGPS, handleGetLocation, showMapPicker, setShowMapPicker, coords, setCoords,
+  setAddress2, submittingLoc, handleSubmitLocation, showForaCidadeConfirm,
+  setShowForaCidadeConfirm, sedeNome, sedeEndereco,
+}) => (
+  <div className="space-y-4">
+    <p className="text-sm text-gray-600 font-medium">Onde você vai almoçar hoje?</p>
+    <div className="grid grid-cols-1 gap-3">
+
+      {/* Em campo */}
+      <div className={`rounded-xl border-2 transition-all cursor-pointer ${
+        locationType === 'campo' ? 'border-green-400 bg-green-50/50 shadow-sm' : 'border-gray-200 hover:border-green-300 hover:bg-green-50/30'
+      }`} onClick={() => setLocationType('campo')}>
+        <div className="flex items-center gap-3 p-4">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+            locationType === 'campo' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-600'}`}>
+            <MapPin size={20} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-gray-800">📍 Estou em campo</p>
+            <p className="text-xs text-gray-500">Informar endereço e nome do cliente</p>
+          </div>
+          <CheckMark checked={locationType === 'campo'} />
+        </div>
+        {locationType === 'campo' && (
+          <div className="px-4 pb-4 space-y-3 border-t border-green-100 pt-3">
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={e => { e.stopPropagation(); handleGetLocation(); }} disabled={gettingGPS}
+                className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors text-sm font-medium">
+                <Navigation size={14} /> {gettingGPS ? 'Buscando GPS...' : 'Usar Minha Localização'}
+              </button>
+              <button onClick={e => { e.stopPropagation(); setShowMapPicker(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium">
+                <MapIcon size={14} /> Abrir Mapa
+              </button>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Endereço</label>
+              <input type="text" value={address} onChange={e => setAddress(e.target.value)} onClick={e => e.stopPropagation()}
+                placeholder="Rua, número, bairro, cidade..."
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-300 outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Nome do Cliente</label>
+              <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} onClick={e => e.stopPropagation()}
+                placeholder="Ex: Supermercado Bom Preço"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-300 outline-none" />
+            </div>
+            <button onClick={e => { e.stopPropagation(); handleSubmitLocation('campo'); }}
+              disabled={submittingLoc || (!address && !clientName)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors text-sm font-bold">
+              <Send size={14} /> {submittingLoc ? 'Enviando...' : 'Confirmar Localização'}
+            </button>
+          </div>
+        )}
+        {showMapPicker && (
+          <GoogleMapPicker initialLat={coords?.lat} initialLng={coords?.lng} title="Selecionar Localização em Campo"
+            onConfirm={(data: MapPickerResult) => { setAddress2(data.address); setCoords({ lat: data.lat, lng: data.lng }); setShowMapPicker(false); }}
+            onCancel={() => setShowMapPicker(false)} />
+        )}
+      </div>
+
+      {/* Na sede */}
+      <button onClick={() => handleSubmitLocation('sede')} disabled={submittingLoc}
+        className="rounded-xl border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 p-4 flex items-center gap-3 transition-all text-left">
+        <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+          <Building2 size={20} />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-gray-800">🏢 Vou almoçar na sede</p>
+          <p className="text-xs text-gray-500">{sedeNome}{sedeEndereco ? ` — ${sedeEndereco}` : ''}</p>
+        </div>
+        <ArrowRight size={16} className="text-gray-400" />
+      </button>
+
+      {/* Fora da cidade */}
+      <div className={`rounded-xl border-2 transition-all ${showForaCidadeConfirm ? 'border-orange-400 bg-orange-50/50' : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/30'}`}>
+        <button onClick={() => setShowForaCidadeConfirm(!showForaCidadeConfirm)}
+          className="w-full p-4 flex items-center gap-3 text-left">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${showForaCidadeConfirm ? 'bg-orange-500 text-white' : 'bg-orange-100 text-orange-600'}`}>
+            <Plane size={20} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-gray-800">✈️ Estou fora da cidade</p>
+            <p className="text-xs text-gray-500">Marmita não será pedida, receberá vale-alimentação</p>
+          </div>
+          <ChevronDown size={16} className={`text-gray-400 transition-transform ${showForaCidadeConfirm ? 'rotate-180' : ''}`} />
+        </button>
+        {showForaCidadeConfirm && (
+          <div className="px-4 pb-4 border-t border-orange-100 pt-3 space-y-3">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-red-800 space-y-1">
+                  <p className="font-bold">Ao confirmar "Fora da cidade":</p>
+                  <ul className="list-disc ml-4 space-y-0.5">
+                    <li>Sua marmita <strong>NÃO será pedida</strong> hoje</li>
+                    <li>Você receberá o <strong>vale-alimentação do dia</strong></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <button onClick={() => handleSubmitLocation('fora_cidade')} disabled={submittingLoc}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors text-sm font-bold">
+              <Plane size={14} /> {submittingLoc ? 'Enviando...' : 'Confirmar — Estou Fora da Cidade'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
+const CheckMark: React.FC<{ checked: boolean }> = ({ checked }) => (
+  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${checked ? 'border-green-500 bg-green-500' : 'border-gray-300'}`}>
+    {checked && (
+      <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    )}
+  </div>
 );
 
 export default MyLunch;

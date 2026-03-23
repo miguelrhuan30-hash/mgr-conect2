@@ -728,12 +728,7 @@ export interface VehicleCheck {
   placa: string;           // AAA-0000 ou AAA0A00 (Mercosul)
   kmInicial: number;
   timestamp: Timestamp;
-  fotos: {
-    motorista: string;     // URL Firebase Storage
-    passageiro: string;
-    traseira: string;
-    painel: string;
-  };
+  fotos: Record<string, string>; // dinâmico — slots configurad pelo admin
   timeEntryId?: string;    // vínculo com time_entry do ponto
 }
 
@@ -1036,6 +1031,7 @@ export interface LunchDish {
   nome: string;                // "Frango Grelhado com Legumes"
   descricao?: string;          // "Acompanha arroz e salada"
   ordem: number;
+  categoria: 'mistura' | 'guarnicao'; // 'mistura' = proteína principal; 'guarnicao' = acompanhamento
 }
 
 export interface LunchMenu {
@@ -1050,6 +1046,12 @@ export interface LunchMenu {
   atualizadoEm?: Timestamp;
 }
 
+/** Seleção diária de misturas e guarnições (até 2 de cada) */
+export interface LunchDayChoice {
+  misturas: { id: string; nome: string }[];    // até 2 misturas
+  guarnicoes: { id: string; nome: string }[];  // até 2 guarnições
+}
+
 export interface LunchChoice {
   id: string;
   menuId: string;              // FK → lunch_menus
@@ -1057,11 +1059,11 @@ export interface LunchChoice {
   userName: string;
   userSector?: string;
   escolhas: {
-    segunda?: { pratoId: string; pratoNome: string } | null;
-    terca?: { pratoId: string; pratoNome: string } | null;
-    quarta?: { pratoId: string; pratoNome: string } | null;
-    quinta?: { pratoId: string; pratoNome: string } | null;
-    sexta?: { pratoId: string; pratoNome: string } | null;
+    segunda?: LunchDayChoice | null;
+    terca?: LunchDayChoice | null;
+    quarta?: LunchDayChoice | null;
+    quinta?: LunchDayChoice | null;
+    sexta?: LunchDayChoice | null;
   };
   enviadoEm: Timestamp;
 }
