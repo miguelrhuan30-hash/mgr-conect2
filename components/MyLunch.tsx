@@ -83,7 +83,25 @@ const MyLunch: React.FC = () => {
   const todayISO = new Date().toISOString().split('T')[0];
   const now = new Date();
   const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  // Global (used for the location-today section only)
   const isPastDeadline = currentTimeStr >= horarioLimite;
+
+  /**
+   * Per-day deadline check:
+   * - day already passed  → true  (can't edit)
+   * - today               → check horarioLimite
+   * - future day          → false (can edit)
+   */
+  const isDayPastDeadline = (day: DayKey): boolean => {
+    if (!activeMenu) return true;
+    const dayIndex = DAY_KEYS.indexOf(day);
+    const dayDate = new Date(activeMenu.weekStart + 'T12:00:00');
+    dayDate.setDate(dayDate.getDate() + dayIndex);
+    const dayISO = dayDate.toISOString().split('T')[0];
+    if (dayISO < todayISO) return true;   // day already passed
+    if (dayISO > todayISO) return false;  // future day
+    return currentTimeStr >= horarioLimite; // today: check time
+  };
 
   // ── Load sede config ──
   useEffect(() => {
@@ -100,14 +118,19 @@ const MyLunch: React.FC = () => {
 
   // ── Active menu ──
   useEffect(() => {
+    // Nota: NÃO usa orderBy para evitar necessidade de índice composto no Firestore.
+    // O sistema garante que só há 1 menu ativo por vez.
     const q = query(
       collection(db, CollectionName.LUNCH_MENUS),
       where('status', '==', 'ativo'),
-      orderBy('criadoEm', 'desc'),
       limit(1),
     );
     return onSnapshot(q, snap => {
       setActiveMenu(snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchMenu));
+      setLoadingMenu(false);
+    }, err => {
+      console.error('Erro ao carregar cardápio ativo:', err);
+      setActiveMenu(null);
       setLoadingMenu(false);
     });
   }, []);
@@ -124,6 +147,10 @@ const MyLunch: React.FC = () => {
     return onSnapshot(q, snap => {
       setExistingChoice(snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchChoice));
       setLoadingChoice(false);
+    }, err => {
+      console.error('Erro ao carregar escolhas:', err);
+      setExistingChoice(null);
+      setLoadingChoice(false);
     });
   }, [activeMenu, currentUser]);
 
@@ -138,6 +165,10 @@ const MyLunch: React.FC = () => {
     );
     return onSnapshot(q, snap => {
       setTodayLocation(snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as LunchLocation));
+      setLoadingLocation(false);
+    }, err => {
+      console.error('Erro ao carregar localização:', err);
+      setTodayLocation(null);
       setLoadingLocation(false);
     });
   }, [currentUser, todayISO]);
@@ -382,11 +413,9 @@ const MyLunch: React.FC = () => {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-gray-700">Seus pedidos da semana</h3>
-            {!isPastDeadline && (
-              <span className="text-xs text-orange-600 flex items-center gap-1">
-                <Clock size={12} /> Altere até as {horarioLimite}
-              </span>
-            )}
+            <span className="text-xs text-orange-600 flex items-center gap-1">
+              <Clock size={12} /> Prazo diário: {horarioLimite}
+            </span>
           </div>
           <div className="divide-y divide-gray-50">
             {DAY_KEYS.map(day => {
@@ -398,7 +427,7 @@ const MyLunch: React.FC = () => {
                   {/* Day header + Alterar button */}
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-bold text-orange-500">{DAY_LABELS[day]}</p>
-                    {!isEditing && !isPastDeadline && (
+                    {!isEditing && !isDayPastDeadline(day) && (
                       <button
                         onClick={() => openEditDay(day)}
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 transition-colors"
