@@ -67,7 +67,7 @@ const AttendanceReports: React.FC = () => {
   const [editEntryReason, setEditEntryReason] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
-  // Sprint 48 â€” Ocorrências do colaborador
+  // Sprint 48 â€” OcorrÃªncias do colaborador
   const [occurrencesForReport, setOccurrencesForReport] = useState<EmployeeOccurrence[]>([]);
 
   const isAuthorized = 
@@ -108,7 +108,7 @@ const AttendanceReports: React.FC = () => {
       }
   }, [activeTab, users, isAuthorized]);
 
-  // Sprint 48 â€” busca ocorrências ao gerar o relatório mensal
+  // Sprint 48 â€” busca ocorrÃªncias ao gerar o relatÃ³rio mensal
   useEffect(() => {
     if (!selectedUser || !selectedMonth || !isAuthorized) return;
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -135,7 +135,7 @@ const AttendanceReports: React.FC = () => {
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0, 23, 59, 59);
       
-      // Estender busca em 12h para capturar saídas de turnos noturnos do último dia
+      // Estender busca em 12h para capturar saÃ­das de turnos noturnos do Ãºltimo dia
       const queryEndDate = new Date(endDate.getTime() + 12 * 60 * 60 * 1000);
 
       const q = query(
@@ -159,7 +159,7 @@ const AttendanceReports: React.FC = () => {
         const currentDateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dayRef = new Date(year, month - 1, d);
         
-        // Busca o primeiro 'entry' deste dia que ainda não foi processado
+        // Busca o primeiro 'entry' deste dia que ainda nÃ£o foi processado
         const primaryEntry = entries.find(e => {
           if (processedIds.has(e.id!)) return false;
           const date = e.timestamp.toDate();
@@ -171,7 +171,7 @@ const AttendanceReports: React.FC = () => {
 
         let dayEntries: TimeEntry[] = [];
         if (primaryEntry) {
-          // Busca eventos relacionados nas próximas 18 horas (limite seguro para jornada)
+          // Busca eventos relacionados nas prÃ³ximas 18 horas (limite seguro para jornada)
           const entryTime = primaryEntry.timestamp.toDate().getTime();
           const limitTime = entryTime + (18 * 60 * 60 * 1000); 
           
@@ -696,7 +696,7 @@ const AttendanceReports: React.FC = () => {
       const d = new Date(t);
       const h = d.getHours();
       
-      // Verifica se está no intervalo de adicional noturno (22:00 - 05:00)
+      // Verifica se estÃ¡ no intervalo de adicional noturno (22:00 - 05:00)
       const isNight = h >= 22 || h < 5;
       
       if (isNight) {
@@ -705,23 +705,23 @@ const AttendanceReports: React.FC = () => {
           const le = day.lunchEnd.timestamp.toDate().getTime();
           if (t >= ls && t < le) continue;
         } else if (worked.totalMinutes > 360) {
-          // Se for almoço automático (jornada > 6h), descontamos o tempo de almoço proporcionalmente ou ignoramos parte das horas
-          // Uma abordagem comum é não pagar adicional sobre o período de descanso.
-          // Como o almoço é automático, não sabemos o horário exato. Vamos assumir que ocorreu no meio do turno.
-          // Se o minuto atual está próximo do meio do turno, e é turno noturno, descontamos.
-          // Simplificação: Descontar os minutos de almoço do total de nightMillis proporcionalmente ao tempo noturno vs total
-          // Mas aqui faremos algo mais simples: se for automático, o loop de minutos vai rodar por todo o tempo,
-          // então precisamos subtrair o lunchDuration proporcionalmente no final.
+          // Se for almoÃ§o automÃ¡tico (jornada > 6h), descontamos o tempo de almoÃ§o proporcionalmente ou ignoramos parte das horas
+          // Uma abordagem comum Ã© nÃ£o pagar adicional sobre o perÃ­odo de descanso.
+          // Como o almoÃ§o Ã© automÃ¡tico, nÃ£o sabemos o horÃ¡rio exato. Vamos assumir que ocorreu no meio do turno.
+          // Se o minuto atual estÃ¡ prÃ³ximo do meio do turno, e Ã© turno noturno, descontamos.
+          // SimplificaÃ§Ã£o: Descontar os minutos de almoÃ§o do total de nightMillis proporcionalmente ao tempo noturno vs total
+          // Mas aqui faremos algo mais simples: se for automÃ¡tico, o loop de minutos vai rodar por todo o tempo,
+          // entÃ£o precisamos subtrair o lunchDuration proporcionalmente no final.
         }
         nightMillis += 60000;
       }
     }
 
-    // Ajuste proporcional para almoço automático nas horas noturnas
+    // Ajuste proporcional para almoÃ§o automÃ¡tico nas horas noturnas
     if (!hasRegisteredLunch && worked.totalMinutes > 360 && nightMillis > 0) {
         const totalDuration = (exitTime - entryTime) / 60000;
         const lunchMin = (schedule.lunchDuration || 60);
-        const nightRatio = nightMillis / (exitTime - entryTime); // erro aqui: nightMillis Ò© ms, divisao por ms ok
+        const nightRatio = nightMillis / (exitTime - entryTime); // erro aqui: nightMillis ÃƒÂ© ms, divisao por ms ok
         nightMillis -= (lunchMin * 60000 * nightRatio);
     }
 
@@ -821,10 +821,10 @@ const AttendanceReports: React.FC = () => {
     };
     const userRole = roleMap[user?.role || ''] || userAny?.jobTitle || 'Colaborador';
     
-    // === CABEÃƒÆ’ââ‚¬Â¡ALHO ===
+    // === CABEÃƒÆ’Ã¢â‚¬Â¡ALHO ===
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
-    doc.text('MGR SERVIÃƒÆ’ââ‚¬Â¡OS', 105, 18, { align: 'center' });
+    doc.text('MGR SERVIÃƒÆ’Ã¢â‚¬Â¡OS', 105, 18, { align: 'center' });
     
     doc.setFontSize(13);
     doc.setFont('helvetica', 'normal');
@@ -919,7 +919,7 @@ const AttendanceReports: React.FC = () => {
       }
     });
     
-    // === RODAPÃƒÆ’ââ‚¬Â° DE TOTAIS ===
+    // === RODAPÃƒÆ’Ã¢â‚¬Â° DE TOTAIS ===
     const totalMinutes = reportData.reduce((acc, day) => {
       const w = calcWorkedHours(day);
       return acc + (w ? w.totalMinutes : 0);
@@ -947,7 +947,7 @@ const AttendanceReports: React.FC = () => {
     doc.text(`Total de Horas: ${totalH}h ${String(totalM).padStart(2,'0')}m`, 80, finalY + 9);
     doc.text(`Total de Faltas: ${faltaDays} dias`, 148, finalY + 9);
     
-    // === RODAPÃƒÆ’ââ‚¬Â° DE ASSINATURA ===
+    // === RODAPÃƒÆ’Ã¢â‚¬Â° DE ASSINATURA ===
     let signY = finalY + 25;
     if (signY + 40 > 285) {
         doc.addPage();
@@ -986,7 +986,7 @@ const AttendanceReports: React.FC = () => {
     
     // Dados da planilha
     const wsData = [
-      ['ESPELHO DE PONTO - MGR SERVIÃƒÆ’ââ‚¬Â¡OS'],
+      ['ESPELHO DE PONTO - MGR SERVIÃƒÆ’Ã¢â‚¬Â¡OS'],
       [`Colaborador: ${userName}`],
       [`PerÃƒÆ’Ã‚Â­odo: ${selectedMonth}`],
       [`Gerado em: ${new Date().toLocaleString()}`],
@@ -1166,13 +1166,13 @@ const AttendanceReports: React.FC = () => {
                           const isOnLunch = !!shift.lunchEntry;
                           const entryDate = shift.entry.timestamp.toDate();
 
-                          // Turno 1: entrada até início do almoço (ou até agora se não há almoço)
+                          // Turno 1: entrada atÃ© inÃ­cio do almoÃ§o (ou atÃ© agora se nÃ£o hÃ¡ almoÃ§o)
                           const lunchStartDate = isOnLunch ? shift.lunchEntry!.timestamp.toDate() : null;
                           const t1Ms = lunchStartDate
                               ? lunchStartDate.getTime() - entryDate.getTime()
                               : getShiftDurationMs(entryDate, liveTime);
 
-                          // Turno 2: volta do almoço até agora (lunch_end)
+                          // Turno 2: volta do almoÃ§o atÃ© agora (lunch_end)
                           const userAllEntries = allMonitoringEntries
                               .filter(e => e.userId === shift.user.uid)
                               .sort((a,b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
@@ -1181,7 +1181,7 @@ const AttendanceReports: React.FC = () => {
                               ? getShiftDurationMs(lunchEndEntry.timestamp.toDate(), liveTime)
                               : 0;
 
-                          // Almoço em andamento
+                          // AlmoÃ§o em andamento
                           const lunchElapsedMs = isOnLunch
                               ? getShiftDurationMs(shift.lunchEntry!.timestamp.toDate(), liveTime)
                               : 0;
@@ -1189,7 +1189,7 @@ const AttendanceReports: React.FC = () => {
                           // Total trabalhado (T1 + T2)
                           const totalWorkedMs = t1Ms + t2Ms;
 
-                          // Total desde entrada (para checar turno crítico)
+                          // Total desde entrada (para checar turno crÃ­tico)
                           const totalSinceEntryMs = getShiftDurationMs(entryDate, liveTime);
                           const isCritical = totalSinceEntryMs > 12 * 3600000;
 
@@ -1199,7 +1199,7 @@ const AttendanceReports: React.FC = () => {
                                   : isOnLunch ? 'border-orange-200 ring-1 ring-orange-100'
                                   : 'border-gray-200'
                               }`}>
-                                  {isCritical && <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] px-2 py-0.5 font-bold uppercase">Atenção</div>}
+                                  {isCritical && <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] px-2 py-0.5 font-bold uppercase">AtenÃ§Ã£o</div>}
 
                                   {/* Header do card */}
                                   <div className="flex items-center gap-3 mb-3">
@@ -1218,14 +1218,14 @@ const AttendanceReports: React.FC = () => {
                                               ? 'bg-orange-100 text-orange-700 border border-orange-200'
                                               : 'bg-green-100 text-green-700 border border-green-200'
                                       }`}>
-                                          {isOnLunch ? 'â˜• Almoço' : 'ðŸŸ¢ Trabalhando'}
+                                          {isOnLunch ? 'â˜• AlmoÃ§o' : 'ðŸŸ¢ Trabalhando'}
                                       </span>
                                   </div>
 
-                                  {/* Almoço em andamento */}
+                                  {/* AlmoÃ§o em andamento */}
                                   {isOnLunch && (
                                       <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-3 text-center">
-                                          <p className="text-[10px] text-orange-600 font-bold uppercase tracking-wider mb-0.5">â± Almoço em andamento</p>
+                                          <p className="text-[10px] text-orange-600 font-bold uppercase tracking-wider mb-0.5">â± AlmoÃ§o em andamento</p>
                                           <p className="text-xl font-black font-mono text-orange-700">{msToHHMM(lunchElapsedMs)}</p>
                                           <p className="text-[10px] text-orange-500">Inicio: {shift.lunchEntry!.timestamp.toDate().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
                                       </div>
@@ -1259,7 +1259,7 @@ const AttendanceReports: React.FC = () => {
                                       onClick={() => handleOpenForceExit(shift)}
                                       className="w-full py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
                                   >
-                                      <X size={14} /> Encerrar Turno (Forçar Saída)
+                                      <X size={14} /> Encerrar Turno (ForÃ§ar SaÃ­da)
                                   </button>
                               </div>
                           );
@@ -1305,7 +1305,7 @@ const AttendanceReports: React.FC = () => {
                 disabled={!selectedUser || loading}
                 className="w-full md:w-auto px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-70 flex items-center justify-center gap-2"
                 >
-                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar RelatÒ³rio</>}
+                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar RelatÃƒÂ³rio</>}
                 </button>
 
                 {reportData.length > 0 && (
@@ -1393,7 +1393,7 @@ const AttendanceReports: React.FC = () => {
                                                     className="text-xs border rounded px-1 py-0.5 bg-white text-gray-900"
                                                 >
                                                     <option value="pay">Ã°Å¸â€™Â° Pagar</option>
-                                                    <option value="bank">ðŸ¦ Banco</option>
+                                                    <option value="bank">Ã°Å¸ÂÂ¦ Banco</option>
                                                 </select>
                                             )}
                                             {processedDates.has(day.date) && (
@@ -1460,7 +1460,7 @@ const AttendanceReports: React.FC = () => {
                                                     {dayStatus.label}
                                                 </span>
 
-                                                {/* Sprint 48 â€” Ocorrência badge */}
+                                                {/* Sprint 48 â€” OcorrÃªncia badge */}
                                                 {(() => {
                                                   const dayOccs = occurrencesForReport.filter(o => o.data === day.date);
                                                   if (dayOccs.length === 0) return null;
@@ -1493,17 +1493,17 @@ const AttendanceReports: React.FC = () => {
                                                         )}
                                                         {day.lunchStart?.mapsUrl && (
                                                             <a href={day.lunchStart.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Ida Almoço)
+                                                                <MapPin size={10} /> Mapa (Ida AlmoÃ§o)
                                                             </a>
                                                         )}
                                                         {day.lunchEnd?.mapsUrl && (
                                                             <a href={day.lunchEnd.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Volta Almoço)
+                                                                <MapPin size={10} /> Mapa (Volta AlmoÃ§o)
                                                             </a>
                                                         )}
                                                         {day.exit?.mapsUrl && (
                                                             <a href={day.exit.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Saída)
+                                                                <MapPin size={10} /> Mapa (SaÃ­da)
                                                             </a>
                                                         )}
                                                     </div>
@@ -1568,7 +1568,7 @@ const AttendanceReports: React.FC = () => {
                                 return typeof user?.accumulatedPrize === 'number' ? (
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 px-2 py-1 rounded-lg font-bold">
-                                      ÃƒÂ°Ã…Â¸Ã‚Âââ‚¬Â  Cofre Acumulado: R$ {user.accumulatedPrize.toFixed(2)}
+                                      ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â‚¬Â  Cofre Acumulado: R$ {user.accumulatedPrize.toFixed(2)}
                                     </span>
                                   </div>
                                 ) : null;
@@ -1732,9 +1732,9 @@ const AttendanceReports: React.FC = () => {
                   <div>
                     <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                         <Clock className="text-brand-600" />
-                        Histórico e Edição Global por Período
+                        HistÃ³rico e EdiÃ§Ã£o Global por PerÃ­odo
                     </h2>
-                    <p className="text-sm text-gray-500">Busque e edite múltiplos registros de uma vez filtrando pelo período.</p>
+                    <p className="text-sm text-gray-500">Busque e edite mÃºltiplos registros de uma vez filtrando pelo perÃ­odo.</p>
                   </div>
               </div>
 
@@ -1773,9 +1773,9 @@ const AttendanceReports: React.FC = () => {
                               <tr>
                                   <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Data/Hora Registro</th>
                                   <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Tipo</th>
-                                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Localização / Foto</th>
+                                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">LocalizaÃ§Ã£o / Foto</th>
                                   <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Ajuste</th>
-                                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">Ação</th>
+                                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">AÃ§Ã£o</th>
                               </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
@@ -1796,7 +1796,7 @@ const AttendanceReports: React.FC = () => {
                   !loadingAdjList && adjUser && (
                     <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
                         <AlertCircle className="mx-auto w-12 h-12 text-gray-300 mb-2" />
-                        <p className="text-gray-500 font-medium">Nenhum registro encontrado para este período.</p>
+                        <p className="text-gray-500 font-medium">Nenhum registro encontrado para este perÃ­odo.</p>
                     </div>
                   )
               )}
@@ -1919,7 +1919,7 @@ const AdjustEntryRow: React.FC<{ entry: TimeEntry, onUpdate: () => void }> = ({ 
 
     const handleUpdate = async () => {
         if (!reason) {
-            alert("Por favor, insira uma justificativa para a alteração.");
+            alert("Por favor, insira uma justificativa para a alteraÃ§Ã£o.");
             return;
         }
         setIsSaving(true);
@@ -1966,10 +1966,10 @@ const AdjustEntryRow: React.FC<{ entry: TimeEntry, onUpdate: () => void }> = ({ 
                         entry.type === 'entry' ? 'bg-green-100 text-green-700 border border-green-200' :
                         entry.type === 'exit' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-blue-100 text-blue-700 border border-blue-200'
                     }`}>
-                        {entry.type === 'entry' ? 'Entrada' : entry.type === 'exit' ? 'Saída' : entry.type === 'lunch_start' ? 'Início Almoço' : 'Fim Almoço'}
+                        {entry.type === 'entry' ? 'Entrada' : entry.type === 'exit' ? 'SaÃ­da' : entry.type === 'lunch_start' ? 'InÃ­cio AlmoÃ§o' : 'Fim AlmoÃ§o'}
                     </span>
                     {entry.isManual && !entry.editedBy && (
-                        <span className="text-[9px] text-gray-500 font-medium italic">Lançamento Manual</span>
+                        <span className="text-[9px] text-gray-500 font-medium italic">LanÃ§amento Manual</span>
                     )}
                 </div>
             </td>
@@ -1983,11 +1983,11 @@ const AdjustEntryRow: React.FC<{ entry: TimeEntry, onUpdate: () => void }> = ({ 
                         <a href={`https://www.google.com/maps?q=${entry.coordinates.lat},${entry.coordinates.lng}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
                             <MapPin size={12} /> Ver no Mapa
                         </a>
-                    ) : <span className="text-xs text-gray-400 italic">Sem localização</span>}
+                    ) : <span className="text-xs text-gray-400 italic">Sem localizaÃ§Ã£o</span>}
                     
                     {entry.photoUrl ? (
                         <a href={entry.photoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 font-medium hover:underline flex items-center gap-1">
-                            <Camera size={12} /> Ver Evidência
+                            <Camera size={12} /> Ver EvidÃªncia
                         </a>
                     ) : <span className="text-xs text-gray-400 italic">Sem foto</span>}
                 </div>
@@ -2012,19 +2012,19 @@ const AdjustEntryRow: React.FC<{ entry: TimeEntry, onUpdate: () => void }> = ({ 
                                 className="text-xs rounded-lg border-gray-200 w-full text-gray-900 focus:ring-brand-500 focus:border-brand-500 py-1"
                             >
                                 <option value="entry">Entrada</option>
-                                <option value="lunch_start">Início Almoço</option>
-                                <option value="lunch_end">Fim Almoço</option>
-                                <option value="exit">Saída</option>
+                                <option value="lunch_start">InÃ­cio AlmoÃ§o</option>
+                                <option value="lunch_end">Fim AlmoÃ§o</option>
+                                <option value="exit">SaÃ­da</option>
                             </select>
                         </div>
                     </div>
                     <div className="space-y-0.5">
-                        <label className="text-[9px] font-bold text-gray-400 uppercase">Justificativa da Alteração</label>
+                        <label className="text-[9px] font-bold text-gray-400 uppercase">Justificativa da AlteraÃ§Ã£o</label>
                         <input 
                             type="text"
                             value={reason}
                             onChange={e => setReason(e.target.value)}
-                            placeholder="Descreva o motivo da correção..."
+                            placeholder="Descreva o motivo da correÃ§Ã£o..."
                             className="text-xs rounded-lg border-gray-200 w-full text-gray-900 focus:ring-brand-500 focus:border-brand-500 py-1.5"
                         />
                     </div>
