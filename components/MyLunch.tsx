@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, getDocs,
-  deleteDoc, Timestamp, limit, doc
+  deleteDoc, updateDoc, Timestamp, limit, doc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -57,6 +57,11 @@ const MyLunch: React.FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+
+  // Edit an existing day choice
+  const [editingDay, setEditingDay] = useState<DayKey | null>(null);
+  const [editSelections, setEditSelections] = useState<DaySelection>(emptyDaySelection());
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Location
   const [todayLocation, setTodayLocation] = useState<LunchLocation | null>(null);
@@ -259,6 +264,57 @@ const MyLunch: React.FC = () => {
     } catch (err) { alert('Erro ao resetar localização.'); }
   };
 
+  // ── Open edit for a specific day ──
+  const openEditDay = (day: DayKey) => {
+    if (!existingChoice) return;
+    const dc = existingChoice.escolhas[day] as LunchDayChoice | null | undefined;
+    setEditSelections({
+      misturas: dc?.misturas?.map(m => m.id) ?? [],
+      guarnicoes: dc?.guarnicoes?.map(g => g.id) ?? [],
+    });
+    setEditingDay(day);
+  };
+
+  // ── Toggle item inside the edit selection ──
+  const toggleEditItem = (categoria: 'misturas' | 'guarnicoes', itemId: string) => {
+    setEditSelections(prev => {
+      const arr = [...prev[categoria]];
+      const idx = arr.indexOf(itemId);
+      if (idx >= 0) { arr.splice(idx, 1); }
+      else { if (arr.length >= MAX_PER_CATEGORY) return prev; arr.push(itemId); }
+      return { ...prev, [categoria]: arr };
+    });
+  };
+
+  // ── Save edit for a specific day ──
+  const handleSaveDayEdit = async () => {
+    if (!existingChoice || !editingDay) return;
+    setSavingEdit(true);
+    try {
+      const dc: LunchDayChoice = {
+        misturas: editSelections.misturas.map(id => {
+          const dish = meatOptions.find(p => p.id === id);
+          return { id, nome: dish?.nome ?? id };
+        }),
+        guarnicoes: editSelections.guarnicoes.map(id => {
+          const dish = sideOptions.find(p => p.id === id);
+          return { id, nome: dish?.nome ?? id };
+        }),
+      };
+      const hasAny = dc.misturas.length > 0 || dc.guarnicoes.length > 0;
+      await updateDoc(doc(db, CollectionName.LUNCH_CHOICES, existingChoice.id), {
+        [`escolhas.${editingDay}`]: hasAny ? dc : null,
+        atualizadoEm: Timestamp.now(),
+      });
+      setEditingDay(null);
+    } catch (err) {
+      console.error('Erro ao salvar alteração:', err);
+      alert('Erro ao salvar alteração. Tente novamente.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   /* ════════════════════════════════════════════════════════════════
      RENDER STATES
      ════════════════════════════════════════════════════════════════ */
@@ -323,25 +379,131 @@ const MyLunch: React.FC = () => {
         </div>
 
         {/* Summary of existing choices */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="text-sm font-bold text-gray-700 mb-3">Seus pedidos da semana</h3>
-          <div className="space-y-3">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-700">Seus pedidos da semana</h3>
+            {!isPastDeadline && (
+              <span className="text-xs text-orange-600 flex items-center gap-1">
+                <Clock size={12} /> Altere até as {horarioLimite}
+              </span>
+            )}
+          </div>
+          <div className="divide-y divide-gray-50">
             {DAY_KEYS.map(day => {
               const dc = existingChoice.escolhas[day] as LunchDayChoice | null | undefined;
+              const isEditing = editingDay === day;
+
               return (
-                <div key={day} className="bg-orange-50/50 rounded-lg px-3 py-2.5 border border-orange-100">
-                  <p className="text-xs font-bold text-orange-500 mb-1">{DAY_LABELS[day]}</p>
-                  {dc ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {dc.misturas?.map(m => (
-                        <span key={m.id} className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full">🥩 {m.nome}</span>
-                      ))}
-                      {dc.guarnicoes?.map(g => (
-                        <span key={g.id} className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">🥗 {g.nome}</span>
-                      ))}
+                <div key={day} className="px-4 py-3">
+                  {/* Day header + Alterar button */}
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-orange-500">{DAY_LABELS[day]}</p>
+                    {!isEditing && !isPastDeadline && (
+                      <button
+                        onClick={() => openEditDay(day)}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 transition-colors"
+                      >
+                        <Pencil size={11} /> Alterar
+                      </button>
+                    )}
+                    {isEditing && (
+                      <span className="text-xs text-blue-600 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">Editando...</span>
+                    )}
+                  </div>
+
+                  {/* Current choices (shown when not editing) */}
+                  {!isEditing && (
+                    dc ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {dc.misturas?.map(m => (
+                          <span key={m.id} className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full">🥩 {m.nome}</span>
+                        ))}
+                        {dc.guarnicoes?.map(g => (
+                          <span key={g.id} className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">🥗 {g.nome}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">— Não vai almoçar</span>
+                    )
+                  )}
+
+                  {/* Inline edit form */}
+                  {isEditing && (
+                    <div className="mt-2 space-y-3 bg-blue-50/50 border border-blue-200 rounded-xl p-3">
+                      {/* Misturas */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-xs font-bold text-orange-600 uppercase tracking-wide">🥩 Misturas</span>
+                          <span className="text-xs text-gray-400">até {MAX_PER_CATEGORY}</span>
+                          {editSelections.misturas.length > 0 && (
+                            <span className="ml-auto text-[10px] font-bold bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">
+                              {editSelections.misturas.length}/{MAX_PER_CATEGORY} ✓
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {meatOptions.map(p => {
+                            const selected = editSelections.misturas.includes(p.id);
+                            const limitReached = !selected && editSelections.misturas.length >= MAX_PER_CATEGORY;
+                            return (
+                              <button key={p.id} onClick={() => toggleEditItem('misturas', p.id)} disabled={limitReached}
+                                className={`flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg border-2 transition-all active:scale-[0.98] text-sm ${
+                                  selected ? 'bg-orange-500 border-orange-500 text-white'
+                                  : limitReached ? 'bg-gray-50 border-gray-100 text-gray-300 opacity-50 cursor-not-allowed'
+                                  : 'bg-white border-gray-200 text-gray-800 hover:border-orange-300 hover:bg-orange-50'
+                                }`}>
+                                <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'bg-white border-white' : 'border-gray-300'}`}>
+                                  {selected && <svg width={8} height={8} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="text-orange-500"><polyline points="20 6 9 17 4 12" /></svg>}
+                                </div>
+                                <span className="font-medium leading-tight">{p.nome}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {/* Guarnições */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-xs font-bold text-green-600 uppercase tracking-wide">🥗 Guarnições</span>
+                          <span className="text-xs text-gray-400">até {MAX_PER_CATEGORY}</span>
+                          {editSelections.guarnicoes.length > 0 && (
+                            <span className="ml-auto text-[10px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                              {editSelections.guarnicoes.length}/{MAX_PER_CATEGORY} ✓
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {sideOptions.map(p => {
+                            const selected = editSelections.guarnicoes.includes(p.id);
+                            const limitReached = !selected && editSelections.guarnicoes.length >= MAX_PER_CATEGORY;
+                            return (
+                              <button key={p.id} onClick={() => toggleEditItem('guarnicoes', p.id)} disabled={limitReached}
+                                className={`flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg border-2 transition-all active:scale-[0.98] text-sm ${
+                                  selected ? 'bg-green-500 border-green-500 text-white'
+                                  : limitReached ? 'bg-gray-50 border-gray-100 text-gray-300 opacity-50 cursor-not-allowed'
+                                  : 'bg-white border-gray-200 text-gray-800 hover:border-green-300 hover:bg-green-50'
+                                }`}>
+                                <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'bg-white border-white' : 'border-gray-300'}`}>
+                                  {selected && <svg width={8} height={8} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500"><polyline points="20 6 9 17 4 12" /></svg>}
+                                </div>
+                                <span className="font-medium leading-tight">{p.nome}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {/* Actions */}
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={handleSaveDayEdit} disabled={savingEdit}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-bold active:scale-[0.98]">
+                          {savingEdit ? 'Salvando...' : '✓ Salvar Alteração'}
+                        </button>
+                        <button onClick={() => setEditingDay(null)} disabled={savingEdit}
+                          className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+                          Cancelar
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <span className="text-xs text-gray-400">— Não vai almoçar</span>
                   )}
                 </div>
               );
