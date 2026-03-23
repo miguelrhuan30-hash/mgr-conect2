@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   collection, query, where, orderBy, getDocs,
-  Timestamp, limit, startAfter, DocumentSnapshot,
+  Timestamp, limit, startAfter, DocumentSnapshot, deleteDoc, doc,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref as storageRef, deleteObject } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
 import { CollectionName } from '../types';
 import {
   Car, Search, Calendar, Filter, ChevronRight,
-  Loader2, AlertCircle, ImageOff, RefreshCw, Plus,
+  Loader2, AlertCircle, ImageOff, RefreshCw, Plus, Pencil, Trash2,
 } from 'lucide-react';
 import VehicleCheck from './VehicleCheck';
 
@@ -22,7 +24,7 @@ interface VehicleCheckRecord {
   placa: string;
   kmInicial: number;
   timestamp: Timestamp;
-  fotos: { motorista: string; passageiro: string; traseira: string; painel: string };
+  fotos: Record<string, string>; // dinâmico — suporta slots configurados pelo admin
   timeEntryId?: string;
 }
 
@@ -55,6 +57,8 @@ const Thumb: React.FC<{ url: string; label: string }> = ({ url, label }) => {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 const VehicleLog: React.FC = () => {
+  const { userProfile } = useAuth();
+  const isAdmin = userProfile?.role === 'admin';
   const navigate = useNavigate();
 
   // Filtros
@@ -70,6 +74,37 @@ const VehicleLog: React.FC = () => {
   const [hasMore,       setHasMore]       = useState(false);
   const [totalCount,    setTotalCount]    = useState<number | null>(null);
   const [mostrarForm,   setMostrarForm]   = useState(false);
+  const [deletandoId,   setDeletandoId]   = useState<string | null>(null);
+
+  // ── Apagar registro direto da lista (admin) ────────────────────────────────
+  const handleDeleteFromList = useCallback(async (reg: VehicleCheckRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const conf = window.confirm(
+      `Apagar registro?\n\nPlaca: ${reg.placa}\nColaborador: ${reg.userName}\nEsta ação não pode ser desfeita.`
+    );
+    if (!conf) return;
+    setDeletandoId(reg.id);
+    try {
+      // Remover fotos do Storage
+      for (const url of Object.values(reg.fotos)) {
+        try {
+          const pathMatch = url.match(/o\/(.*?)\?/);
+          if (pathMatch?.[1]) {
+            const decoded = decodeURIComponent(pathMatch[1]);
+            await deleteObject(storageRef(storage, decoded));
+          }
+        } catch { /* ignora falha individual */ }
+      }
+      await deleteDoc(doc(db, CollectionName.VEHICLE_CHECKS, reg.id));
+      setRegistros(prev => prev.filter(r => r.id !== reg.id));
+      setTotalCount(prev => (prev !== null ? prev - 1 : null));
+    } catch (err) {
+      console.error('[VehicleLog] Erro ao apagar:', err);
+      alert('Erro ao apagar o registro. Tente novamente.');
+    } finally {
+      setDeletandoId(null);
+    }
+  }, []);
 
   // ── Query principal ────────────────────────────────────────────────────────
   const buscar = useCallback(async (paginar = false) => {
@@ -304,44 +339,75 @@ const VehicleLog: React.FC = () => {
               ? data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
               : '—';
 
+            const isDeletando = deletandoId === reg.id;
+            const fotosEntries = Object.entries(reg.fotos ?? {}).slice(0, 4);
+
             return (
-              <button
+              <div
                 key={reg.id}
-                onClick={() => navigate(`/app/veiculos/${reg.id}`)}
-                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3
-                           hover:border-blue-300 hover:shadow-sm transition-all
-                           flex items-center gap-4 text-left"
+                className="group relative bg-white border border-gray-200 rounded-xl px-4 py-3
+                           hover:border-blue-300 hover:shadow-sm transition-all"
               >
-                {/* Thumbnails das 4 fotos */}
-                <div className="hidden sm:flex gap-1.5 flex-shrink-0">
-                  <Thumb url={reg.fotos.motorista}  label="Motorista" />
-                  <Thumb url={reg.fotos.passageiro} label="Passageiro" />
-                  <Thumb url={reg.fotos.traseira}   label="Traseira" />
-                  <Thumb url={reg.fotos.painel}     label="Painel" />
-                </div>
-
-                {/* Infos */}
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-semibold text-blue-700 text-sm bg-blue-50 px-2 py-0.5 rounded">
-                      {reg.placa}
-                    </span>
-                    <span className="text-xs text-gray-500">KM {reg.kmInicial.toLocaleString('pt-BR')}</span>
+                <button
+                  onClick={() => navigate(`/app/veiculos/${reg.id}`)}
+                  className="w-full flex items-center gap-4 text-left"
+                >
+                  {/* Thumbnails dinâmicos (até 4) */}
+                  <div className="hidden sm:flex gap-1.5 flex-shrink-0">
+                    {fotosEntries.map(([key, url]) => (
+                      <Thumb key={key} url={url} label={key} />
+                    ))}
                   </div>
-                  <p className="text-sm font-medium text-gray-800 truncate">{reg.userName}</p>
-                  {reg.userSector && (
-                    <p className="text-xs text-gray-400 truncate">{reg.userSector}</p>
-                  )}
-                </div>
 
-                {/* Data/hora */}
-                <div className="text-right flex-shrink-0 space-y-0.5">
-                  <p className="text-sm font-medium text-gray-700">{dataStr}</p>
-                  <p className="text-xs text-gray-400">{horaStr}</p>
-                </div>
+                  {/* Infos */}
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-semibold text-blue-700 text-sm bg-blue-50 px-2 py-0.5 rounded">
+                        {reg.placa}
+                      </span>
+                      <span className="text-xs text-gray-500">KM {reg.kmInicial.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-800 truncate">{reg.userName}</p>
+                    {reg.userSector && (
+                      <p className="text-xs text-gray-400 truncate">{reg.userSector}</p>
+                    )}
+                  </div>
 
-                <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
-              </button>
+                  {/* Data/hora */}
+                  <div className="text-right flex-shrink-0 space-y-0.5">
+                    <p className="text-sm font-medium text-gray-700">{dataStr}</p>
+                    <p className="text-xs text-gray-400">{horaStr}</p>
+                  </div>
+
+                  <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                </button>
+
+                {/* Botões admin — aparecem no hover */}
+                {isAdmin && (
+                  <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1 z-10">
+                    <button
+                      onClick={e => { e.stopPropagation(); navigate(`/app/veiculos/${reg.id}`); }}
+                      title="Editar registro"
+                      className="p-1.5 rounded-lg bg-white border border-blue-200 text-blue-600
+                                 hover:bg-blue-50 shadow-sm transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={e => handleDeleteFromList(reg, e)}
+                      disabled={isDeletando}
+                      title="Apagar registro"
+                      className="p-1.5 rounded-lg bg-white border border-red-200 text-red-500
+                                 hover:bg-red-50 shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      {isDeletando
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Trash2 className="w-3.5 h-3.5" />
+                      }
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
