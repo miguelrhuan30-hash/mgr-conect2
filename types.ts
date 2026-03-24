@@ -307,10 +307,18 @@ export interface TimeEntry {
   isManual?: boolean;        // True if added by manager
   forcedClose?: boolean;     // True if system/manager closed a forgotten shift
   editedBy?: string;         // UID of the manager who edited
+  editedByNome?: string;     // Nome do gestor que editou (Sprint P2)
   editReason?: string;       // "Esquecimento", "Doença", etc.
   editTimestamp?: Timestamp; // When the edit happened
   biometricVerified?: boolean; // True if face recognition was successful
+
+  // Soft Delete (Sprint P2) — preserva auditoria sem perder histórico
+  excluido?: boolean;        // true = registro excluído pelo admin
+  excluidoPor?: string;      // UID do admin que excluiu
+  excluidoPorNome?: string;  // Nome do admin que excluiu
+  excluidoEm?: Timestamp;    // Quando foi excluído
 }
+
 
 // --- TASKS & SERVICE ORDERS (O.S.) ---
 export type PriorityLevel = 'low' | 'medium' | 'high' | 'critical';

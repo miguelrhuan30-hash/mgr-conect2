@@ -105,6 +105,8 @@ const Layout: React.FC = () => {
       '/app/estoque':          'Almoxarifado',
       '/app/modelos':          'Modelos',
       '/app/relatorios-ponto': 'Espelho de Ponto',
+      '/app/folha-ponto':      'Folha de Ponto',
+      '/app/espelho-mensal':   'Espelho Mensal',
       '/app/usuarios':         'Equipe & RH',
       '/app/setores':          'Cargos & Acessos',
       '/app/locais':           'Locais de Trabalho',
@@ -200,7 +202,7 @@ const Layout: React.FC = () => {
   const VEHICLE_ROUTES  = ['/app/veiculos'];
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
   const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
-  const PEOPLE_ROUTES   = ['/app/usuarios', '/app/relatorios-ponto', '/app/pesquisas', '/app/setores', '/app/locais'];
+  const PEOPLE_ROUTES   = ['/app/usuarios', '/app/relatorios-ponto', '/app/folha-ponto', '/app/espelho-mensal', '/app/pesquisas', '/app/setores', '/app/locais'];
 
   const isInOSGroup      = OS_ROUTES.some(r => location.pathname.startsWith(r));
   const isInClientGroup  = CLIENT_ROUTES.some(r => location.pathname.startsWith(r));
@@ -306,7 +308,9 @@ const Layout: React.FC = () => {
         { to: '/app/usuarios',           icon: Users,        label: 'Equipe & RH',           visible: can('canManageUsers') },
         { to: '/app/setores',            icon: Shield,       label: 'Cargos & Acessos',       visible: can('canManageSectors') },
         { to: '/app/locais',             icon: MapPin,       label: 'Locais de Trabalho',     visible: can('canManageUsers') },
-        { to: '/app/relatorios-ponto',   icon: CalendarCheck,label: 'Folha de Ponto',         visible: can('canViewAttendanceReports') },
+        { to: '/app/relatorios-ponto',   icon: CalendarCheck,label: 'Espelho de Ponto',         visible: can('canViewAttendanceReports') },
+        { to: '/app/folha-ponto',        icon: Edit,         label: 'Folha de Ponto (Edição)',  visible: can('canViewAttendanceReports') },
+        { to: '/app/espelho-mensal',    icon: FileText,     label: 'Espelho Mensal',           visible: can('canViewAttendanceReports') },
         { to: '/app/pesquisas/responder',icon: ClipboardList, label: 'Responder Pesquisa',    visible: true },
         { to: '/app/pesquisas',          icon: BarChart3,     label: 'GestÃ£o de Pesquisas',   visible: can('canManageSurveys') },
         { to: '/app/pesquisas/dashboard',icon: BarChart3,     label: 'Dashboard Analytics',   visible: can('canManageSurveys') },

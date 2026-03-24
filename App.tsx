@@ -74,6 +74,8 @@ const OrcamentoModule = lazy(() => import('./components/Orcamento'));
 // ─────────────────────────────────────────────
 const LunchManagement = lazy(() => import('./components/LunchManagement'));
 const MyLunch         = lazy(() => import('./components/MyLunch'));
+const FolhaPonto      = lazy(() => import('./components/FolhaPonto'));
+const EspelhoMensal   = lazy(() => import('./components/EspelhoMensal'));
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 50: People Analytics
@@ -296,6 +298,10 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageSettings') ? <TaskTemplates /> : <Navigate to="/app" />} />
           <Route path="relatorios-ponto"
             element={hasPermission('canViewAttendanceReports') ? <AttendanceReports /> : <Navigate to="/app" />} />
+          <Route path="folha-ponto"
+            element={hasPermission('canViewAttendanceReports') ? <FolhaPonto /> : <Navigate to="/app" />} />
+          <Route path="espelho-mensal"
+            element={hasPermission('canViewAttendanceReports') ? <EspelhoMensal /> : <Navigate to="/app" />} />
           <Route path="campanhas"
             element={hasPermission('canManageSettings') ? <CampaignManagement /> : <Navigate to="/app" />} />
           <Route path="logs"

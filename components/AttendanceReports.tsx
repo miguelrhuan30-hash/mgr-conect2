@@ -3,6 +3,8 @@ import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTi
 import { db } from '../firebase';
 import { CollectionName, TimeEntry, UserProfile, TimeBankEntry, EmployeeOccurrence, OCCURRENCE_LABELS, OCCURRENCE_COLORS } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { calcularTurnos, Turno, toDateStr } from '../utils/shift-calculator';
+import { adicionarRegistro, editarHorarioRegistro, excluirRegistro } from '../utils/shift-editor';
 import { 
   Calendar, User, Search, AlertCircle, CheckCircle, Clock, 
   AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, 
@@ -134,98 +136,58 @@ const AttendanceReports: React.FC = () => {
       const [year, month] = selectedMonth.split('-').map(Number);
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0, 23, 59, 59);
-      
-      // Estender busca em 12h para capturar saídas de turnos noturnos do último dia
-      const queryEndDate = new Date(endDate.getTime() + 12 * 60 * 60 * 1000);
 
       const q = query(
         collection(db, CollectionName.TIME_ENTRIES),
         where('userId', '==', selectedUser),
         where('timestamp', '>=', Timestamp.fromDate(startDate)),
-        where('timestamp', '<=', Timestamp.fromDate(queryEndDate)),
+        where('timestamp', '<=', Timestamp.fromDate(endDate)),
         orderBy('timestamp', 'asc')
       );
 
       const snap = await getDocs(q);
       const entries = snap.docs.map(d => ({ id: d.id, ...d.data() } as TimeEntry));
 
-      // Group by Day
+      // ── Calcular turnos com motor correto (agrupamento por dia do entry) ──
+      const turnosPorDia = new Map<string, Turno>();
+      calcularTurnos(entries).forEach(t => {
+        // Guardar apenas o primeiro turno do dia (se houver duplicata, preserva o primeiro)
+        if (!turnosPorDia.has(t.data)) {
+          turnosPorDia.set(t.data, t);
+        }
+      });
+
+      // ── Iterar cada dia do mês para montar o relatório ──
       const daysInMonth = endDate.getDate();
-      const dailyReport: any[] = [];
       const user = users.find(u => u.uid === selectedUser);
-      const processedIds = new Set<string>();
+      const dailyReport: any[] = [];
 
       for (let d = 1; d <= daysInMonth; d++) {
         const currentDateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const dayRef = new Date(year, month - 1, d);
-        
-        // Busca o primeiro 'entry' deste dia que ainda não foi processado
-        const primaryEntry = entries.find(e => {
-          if (processedIds.has(e.id!)) return false;
-          const date = e.timestamp.toDate();
-          return date.getDate() === d && 
-                 date.getMonth() === (month - 1) && 
-                 date.getFullYear() === year &&
-                 e.type === 'entry';
-        });
-
-        let dayEntries: TimeEntry[] = [];
-        if (primaryEntry) {
-          // Busca eventos relacionados nas próximas 18 horas (limite seguro para jornada)
-          const entryTime = primaryEntry.timestamp.toDate().getTime();
-          const limitTime = entryTime + (18 * 60 * 60 * 1000); 
-          
-          // Encontrar o PRÓXIMO 'entry' (próximo turno) para cortar a janela
-          const nextEntry = entries.find(e => {
-            if (processedIds.has(e.id!)) return false;
-            if (e.id === primaryEntry.id) return false;
-            if (e.type !== 'entry') return false;
-            const t = e.timestamp.toDate().getTime();
-            return t > entryTime && t <= limitTime;
-          });
-          // Se há um próximo entry dentro da janela, a janela para antes dele
-          const effectiveLimit = nextEntry
-            ? nextEntry.timestamp.toDate().getTime() - 1
-            : limitTime;
-
-          dayEntries = entries.filter(e => {
-            if (processedIds.has(e.id!)) return false;
-            const t = e.timestamp.toDate().getTime();
-            return t >= entryTime && t <= effectiveLimit;
-          });
-
-          // Marcar como processados
-          dayEntries.forEach(e => processedIds.add(e.id!));
-        } else {
-          // Fallback: registros avulsos do dia que sobraram
-          dayEntries = entries.filter(e => {
-            if (processedIds.has(e.id!)) return false;
-            const date = e.timestamp.toDate();
-            return date.getDate() === d && 
-                   date.getMonth() === (month - 1) && 
-                   date.getFullYear() === year;
-          });
-          dayEntries.forEach(e => processedIds.add(e.id!));
-        }
+        const turno = turnosPorDia.get(currentDateStr);
 
         const row = {
           date: currentDateStr,
-          hasEntries: dayEntries.length > 0,
-          entry: dayEntries.find(e => e.type === 'entry'),
-          lunchStart: dayEntries.find(e => e.type === 'lunch_start'),
-          lunchEnd: dayEntries.find(e => e.type === 'lunch_end'),
-          exit: dayEntries.find(e => e.type === 'exit'),
+          hasEntries: !!turno,
+          entry: turno?.entry ?? undefined,
+          lunchStart: turno?.lunchStart ?? undefined,
+          lunchEnd: turno?.lunchEnd ?? undefined,
+          exit: turno?.exit ?? undefined,
+          // Campos extras para badges
+          turnoStatus: turno?.status ?? null,           // 'completo'|'sem_almoco'|'incompleto'|'sem_saida'|null
+          inconsistente: turno?.inconsistente ?? false, // true → duração > 16h
           userSchedule: user?.workSchedule,
-          userScheduleType: user?.scheduleType || 'FIXED'
+          userScheduleType: user?.scheduleType || 'FIXED',
         };
         dailyReport.push(row);
       }
+
       setReportData(dailyReport);
-      setDayDestinations({}); // Reset destinations when new report is generated
-      setProcessedDates(new Set()); // Reset processed feedback
+      setDayDestinations({});
+      setProcessedDates(new Set());
     } catch (error: any) {
       if (error?.code !== 'permission-denied') {
-         console.error("Error generating report:", error);
+        console.error("Error generating report:", error);
       }
       if (error?.code === 'permission-denied') {
         alert("Acesso negado: Você não tem permissão para gerar este relatório.");
@@ -236,6 +198,7 @@ const AttendanceReports: React.FC = () => {
       setLoading(false);
     }
   };
+
 
   // --- MONITORING LOGIC (OPEN SHIFTS) ---
   
@@ -467,69 +430,75 @@ const AttendanceReports: React.FC = () => {
     setIsSavingDayEdit(true);
     try {
       const editDate = dayEditData.date; // e.g. '2026-03-23'
-      const updates: { type: string; entry?: TimeEntry; newTime: string }[] = [
-        { type: 'entry', entry: dayEditData.entry, newTime: dayEditTimes.entry },
+      const adminNome = userProfile?.displayName || currentUser.email || currentUser.uid;
+
+      const updates: { type: 'entry'|'lunch_start'|'lunch_end'|'exit'; entry?: TimeEntry; newTime: string }[] = [
+        { type: 'entry',       entry: dayEditData.entry,      newTime: dayEditTimes.entry },
         { type: 'lunch_start', entry: dayEditData.lunchStart, newTime: dayEditTimes.lunchStart },
-        { type: 'lunch_end', entry: dayEditData.lunchEnd, newTime: dayEditTimes.lunchEnd },
-        { type: 'exit', entry: dayEditData.exit, newTime: dayEditTimes.exit },
+        { type: 'lunch_end',   entry: dayEditData.lunchEnd,   newTime: dayEditTimes.lunchEnd },
+        { type: 'exit',        entry: dayEditData.exit,        newTime: dayEditTimes.exit },
       ];
 
+      // Validar que cada horário informado pertence ao mesmo dia sendo editado
       for (const u of updates) {
-        if (u.newTime) {
-          // Validate: the entered datetime should be on the same day being edited
-          // (or at most the next day for overnight exit shifts)
-          const newTs = new Date(u.newTime);
-          const editDateObj = new Date(editDate + 'T00:00:00');
-          const nextDayEnd = new Date(editDateObj.getTime() + 2 * 24 * 60 * 60 * 1000); // allow up to next day (overnight)
-          if (newTs < editDateObj || newTs > nextDayEnd) {
-            alert(`O horário de ${u.type === 'entry' ? 'Entrada' : u.type === 'lunch_start' ? 'Ida Almoço' : u.type === 'lunch_end' ? 'Volta Almoço' : 'Saída'} não corresponde ao dia ${editDate}. Verifique a data e tente novamente.`);
-            setIsSavingDayEdit(false);
-            return;
-          }
+        if (!u.newTime) continue;
+        const newTs = new Date(u.newTime);
+        const editDateObj = new Date(editDate + 'T00:00:00');
+        const nextDayEnd = new Date(editDateObj.getTime() + 2 * 24 * 60 * 60 * 1000);
+        if (newTs < editDateObj || newTs > nextDayEnd) {
+          const label = u.type === 'entry' ? 'Entrada' : u.type === 'lunch_start' ? 'Ida Almoço' : u.type === 'lunch_end' ? 'Volta Almoço' : 'Saída';
+          alert(`O horário de ${label} não corresponde ao dia ${editDate}. Verifique a data e tente novamente.`);
+          setIsSavingDayEdit(false);
+          return;
         }
+      }
 
+      // Aplicar cada alteração via shift-editor (edição isolada por documento)
+      for (const u of updates) {
         if (u.entry && u.newTime) {
-          // Update existing entry
+          // ── Registro existente: editar horário diretamente no documento ──
           const newTs = new Date(u.newTime);
           const oldTs = u.entry.timestamp.toDate();
           if (Math.abs(newTs.getTime() - oldTs.getTime()) > 60000) {
-            await updateDoc(doc(db, CollectionName.TIME_ENTRIES, u.entry.id), {
-              timestamp: Timestamp.fromDate(newTs),
-              editedBy: currentUser.uid,
-              editReason: dayEditReason,
-              editTimestamp: serverTimestamp(),
-            });
+            await editarHorarioRegistro(u.entry.id, newTs, currentUser.uid, adminNome, dayEditReason);
           }
         } else if (!u.entry && u.newTime) {
-          // Create new entry for THIS specific day
-          await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
-            userId: selectedUser,
-            type: u.type,
-            timestamp: Timestamp.fromDate(new Date(u.newTime)),
-            locationId: 'manual_adjustment',
-            isManual: true,
-            editedBy: currentUser.uid,
-            editReason: dayEditReason,
-            userAgent: 'Manager Dashboard - Day Edit',
-          });
+          // ── Registro faltante: adicionar com validação de duplicata ──
+          try {
+            await adicionarRegistro(
+              selectedUser,
+              u.type,
+              new Date(u.newTime),
+              currentUser.uid,
+              adminNome,
+              dayEditReason,
+            );
+          } catch (dupErr: any) {
+            // Erro de duplicata: informar o admin e abortar
+            alert(dupErr.message || `Erro ao adicionar registro de ${u.type}.`);
+            setIsSavingDayEdit(false);
+            return;
+          }
         }
       }
 
       alert('Registros do dia atualizados com sucesso.');
       setDayEditModalOpen(false);
       generateReport();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('Erro ao editar registros do dia.');
+      alert(e?.message || 'Erro ao editar registros do dia.');
     } finally {
       setIsSavingDayEdit(false);
     }
   };
 
+
   const deleteTimeEntry = async (entry: TimeEntry) => {
-    if (!confirm('Tem certeza que deseja excluir este registro de ponto?')) return;
+    if (!confirm('Tem certeza que deseja excluir este registro de ponto?\n\nO registro será removido da folha de ponto mas o histórico de auditoria será preservado.')) return;
     try {
-      await deleteDoc(doc(db, CollectionName.TIME_ENTRIES, entry.id));
+      const adminNome = userProfile?.displayName || currentUser?.email || currentUser?.uid || 'Admin';
+      await excluirRegistro(entry.id, currentUser!.uid, adminNome);
       alert('Registro excluído com sucesso.');
       generateReport();
     } catch (e) {
@@ -537,6 +506,7 @@ const AttendanceReports: React.FC = () => {
       alert('Erro ao excluir registro.');
     }
   };
+
 
   const loadAdjustmentsList = async () => {
     if (!adjUser) return;
@@ -655,14 +625,18 @@ const AttendanceReports: React.FC = () => {
 
   const calcWorkedHours = (day: any) => {
     if (!day.entry || !day.exit) return null;
-    
+
     const entryTime = day.entry.timestamp.toDate().getTime();
     const exitTime = day.exit.timestamp.toDate().getTime();
-    
+
+    // ── Cap de segurança: turno > 16h é inconsistente (ex: exit de outro dia) ──
+    const rawMinutes = (exitTime - entryTime) / 60000;
+    if (rawMinutes > 16 * 60) return null;
+
     let totalMs = exitTime - entryTime;
-    
+
     const schedule = getDailySchedule(day);
-    
+
     // Desconta almoço se ambos registrados
     if (day.lunchStart && day.lunchEnd) {
       const lunchStartTime = day.lunchStart.timestamp.toDate().getTime();
@@ -673,27 +647,27 @@ const AttendanceReports: React.FC = () => {
       const autoLunchMs = (schedule.lunchDuration || 60) * 60000;
       totalMs -= autoLunchMs;
     }
-    
+
     const totalMinutes = Math.floor(totalMs / 60000);
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    
+
     let plannedMinutes = 0;
     if (schedule.active && schedule.startTime && schedule.endTime) {
         const [sh, sm] = schedule.startTime.split(':').map(Number);
         const [eh, em] = schedule.endTime.split(':').map(Number);
         plannedMinutes = ((eh * 60) + em) - ((sh * 60) + sm) - (schedule.lunchDuration || 0);
     }
-    
+
     const diffMinutes = totalMinutes - plannedMinutes;
     let diffStr = '';
-    
+
     if (schedule.active && plannedMinutes > 0) {
         const plannedH = Math.floor(plannedMinutes / 60);
         const plannedM = plannedMinutes % 60;
         const pDisp = `${plannedH}h${plannedM > 0 ? ` ${plannedM}m` : ''}`;
-        
-        if (diffMinutes > 10) { 
+
+        if (diffMinutes > 10) {
             const dH = Math.floor(diffMinutes / 60);
             const dM = diffMinutes % 60;
             diffStr = ` / ${pDisp} (+${dH}h${dM > 0 ? ` ${dM}m` : ''})`;
@@ -706,16 +680,17 @@ const AttendanceReports: React.FC = () => {
             diffStr = ` / ${pDisp}`;
         }
     } else if (!schedule.active) {
-        diffStr = ` (Extra)`; 
+        diffStr = ` (Extra)`;
     }
-    
-    return { 
+
+    return {
       display: `${hours}h ${String(minutes).padStart(2,'0')}m${diffStr}`,
       totalMinutes,
       hours,
       diffMinutes
     };
   };
+
 
   const summary = useMemo(() => {
     let totalMinutes = 0;
@@ -1467,17 +1442,17 @@ const AttendanceReports: React.FC = () => {
                                                     {getTimeString(day.entry)}
                                                 </span>
                                             ) : <span className="text-gray-400">-</span>}
-                                            {day.entry?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1" title="Editado">*</span>}
+                                            {(day.entry?.isManual || day.entry?.editedBy) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 ml-1 whitespace-nowrap" title={day.entry?.editReason || "Editado pelo gestor"}>Editado</span>}
                                         </td>
                                         {/* ALMOÇO */}
                                         <td className="px-4 py-3 text-center text-sm text-gray-600">
                                             {day.lunchStart ? getTimeString(day.lunchStart) : '-'}
-                                            {day.lunchStart?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1">*</span>}
+                                            {(day.lunchStart?.isManual || day.lunchStart?.editedBy) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 ml-1 whitespace-nowrap" title={day.lunchStart?.editReason || "Editado pelo gestor"}>Editado</span>}
                                         </td>
                                         {/* VOLTA */}
                                         <td className="px-4 py-3 text-center text-sm text-gray-600">
                                             {day.lunchEnd ? getTimeString(day.lunchEnd) : '-'}
-                                            {day.lunchEnd?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1">*</span>}
+                                            {(day.lunchEnd?.isManual || day.lunchEnd?.editedBy) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 ml-1 whitespace-nowrap" title={day.lunchEnd?.editReason || "Editado pelo gestor"}>Editado</span>}
                                         </td>
                                         {/* SAÍDA */}
                                         <td className="px-4 py-3 text-center text-sm font-bold">
@@ -1487,11 +1462,11 @@ const AttendanceReports: React.FC = () => {
                                                     {day.exit.forcedClose && <span className="text-[10px] text-red-500 font-normal">Forçado</span>}
                                                 </div>
                                             ) : <span className="text-gray-400 font-normal">-</span>}
-                                            {day.exit?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1">*</span>}
+                                            {(day.exit?.isManual || day.exit?.editedBy) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 ml-1 whitespace-nowrap" title={day.exit?.editReason || "Editado pelo gestor"}>Editado</span>}
                                         </td>
                                         {/* TOTAL / CARGA */}
                                         <td className={`px-4 py-3 text-center text-sm ${totalColor} whitespace-nowrap`}>
-                                            {worked ? worked.display : '--'}
+                                            {day.inconsistente ? <span className="text-red-600 font-bold text-[11px]">&#9888; Inconsistente</span> : worked ? worked.display : '--'}
                                         </td>
                                         {/* STATUS */}
                                         <td className="px-4 py-3 text-center">
@@ -1499,6 +1474,13 @@ const AttendanceReports: React.FC = () => {
                                                 <span className={`text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${dayStatus.color}`}>
                                                     {dayStatus.label}
                                                 </span>
+
+                                                {/* Badge: turno inconsistente (duracao > 16h — revisar) */}
+                                                {day.inconsistente && (
+                                                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 whitespace-nowrap">
+                                                    &#9888; Revisar
+                                                  </span>
+                                                )}
 
                                                 {/* Ocorrência badge */}
                                                 {(() => {
@@ -1836,7 +1818,7 @@ const AttendanceReports: React.FC = () => {
                               </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                              {adjustmentsList.map((entry) => (
+                              {adjustmentsList.filter(e => !e.excluido).map((entry) => (
                                   <AdjustEntryRow 
                                     key={entry.id} 
                                     entry={entry} 
