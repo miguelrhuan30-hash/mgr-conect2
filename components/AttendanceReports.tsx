@@ -175,10 +175,23 @@ const AttendanceReports: React.FC = () => {
           const entryTime = primaryEntry.timestamp.toDate().getTime();
           const limitTime = entryTime + (18 * 60 * 60 * 1000); 
           
+          // Encontrar o PRÓXIMO 'entry' (próximo turno) para cortar a janela
+          const nextEntry = entries.find(e => {
+            if (processedIds.has(e.id!)) return false;
+            if (e.id === primaryEntry.id) return false;
+            if (e.type !== 'entry') return false;
+            const t = e.timestamp.toDate().getTime();
+            return t > entryTime && t <= limitTime;
+          });
+          // Se há um próximo entry dentro da janela, a janela para antes dele
+          const effectiveLimit = nextEntry
+            ? nextEntry.timestamp.toDate().getTime() - 1
+            : limitTime;
+
           dayEntries = entries.filter(e => {
             if (processedIds.has(e.id!)) return false;
             const t = e.timestamp.toDate().getTime();
-            return t >= entryTime && t <= limitTime;
+            return t >= entryTime && t <= effectiveLimit;
           });
 
           // Marcar como processados
@@ -453,6 +466,7 @@ const AttendanceReports: React.FC = () => {
     if (!dayEditData || !dayEditReason || !currentUser) return;
     setIsSavingDayEdit(true);
     try {
+      const editDate = dayEditData.date; // e.g. '2026-03-23'
       const updates: { type: string; entry?: TimeEntry; newTime: string }[] = [
         { type: 'entry', entry: dayEditData.entry, newTime: dayEditTimes.entry },
         { type: 'lunch_start', entry: dayEditData.lunchStart, newTime: dayEditTimes.lunchStart },
@@ -461,6 +475,19 @@ const AttendanceReports: React.FC = () => {
       ];
 
       for (const u of updates) {
+        if (u.newTime) {
+          // Validate: the entered datetime should be on the same day being edited
+          // (or at most the next day for overnight exit shifts)
+          const newTs = new Date(u.newTime);
+          const editDateObj = new Date(editDate + 'T00:00:00');
+          const nextDayEnd = new Date(editDateObj.getTime() + 2 * 24 * 60 * 60 * 1000); // allow up to next day (overnight)
+          if (newTs < editDateObj || newTs > nextDayEnd) {
+            alert(`O horário de ${u.type === 'entry' ? 'Entrada' : u.type === 'lunch_start' ? 'Ida Almoço' : u.type === 'lunch_end' ? 'Volta Almoço' : 'Saída'} não corresponde ao dia ${editDate}. Verifique a data e tente novamente.`);
+            setIsSavingDayEdit(false);
+            return;
+          }
+        }
+
         if (u.entry && u.newTime) {
           // Update existing entry
           const newTs = new Date(u.newTime);
@@ -474,7 +501,7 @@ const AttendanceReports: React.FC = () => {
             });
           }
         } else if (!u.entry && u.newTime) {
-          // Create new entry
+          // Create new entry for THIS specific day
           await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
             userId: selectedUser,
             type: u.type,
