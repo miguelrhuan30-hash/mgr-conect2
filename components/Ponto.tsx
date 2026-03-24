@@ -154,19 +154,24 @@ const Ponto: React.FC = () => {
   const loadLocations = async () => {
     if (!userProfile) return;
     
-    // Admin bypass or load assigned locations
     let locs: WorkLocation[] = [];
-    if (userProfile.role === 'admin' && (!userProfile.allowedLocationIds || userProfile.allowedLocationIds.length === 0)) {
-        const allLocs = await getDocs(query(collection(db, CollectionName.WORK_LOCATIONS)));
-        locs = allLocs.docs.map(d => ({id:d.id, ...(d.data() as any)} as WorkLocation));
-    } else if (userProfile.allowedLocationIds && userProfile.allowedLocationIds.length > 0) {
-        const querySnapshot = await getDocs(collection(db, CollectionName.WORK_LOCATIONS));
-        querySnapshot.forEach((doc) => {
-          if (userProfile.allowedLocationIds?.includes(doc.id)) {
-            locs.push({ id: doc.id, ...(doc.data() as any) } as WorkLocation);
-          }
-        });
+
+    if (userProfile.allowedLocationIds && userProfile.allowedLocationIds.length > 0) {
+      // Usuário com locais específicos atribuídos → carrega apenas os permitidos
+      const querySnapshot = await getDocs(collection(db, CollectionName.WORK_LOCATIONS));
+      querySnapshot.forEach((d) => {
+        if (userProfile.allowedLocationIds?.includes(d.id)) {
+          locs.push({ id: d.id, ...(d.data() as any) } as WorkLocation);
+        }
+      });
+    } else {
+      // Admin OU qualquer usuário SEM locais específicos → carrega TODOS os locais ativos
+      const allLocs = await getDocs(query(collection(db, CollectionName.WORK_LOCATIONS)));
+      locs = allLocs.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) } as WorkLocation))
+        .filter(loc => loc.active !== false);  // Apenas locais ativos
     }
+
     setAllowedLocations(locs);
     checkGeolocation(locs);
   };

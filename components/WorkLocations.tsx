@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, QuerySnapshot, DocumentData } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, QuerySnapshot, DocumentData, getDocs, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, WorkLocation } from '../types';
-import { MapPin, Plus, Trash2, Save, Loader2, Navigation, Search, Eye, Pencil, X, Check } from 'lucide-react';
+import { CollectionName, WorkLocation, UserProfile } from '../types';
+import { MapPin, Plus, Trash2, Save, Loader2, Navigation, Search, Eye, Pencil, X, Check, Users } from 'lucide-react';
 
 /* ════════════════════════════════════════════════════════════════
    Google Maps API declaration
@@ -274,6 +274,11 @@ const WorkLocations: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRadius, setEditRadius] = useState('');
 
+  // Users State (for collaborator picker)
+  const [allUsers, setAllUsers] = useState<(UserProfile & { id: string })[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+
   useEffect(() => {
     const q = query(collection(db, CollectionName.WORK_LOCATIONS), orderBy('name', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
@@ -284,6 +289,17 @@ const WorkLocations: React.FC = () => {
       if (error?.code !== 'permission-denied') console.error("Error fetching locations:", error);
       setLoading(false);
     });
+
+    // Load all users
+    const loadUsers = async () => {
+      try {
+        const snap = await getDocs(collection(db, CollectionName.USERS));
+        const users = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as (UserProfile & { id: string })[];
+        setAllUsers(users.filter(u => (u as any).active !== false).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '')));
+      } catch (err) { console.error('Error loading users:', err); }
+    };
+    loadUsers();
+
     return () => unsubscribe();
   }, []);
 
@@ -298,15 +314,26 @@ const WorkLocations: React.FC = () => {
     if (!name || !lat || !lng) return;
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, CollectionName.WORK_LOCATIONS), {
+      const docRef = await addDoc(collection(db, CollectionName.WORK_LOCATIONS), {
         name,
         latitude: parseFloat(lat),
         longitude: parseFloat(lng),
         radius: parseInt(radius) || 100,
         active: true,
       });
+
+      // Atualizar allowedLocationIds dos colaboradores selecionados
+      if (selectedUserIds.length > 0) {
+        const newLocId = docRef.id;
+        for (const uid of selectedUserIds) {
+          await updateDoc(doc(db, CollectionName.USERS, uid), {
+            allowedLocationIds: arrayUnion(newLocId),
+          });
+        }
+      }
+
       setName(''); setLat(''); setLng(''); setRadius('100');
-      setPickedAddress(''); setShowForm(false);
+      setPickedAddress(''); setSelectedUserIds([]); setUserSearch(''); setShowForm(false);
     } catch (error) {
       console.error("Error adding location:", error);
       alert("Erro ao adicionar local.");
@@ -416,6 +443,48 @@ const WorkLocations: React.FC = () => {
               <MapPin size={12} /> Clique no mapa acima ou arraste o marcador vermelho para selecionar a posição
             </p>
 
+            {/* Collaborator Selector */}
+            <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                  <Users size={16} className="text-violet-500" /> Colaboradores Permitidos
+                </label>
+                <span className="text-xs text-gray-400">
+                  {selectedUserIds.length === 0 ? 'Todos podem acessar' : `${selectedUserIds.length} selecionado(s)`}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">
+                Selecione os colaboradores que podem fazer check-in neste local. Se nenhum for selecionado, todos poderão acessar.
+              </p>
+              <input
+                type="text" value={userSearch} onChange={e => setUserSearch(e.target.value)}
+                placeholder="Buscar colaborador..."
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-violet-300 outline-none"
+              />
+              <div className="max-h-[200px] overflow-y-auto space-y-1 border border-gray-100 rounded-lg p-2">
+                {allUsers
+                  .filter(u => !userSearch || u.displayName?.toLowerCase().includes(userSearch.toLowerCase()))
+                  .map(u => (
+                    <label key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-violet-50 cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.includes(u.id)}
+                        onChange={e => {
+                          if (e.target.checked) setSelectedUserIds(prev => [...prev, u.id]);
+                          else setSelectedUserIds(prev => prev.filter(id => id !== u.id));
+                        }}
+                        className="rounded accent-violet-600"
+                      />
+                      <span className="text-sm text-gray-800">{u.displayName || u.email}</span>
+                      <span className="text-[10px] text-gray-400 ml-auto">{u.role}</span>
+                    </label>
+                  ))}
+                {allUsers.filter(u => !userSearch || u.displayName?.toLowerCase().includes(userSearch.toLowerCase())).length === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-3">Nenhum colaborador encontrado.</p>
+                )}
+              </div>
+            </div>
+
             <button type="submit" disabled={isSubmitting || !lat || !lng}
               className="w-full py-3 bg-violet-600 text-white rounded-xl font-bold hover:bg-violet-700 flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-sm">
               {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
@@ -456,6 +525,23 @@ const WorkLocations: React.FC = () => {
                     <div className="text-xs text-gray-500 font-mono mt-0.5">
                       {loc.latitude.toFixed(6)}, {loc.longitude.toFixed(6)}
                     </div>
+                    {/* Show assigned users */}
+                    {(() => {
+                      const assigned = allUsers.filter(u => u.allowedLocationIds?.includes(loc.id));
+                      return assigned.length > 0 ? (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Users size={11} className="text-violet-400" />
+                          <span className="text-[10px] text-violet-600 font-medium">
+                            {assigned.length} colaborador(es): {assigned.slice(0, 3).map(u => u.displayName?.split(' ')[0]).join(', ')}{assigned.length > 3 ? ` +${assigned.length - 3}` : ''}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Users size={11} className="text-gray-300" />
+                          <span className="text-[10px] text-gray-400">Todos podem acessar</span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Radius display/edit */}
                     {editingId === loc.id ? (
