@@ -13,7 +13,7 @@ import {
   UtensilsCrossed, Plus, Trash2, Save, Copy, Check,
   CheckCircle2, MapPin, Building2, Plane, AlertTriangle,
   Calendar, ClipboardList, Settings2, Filter, Layers,
-  Map as MapIcon, Drumstick, Salad,
+  Map as MapIcon, Drumstick, Salad, Pencil, X, Loader2,
 } from 'lucide-react';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
@@ -95,6 +95,14 @@ const LunchManagement: React.FC = () => {
   const [savingSede, setSavingSede] = useState(false);
   const [showSedeConfig, setShowSedeConfig] = useState(false);
   const [showSedeMapPicker, setShowSedeMapPicker] = useState(false);
+
+  // ── Edit existing menu ──
+  const [editingMenu, setEditingMenu] = useState<LunchMenu | null>(null);
+  const [editMisturas, setEditMisturas] = useState<string[]>([]);
+  const [editGuarnicoes, setEditGuarnicoes] = useState<string[]>([]);
+  const [editMisturaDraft, setEditMisturaDraft] = useState('');
+  const [editGuarnicaoDraft, setEditGuarnicaoDraft] = useState('');
+  const [savingMenuEdit, setSavingMenuEdit] = useState(false);
 
   // ── Deadline ──
   const nowMgmt = new Date();
@@ -232,6 +240,46 @@ const LunchManagement: React.FC = () => {
     } catch (err) {
       console.error('Erro ao alterar status:', err);
     }
+  };
+
+  /* ─── Open edit menu ─── */
+  const openEditMenu = (menu: LunchMenu) => {
+    setEditingMenu(menu);
+    setEditMisturas(menu.pratos.filter(p => p.categoria === 'mistura').map(p => p.nome));
+    setEditGuarnicoes(menu.pratos.filter(p => p.categoria === 'guarnicao').map(p => p.nome));
+    setEditMisturaDraft(''); setEditGuarnicaoDraft('');
+  };
+
+  /* ─── Save edited menu ─── */
+  const handleSaveMenuEdit = async () => {
+    if (!editingMenu || !currentUser) return;
+    const allMisturas = editMisturaDraft.trim() ? [...editMisturas, editMisturaDraft.trim()] : editMisturas;
+    const allGuarnicoes = editGuarnicaoDraft.trim() ? [...editGuarnicoes, editGuarnicaoDraft.trim()] : editGuarnicoes;
+    if (allMisturas.length === 0) return alert('Adicione ao menos 1 mistura.');
+    if (allGuarnicoes.length === 0) return alert('Adicione ao menos 1 guarnição.');
+    setSavingMenuEdit(true);
+    try {
+      // Preserve IDs for existing dishes, generate new IDs for new ones
+      const existingDishes = editingMenu.pratos;
+      const newPratos: LunchDish[] = [
+        ...allMisturas.map((nome, i) => {
+          const existing = existingDishes.find(p => p.nome === nome && p.categoria === 'mistura');
+          return { id: existing?.id || generateId(), nome, descricao: '', ordem: i + 1, categoria: 'mistura' as const };
+        }),
+        ...allGuarnicoes.map((nome, i) => {
+          const existing = existingDishes.find(p => p.nome === nome && p.categoria === 'guarnicao');
+          return { id: existing?.id || generateId(), nome, descricao: '', ordem: i + 1, categoria: 'guarnicao' as const };
+        }),
+      ];
+      await updateDoc(doc(db, CollectionName.LUNCH_MENUS, editingMenu.id), {
+        pratos: newPratos,
+        atualizadoEm: Timestamp.now(),
+      });
+      setEditingMenu(null);
+    } catch (err) {
+      console.error('Erro ao editar cardápio:', err);
+      alert('Erro ao salvar alterações do cardápio.');
+    } finally { setSavingMenuEdit(false); }
   };
 
   /* ─── Helper: resumo de um pedido do dia ─── */
@@ -654,12 +702,24 @@ const LunchManagement: React.FC = () => {
                     </div>
                     <div className="flex gap-2">
                       {menu.status === 'ativo' && (
-                        <button onClick={() => toggleMenuStatus(menu.id, 'encerrado')}
-                          className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors font-medium">Encerrar</button>
+                        <>
+                          <button onClick={() => openEditMenu(menu)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium flex items-center gap-1">
+                            <Pencil size={12} /> Editar Cardápio
+                          </button>
+                          <button onClick={() => toggleMenuStatus(menu.id, 'encerrado')}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors font-medium">Encerrar</button>
+                        </>
                       )}
                       {menu.status === 'encerrado' && (
-                        <button onClick={() => toggleMenuStatus(menu.id, 'ativo')}
-                          className="text-xs px-3 py-1.5 rounded-lg border border-green-200 text-green-600 hover:bg-green-50 transition-colors font-medium">Reativar</button>
+                        <>
+                          <button onClick={() => openEditMenu(menu)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium flex items-center gap-1">
+                            <Pencil size={12} /> Editar
+                          </button>
+                          <button onClick={() => toggleMenuStatus(menu.id, 'ativo')}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-green-200 text-green-600 hover:bg-green-50 transition-colors font-medium">Reativar</button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -899,6 +959,130 @@ const LunchManagement: React.FC = () => {
                 </tbody>
               </table>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL: EDITAR CARDÁPIO ═══ */}
+      {editingMenu && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Pencil size={18} className="text-blue-600" /> Editar Cardápio
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Semana {formatDateBR(editingMenu.weekStart)} a {formatDateBR(editingMenu.weekEnd)}
+                </p>
+              </div>
+              <button onClick={() => setEditingMenu(null)} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Warning */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  <strong>Atenção:</strong> Se remover um prato que já foi selecionado por colaboradores, 
+                  ele aparecerá em <span className="text-red-600 font-bold">vermelho</span> no pedido do colaborador com aviso "Item indisponível". 
+                  O colaborador poderá alterar seu pedido.
+                </p>
+              </div>
+
+              {/* Misturas */}
+              <div>
+                <label className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-2">
+                  <span className="text-lg">🥩</span> Misturas
+                  <span className="text-xs font-normal text-gray-400">{editMisturas.length} item(ns)</span>
+                </label>
+                {editMisturas.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {editMisturas.map(tag => (
+                      <span key={tag} className="inline-flex items-center gap-1.5 bg-orange-100 text-orange-800 border border-orange-300 px-3 py-1.5 rounded-full text-sm font-medium">
+                        🥩 {tag}
+                        <button onClick={() => setEditMisturas(prev => prev.filter(t => t !== tag))}
+                          className="text-orange-500 hover:text-red-600 transition-colors ml-0.5 font-bold text-xs">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input type="text" value={editMisturaDraft} onChange={e => setEditMisturaDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        const v = editMisturaDraft.trim();
+                        if (v && !editMisturas.includes(v)) setEditMisturas(prev => [...prev, v]);
+                        setEditMisturaDraft('');
+                      }
+                    }}
+                    placeholder="Adicionar mistura..."
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none" />
+                  <button onClick={() => {
+                    const v = editMisturaDraft.trim();
+                    if (v && !editMisturas.includes(v)) setEditMisturas(prev => [...prev, v]);
+                    setEditMisturaDraft('');
+                  }} disabled={!editMisturaDraft.trim()}
+                    className="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-40 transition-colors text-sm font-medium">
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Guarnições */}
+              <div>
+                <label className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-2">
+                  <span className="text-lg">🥗</span> Guarnições
+                  <span className="text-xs font-normal text-gray-400">{editGuarnicoes.length} item(ns)</span>
+                </label>
+                {editGuarnicoes.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {editGuarnicoes.map(tag => (
+                      <span key={tag} className="inline-flex items-center gap-1.5 bg-green-100 text-green-800 border border-green-300 px-3 py-1.5 rounded-full text-sm font-medium">
+                        🥗 {tag}
+                        <button onClick={() => setEditGuarnicoes(prev => prev.filter(t => t !== tag))}
+                          className="text-green-500 hover:text-red-600 transition-colors ml-0.5 font-bold text-xs">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input type="text" value={editGuarnicaoDraft} onChange={e => setEditGuarnicaoDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        const v = editGuarnicaoDraft.trim();
+                        if (v && !editGuarnicoes.includes(v)) setEditGuarnicoes(prev => [...prev, v]);
+                        setEditGuarnicaoDraft('');
+                      }
+                    }}
+                    placeholder="Adicionar guarnição..."
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-300 outline-none" />
+                  <button onClick={() => {
+                    const v = editGuarnicaoDraft.trim();
+                    if (v && !editGuarnicoes.includes(v)) setEditGuarnicoes(prev => [...prev, v]);
+                    setEditGuarnicaoDraft('');
+                  }} disabled={!editGuarnicaoDraft.trim()}
+                    className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 transition-colors text-sm font-medium">
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+              <button onClick={() => setEditingMenu(null)}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors text-sm font-medium">
+                Cancelar
+              </button>
+              <button onClick={handleSaveMenuEdit} disabled={savingMenuEdit}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors text-sm font-bold flex items-center justify-center gap-2">
+                {savingMenuEdit ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <><Save size={16} /> Salvar Alterações</>}
+              </button>
+            </div>
           </div>
         </div>
       )}

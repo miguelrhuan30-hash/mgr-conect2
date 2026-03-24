@@ -186,6 +186,19 @@ const MyLunch: React.FC = () => {
   const meatOptions  = useMemo(() => activeMenu?.pratos.filter(p => p.categoria === 'mistura')   ?? [], [activeMenu]);
   const sideOptions  = useMemo(() => activeMenu?.pratos.filter(p => p.categoria === 'guarnicao') ?? [], [activeMenu]);
 
+  // ── Derived: set of current dish IDs (for unavailability detection) ──
+  const currentDishIds = useMemo(() => new Set(activeMenu?.pratos.map(p => p.id) ?? []), [activeMenu]);
+
+  // ── Check if any day has unavailable items ──
+  const hasUnavailableItems = useMemo(() => {
+    if (!existingChoice) return false;
+    return DAY_KEYS.some(day => {
+      const dc = existingChoice.escolhas[day] as LunchDayChoice | null | undefined;
+      if (!dc) return false;
+      return (dc.misturas?.some(m => !currentDishIds.has(m.id)) || dc.guarnicoes?.some(g => !currentDishIds.has(g.id)));
+    });
+  }, [existingChoice, currentDishIds]);
+
   // ── Toggle item in selection ──
   const toggleItem = (day: DayKey, categoria: 'misturas' | 'guarnicoes', itemId: string) => {
     setSelections(prev => {
@@ -429,6 +442,17 @@ const MyLunch: React.FC = () => {
               <Clock size={12} /> Prazo diário: {horarioLimite}
             </span>
           </div>
+
+          {/* Alert: unavailable items */}
+          {hasUnavailableItems && (
+            <div className="mx-4 mt-3 bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+              <AlertTriangle size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-red-800">⚠️ O cardápio foi alterado pelo restaurante!</p>
+                <p className="text-xs text-red-700 mt-0.5">Alguns itens do seu pedido não estão mais disponíveis (marcados em vermelho). Clique em "Alterar" para atualizar seu pedido com os novos pratos.</p>
+              </div>
+            </div>
+          )}
           <div className="divide-y divide-gray-50">
             {DAY_KEYS.map(day => {
               const dc = existingChoice.escolhas[day] as LunchDayChoice | null | undefined;
@@ -456,12 +480,32 @@ const MyLunch: React.FC = () => {
                   {!isEditing && (
                     dc ? (
                       <div className="flex flex-wrap gap-1.5">
-                        {dc.misturas?.map(m => (
-                          <span key={m.id} className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full">🥩 {m.nome}</span>
-                        ))}
-                        {dc.guarnicoes?.map(g => (
-                          <span key={g.id} className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">🥗 {g.nome}</span>
-                        ))}
+                        {dc.misturas?.map(m => {
+                          const unavailable = !currentDishIds.has(m.id);
+                          return (
+                            <span key={m.id} className={`text-xs px-2 py-0.5 rounded-full ${
+                              unavailable
+                                ? 'bg-red-100 text-red-700 border border-red-300 line-through'
+                                : 'bg-orange-100 text-orange-800'
+                            }`}>
+                              {unavailable ? '⚠️' : '🥩'} {m.nome}
+                              {unavailable && <span className="ml-1 text-[9px] font-bold no-underline">INDISPONÍVEL</span>}
+                            </span>
+                          );
+                        })}
+                        {dc.guarnicoes?.map(g => {
+                          const unavailable = !currentDishIds.has(g.id);
+                          return (
+                            <span key={g.id} className={`text-xs px-2 py-0.5 rounded-full ${
+                              unavailable
+                                ? 'bg-red-100 text-red-700 border border-red-300 line-through'
+                                : 'bg-green-100 text-green-800'
+                            }`}>
+                              {unavailable ? '⚠️' : '🥗'} {g.nome}
+                              {unavailable && <span className="ml-1 text-[9px] font-bold no-underline">INDISPONÍVEL</span>}
+                            </span>
+                          );
+                        })}
                       </div>
                     ) : (
                       <span className="text-xs text-gray-400">— Não vai almoçar</span>
