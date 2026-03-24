@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, doc, increment } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, deleteDoc, doc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, TimeEntry, UserProfile, TimeBankEntry, EmployeeOccurrence, OCCURRENCE_LABELS, OCCURRENCE_COLORS } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,7 +7,7 @@ import {
   Calendar, User, Search, AlertCircle, CheckCircle, Clock, 
   AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, 
   FileText, FileSpreadsheet, MapPin, Edit2, Banknote, PiggyBank,
-  History, Camera
+  History, Camera, Trash2, Pencil
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -60,12 +60,12 @@ const AttendanceReports: React.FC = () => {
   const [adjustmentsList, setAdjustmentsList] = useState<TimeEntry[]>([]);
   const [loadingAdjList, setLoadingAdjList] = useState(false);
 
-  // Edit Entry State
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [entryToEdit, setEntryToEdit] = useState<TimeEntry | null>(null);
-  const [editEntryTime, setEditEntryTime] = useState('');
-  const [editEntryReason, setEditEntryReason] = useState('');
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  // Day Edit State (comprehensive day-level editing)
+  const [dayEditModalOpen, setDayEditModalOpen] = useState(false);
+  const [dayEditData, setDayEditData] = useState<any>(null);
+  const [dayEditTimes, setDayEditTimes] = useState({ entry: '', lunchStart: '', lunchEnd: '', exit: '' });
+  const [dayEditReason, setDayEditReason] = useState('');
+  const [isSavingDayEdit, setIsSavingDayEdit] = useState(false);
 
   // Sprint 48 â€” Ocorrências do colaborador
   const [occurrencesForReport, setOccurrencesForReport] = useState<EmployeeOccurrence[]>([]);
@@ -215,9 +215,9 @@ const AttendanceReports: React.FC = () => {
          console.error("Error generating report:", error);
       }
       if (error?.code === 'permission-denied') {
-        alert("Acesso negado: VocÃƒÆ’Ã‚Âª nÃƒÆ’Ã‚Â£o tem permissÃƒÆ’Ã‚Â£o para gerar este relatÃƒÆ’Ã‚Â³rio.");
+        alert("Acesso negado: Você não tem permissão para gerar este relatório.");
       } else {
-        alert("Erro ao gerar relatÃƒÆ’Ã‚Â³rio. Verifique suas permissÃƒÆ’Ã‚Âµes.");
+        alert("Erro ao gerar relatório. Verifique suas permissões.");
       }
     } finally {
       setLoading(false);
@@ -431,35 +431,83 @@ const AttendanceReports: React.FC = () => {
     }
   };
 
-  const openEditModal = (entry: TimeEntry) => {
-    setEntryToEdit(entry);
-    const date = entry.timestamp.toDate();
-    const tzOffset = date.getTimezoneOffset() * 60000;
-    const localISOTime = (new Date(date.getTime() - tzOffset)).toISOString().slice(0, 16);
-    setEditEntryTime(localISOTime);
-    setEditEntryReason('');
-    setEditModalOpen(true);
+  const openDayEditModal = (day: any) => {
+    const toLocalInput = (entry?: TimeEntry) => {
+      if (!entry) return '';
+      const date = entry.timestamp.toDate();
+      const tzOffset = date.getTimezoneOffset() * 60000;
+      return (new Date(date.getTime() - tzOffset)).toISOString().slice(0, 16);
+    };
+    setDayEditData(day);
+    setDayEditTimes({
+      entry: toLocalInput(day.entry),
+      lunchStart: toLocalInput(day.lunchStart),
+      lunchEnd: toLocalInput(day.lunchEnd),
+      exit: toLocalInput(day.exit),
+    });
+    setDayEditReason('');
+    setDayEditModalOpen(true);
   };
 
-  const submitEditEntry = async () => {
-    if (!entryToEdit || !editEntryTime || !editEntryReason || !currentUser) return;
-    setIsSavingEdit(true);
+  const submitDayEdit = async () => {
+    if (!dayEditData || !dayEditReason || !currentUser) return;
+    setIsSavingDayEdit(true);
     try {
-      const newTimestamp = new Date(editEntryTime);
-      await updateDoc(doc(db, CollectionName.TIME_ENTRIES, entryToEdit.id), {
-        timestamp: Timestamp.fromDate(newTimestamp),
-        editedBy: currentUser.uid,
-        editReason: editEntryReason,
-        editTimestamp: serverTimestamp(),
-      });
-      alert("Registro atualizado com sucesso.");
-      setEditModalOpen(false);
-      generateReport(); // Refresh report
+      const updates: { type: string; entry?: TimeEntry; newTime: string }[] = [
+        { type: 'entry', entry: dayEditData.entry, newTime: dayEditTimes.entry },
+        { type: 'lunch_start', entry: dayEditData.lunchStart, newTime: dayEditTimes.lunchStart },
+        { type: 'lunch_end', entry: dayEditData.lunchEnd, newTime: dayEditTimes.lunchEnd },
+        { type: 'exit', entry: dayEditData.exit, newTime: dayEditTimes.exit },
+      ];
+
+      for (const u of updates) {
+        if (u.entry && u.newTime) {
+          // Update existing entry
+          const newTs = new Date(u.newTime);
+          const oldTs = u.entry.timestamp.toDate();
+          if (Math.abs(newTs.getTime() - oldTs.getTime()) > 60000) {
+            await updateDoc(doc(db, CollectionName.TIME_ENTRIES, u.entry.id), {
+              timestamp: Timestamp.fromDate(newTs),
+              editedBy: currentUser.uid,
+              editReason: dayEditReason,
+              editTimestamp: serverTimestamp(),
+            });
+          }
+        } else if (!u.entry && u.newTime) {
+          // Create new entry
+          await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
+            userId: selectedUser,
+            type: u.type,
+            timestamp: Timestamp.fromDate(new Date(u.newTime)),
+            locationId: 'manual_adjustment',
+            isManual: true,
+            editedBy: currentUser.uid,
+            editReason: dayEditReason,
+            userAgent: 'Manager Dashboard - Day Edit',
+          });
+        }
+      }
+
+      alert('Registros do dia atualizados com sucesso.');
+      setDayEditModalOpen(false);
+      generateReport();
     } catch (e) {
       console.error(e);
-      alert("Erro ao editar registro.");
+      alert('Erro ao editar registros do dia.');
     } finally {
-      setIsSavingEdit(false);
+      setIsSavingDayEdit(false);
+    }
+  };
+
+  const deleteTimeEntry = async (entry: TimeEntry) => {
+    if (!confirm('Tem certeza que deseja excluir este registro de ponto?')) return;
+    try {
+      await deleteDoc(doc(db, CollectionName.TIME_ENTRIES, entry.id));
+      alert('Registro excluído com sucesso.');
+      generateReport();
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao excluir registro.');
     }
   };
 
@@ -562,7 +610,7 @@ const AttendanceReports: React.FC = () => {
     if (isLateEntry) return { color: 'text-yellow-700 bg-yellow-100', label: 'Atraso', type: 'late' };
     if (isExtra) return { color: 'text-blue-700 bg-blue-100', label: 'Hora Extra', type: 'extra' };
     
-    return { color: 'text-green-700 bg-green-100', label: 'No HorÃƒÆ’Ã‚Â¡rio', type: 'on-time' };
+    return { color: 'text-green-700 bg-green-100', label: 'No Horário', type: 'on-time' };
   };
 
   // Formata ms em HH:MM
@@ -588,13 +636,13 @@ const AttendanceReports: React.FC = () => {
     
     const schedule = getDailySchedule(day);
     
-    // Desconta almoÃƒÆ’Ã‚Â§o se ambos registrados
+    // Desconta almoço se ambos registrados
     if (day.lunchStart && day.lunchEnd) {
       const lunchStartTime = day.lunchStart.timestamp.toDate().getTime();
       const lunchEndTime = day.lunchEnd.timestamp.toDate().getTime();
       totalMs -= (lunchEndTime - lunchStartTime);
     } else if (totalMs > 6 * 3600000) {
-      // SPRINT 9: CorreÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o do Erro de AlmoÃƒÆ’Ã‚Â§o. Se nÃƒÆ’Ã‚Â£o registrou almoÃƒÆ’Ã‚Â§o e trabalhou mais de 6h, subtrai automaticamente
+      // SPRINT 9: Correção do Erro de Almoço. Se não registrou almoço e trabalhou mais de 6h, subtrai automaticamente
       const autoLunchMs = (schedule.lunchDuration || 60) * 60000;
       totalMs -= autoLunchMs;
     }
@@ -815,16 +863,16 @@ const AttendanceReports: React.FC = () => {
         'admin': 'Gestor',
         'developer': 'Desenvolvedor',
         'manager': 'Gerente',
-        'technician': 'TÃƒÆ’Ã‚Â©cnico',
+        'technician': 'Técnico',
         'employee': 'Colaborador',
         'pending': 'Pendente'
     };
     const userRole = roleMap[user?.role || ''] || userAny?.jobTitle || 'Colaborador';
     
-    // === CABEÃƒÆ’ââ‚¬Â¡ALHO ===
+    // === CABEÇALHO ===
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
-    doc.text('MGR SERVIÃƒÆ’ââ‚¬Â¡OS', 105, 18, { align: 'center' });
+    doc.text('MGR SERVICOS', 105, 18, { align: 'center' });
     
     doc.setFontSize(13);
     doc.setFont('helvetica', 'normal');
@@ -842,10 +890,10 @@ const AttendanceReports: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     
     doc.text(`Nome Completo: ${userName}`, 16, 46);
-    doc.text(`NÃƒâ€šÃ‚Âº Documento: ${userDocNum}`, 16, 52);
+    doc.text(`Nº Documento: ${userDocNum}`, 16, 52);
     
-    doc.text(`Cargo/FunÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o: ${userRole}`, 110, 46);
-    doc.text(`CompetÃƒÆ’Ã‚Âªncia: ${monthName}`, 110, 52);
+    doc.text(`Cargo/Função: ${userRole}`, 110, 46);
+    doc.text(`Competência: ${monthName}`, 110, 52);
     
     // === TABELA DE REGISTROS ===
     const rows = reportData.map(day => {
@@ -857,7 +905,7 @@ const AttendanceReports: React.FC = () => {
       const dayStatus = getDayStatus(day);
       
       let ocorrencia = dayStatus.label;
-      if (day.exit?.forcedClose) ocorrencia += ' (ForÃƒÆ’Ã‚Â§ada)';
+      if (day.exit?.forcedClose) ocorrencia += ' (Forçada)';
       
       return {
         data: [
@@ -876,7 +924,7 @@ const AttendanceReports: React.FC = () => {
     });
     
     autoTable(doc, {
-      head: [['Dia','Sem.','Entrada','AlmoÃƒÆ’Ã‚Â§o','Volta','SaÃƒÆ’Ã‚Â­da','Total','OcorrÃƒÆ’Ã‚Âªncia']],
+      head: [['Dia','Sem.','Entrada','Almoço','Volta','Saída','Total','Ocorrência']],
       body: rows.map(r => r.data),
       startY: 65,
       styles: { 
@@ -957,7 +1005,7 @@ const AttendanceReports: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.text(
-      `Declaro estar ciente das informaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Âµes registradas nesta folha de ponto referente ao perÃƒÆ’Ã‚Â­odo de ${monthName}.`,
+      `Declaro estar ciente das informações registradas nesta folha de ponto referente ao período de ${monthName}.`,
       105, signY, { align: 'center' }
     );
     
@@ -972,7 +1020,7 @@ const AttendanceReports: React.FC = () => {
     // Assinatura RH
     doc.line(105, signY + 18, 196, signY + 18);
     doc.setFont('helvetica', 'bold');
-    doc.text('ResponsÃƒÆ’Ã‚Â¡vel RH / GestÃƒÆ’Ã‚Â£o', 150, signY + 23, { align: 'center' });
+    doc.text('Responsável RH / Gestão', 150, signY + 23, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.text('____________________________', 150, signY + 28, { align: 'center' });
     doc.text('Data: ____/____/________', 150, signY + 34, { align: 'center' });
@@ -988,10 +1036,10 @@ const AttendanceReports: React.FC = () => {
     const wsData = [
       ['ESPELHO DE PONTO - MGR SERVIÃƒÆ’ââ‚¬Â¡OS'],
       [`Colaborador: ${userName}`],
-      [`PerÃƒÆ’Ã‚Â­odo: ${selectedMonth}`],
+      [`Período: ${selectedMonth}`],
       [`Gerado em: ${new Date().toLocaleString()}`],
       [],
-      ['Data','Entrada','AlmoÃƒÆ’Ã‚Â§o','Volta','SaÃƒÆ’Ã‚Â­da','Total Trabalhado','Obs']
+      ['Data','Entrada','Almoço','Volta','Saída','Total Trabalhado','Obs']
     ];
     
     reportData.forEach(day => {
@@ -1002,7 +1050,7 @@ const AttendanceReports: React.FC = () => {
       const dayStatus = getDayStatus(day);
       
       let obs = dayStatus.label;
-      if (day.exit?.forcedClose) obs += ' (ForÃƒÆ’Ã‚Â§ada)';
+      if (day.exit?.forcedClose) obs += ' (Forçada)';
 
       wsData.push([
         dateObj.toLocaleDateString(),
@@ -1026,7 +1074,7 @@ const AttendanceReports: React.FC = () => {
     
     wsData.push([]);
     wsData.push([
-      `Total do MÃƒÆ’Ã‚Âªs: ${totalH}h ${String(totalM).padStart(2,'0')}m`,
+      `Total do Mês: ${totalH}h ${String(totalM).padStart(2,'0')}m`,
       `Dias Trabalhados: ${workedDays}`
     ]);
     
@@ -1066,8 +1114,8 @@ const AttendanceReports: React.FC = () => {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text(`Colaborador: ${userName}`, 14, 33);
-    doc.text(`PerÃƒÆ’Ã‚Â­odo: ${monthName}`, 14, 39);
-    doc.text(`Valor Hora PadrÃƒÆ’Ã‚Â£o: R$ ${hourlyRate.toFixed(2).replace('.', ',')}`, 14, 45);
+    doc.text(`Período: ${monthName}`, 14, 39);
+    doc.text(`Valor Hora Padrão: R$ ${hourlyRate.toFixed(2).replace('.', ',')}`, 14, 45);
 
     autoTable(doc, {
       head: [['Venda / Evento', 'Horas', 'Valor R$']],
@@ -1075,7 +1123,7 @@ const AttendanceReports: React.FC = () => {
         ['Horas Normais (Base)', `${financialSummary.normalHours.toFixed(1)}h`, `R$ ${financialSummary.valueNormal.toFixed(2).replace('.', ',')}`],
         ['Horas Extras (50%) - Dias ÃƒÆ’Ã…Â¡teis', `${financialSummary.extra50Hours.toFixed(1)}h`, `R$ ${financialSummary.valueExtra50.toFixed(2).replace('.', ',')}`],
         ['Horas Extras (100%) - Domingos/Feriados', `${financialSummary.extra100Hours.toFixed(1)}h`, `R$ ${financialSummary.valueExtra100.toFixed(2).replace('.', ',')}`],
-        ['Adicional Noturno (20%) - 22h ÃƒÆ’Ã‚Â s 05h', `${financialSummary.nightPremiumHours.toFixed(1)}h`, `R$ ${financialSummary.valueNight.toFixed(2).replace('.', ',')}`],
+        ['Adicional Noturno (20%) - 22h às 05h', `${financialSummary.nightPremiumHours.toFixed(1)}h`, `R$ ${financialSummary.valueNight.toFixed(2).replace('.', ',')}`],
       ],
       startY: 55,
       theme: 'grid',
@@ -1102,7 +1150,7 @@ const AttendanceReports: React.FC = () => {
     return (
       <div className="text-center py-12">
         <h2 className="text-2xl font-bold text-gray-900">Acesso Restrito</h2>
-        <p className="text-gray-500">VocÃƒÆ’Ã‚Âª nÃƒÆ’Ã‚Â£o tem permissÃƒÆ’Ã‚Â£o para visualizar relatÃƒÆ’Ã‚Â³rios.</p>
+        <p className="text-gray-500">Você não tem permissão para visualizar relatórios.</p>
       </div>
     );
   }
@@ -1111,8 +1159,8 @@ const AttendanceReports: React.FC = () => {
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-           <h1 className="text-2xl font-bold text-gray-900">GestÃƒÆ’Ã‚Â£o de Ponto e FrequÃƒÆ’Ã‚Âªncia</h1>
-           <p className="text-gray-500">Monitoramento em tempo real e relatÃƒÆ’Ã‚Â³rios mensais.</p>
+           <h1 className="text-2xl font-bold text-gray-900">Gestão de Ponto e Frequência</h1>
+           <p className="text-gray-500">Monitoramento em tempo real e relatórios mensais.</p>
         </div>
       </div>
 
@@ -1144,10 +1192,10 @@ const AttendanceReports: React.FC = () => {
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3">
                   <ShieldAlert className="text-blue-600 w-5 h-5 mt-0.5" />
                   <div>
-                      <h4 className="font-bold text-blue-800">Painel de GestÃƒÆ’Ã‚Â£o de Turnos</h4>
+                      <h4 className="font-bold text-blue-800">Painel de Gestão de Turnos</h4>
                       <p className="text-sm text-blue-700">
-                          Abaixo estÃƒÆ’Ã‚Â£o listados os colaboradores que registraram entrada mas ainda nÃƒÆ’Ã‚Â£o registraram saÃƒÆ’Ã‚Â­da. 
-                          Turnos abertos hÃƒÆ’Ã‚Â¡ mais de 12 horas sÃƒÆ’Ã‚Â£o destacados em vermelho e devem ser encerrados manualmente.
+                          Abaixo estão listados os colaboradores que registraram entrada mas ainda não registraram saída. 
+                          Turnos abertos há mais de 12 horas são destacados em vermelho e devem ser encerrados manualmente.
                       </p>
                   </div>
               </div>
@@ -1291,7 +1339,7 @@ const AttendanceReports: React.FC = () => {
                 </div>
                 
                 <div className="w-full md:w-48">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">MÃƒÆ’Ã‚Âªs Ref.</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mês Ref.</label>
                     <input 
                     type="month" 
                     value={selectedMonth}
@@ -1305,7 +1353,7 @@ const AttendanceReports: React.FC = () => {
                 disabled={!selectedUser || loading}
                 className="w-full md:w-auto px-6 py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-70 flex items-center justify-center gap-2"
                 >
-                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar RelatÒ³rio</>}
+                    {loading ? 'Carregando...' : <><Search size={18}/> Gerar Relatório</>}
                 </button>
 
                 {reportData.length > 0 && (
@@ -1351,15 +1399,17 @@ const AttendanceReports: React.FC = () => {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Entrada</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">AlmoÃƒÆ’Ã‚Â§o</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Volta</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">SaÃƒÆ’Ã‚Â­da</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total / Carga HorÃƒÆ’Ã‚Â¡ria</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
-                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Destino Extra</th>
-                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Destino Extra</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Entrada</th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Almoço</th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Volta</th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Saída</th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total / Carga</th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Destino Extra</th>
+                                {userProfile?.permissions?.canManageAttendance && (
+                                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Ações</th>
+                                )}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -1378,89 +1428,52 @@ const AttendanceReports: React.FC = () => {
                                 }
 
                                 return (
-                                    <tr key={idx} className={`${inativo ? 'bg-gray-50/50' : 'hover:bg-gray-50'}`}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    <tr key={idx} className={`${inativo ? 'bg-gray-50/50' : 'hover:bg-gray-50'} group`}>
+                                        {/* DATA */}
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {dateObj.toLocaleDateString()} <span className="text-gray-400 font-normal text-xs ml-1">({dateObj.toLocaleDateString(undefined, {weekday: 'short'})})</span>
                                         </td>
-                                        <td className="px-6 py-4 text-center">
-                                            {worked && worked.diffMinutes > 10 && !processedDates.has(day.date) && (
-                                                <select
-                                                    value={dayDestinations[day.date] || 'pay'}
-                                                    onChange={(e) => setDayDestinations({
-                                                        ...dayDestinations,
-                                                        [day.date]: e.target.value as 'pay' | 'bank'
-                                                    })}
-                                                    className="text-xs border rounded px-1 py-0.5 bg-white text-gray-900"
-                                                >
-                                                    <option value="pay">Ã°Å¸â€™Â° Pagar</option>
-                                                    <option value="bank">ðŸ¦ Banco</option>
-                                                </select>
-                                            )}
-                                            {processedDates.has(day.date) && (
-                                                <span className="text-[10px] font-bold text-green-600 flex items-center justify-center gap-1">
-                                                    <CheckCircle size={10} /> Processado
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
+                                        {/* ENTRADA */}
+                                        <td className="px-4 py-3 text-center">
                                             {day.entry ? (
-                                                <div className="flex items-center justify-center gap-1 group relative">
-                                                    <span className={`px-2 py-1 rounded text-sm font-bold ${dayStatus.type === 'late' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                                        {getTimeString(day.entry)}
-                                                    </span>
-                                                    {day.entry.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1" title="Editado Manualmente">*</span>}
-                                                    {userProfile?.permissions?.canManageAttendance && (
-                                                      <button onClick={() => openEditModal(day.entry)} className="hidden group-hover:block p-1 text-gray-400 hover:text-brand-600"><Edit2 size={12} /></button>
-                                                    )}
-                                                </div>
-                                            ) : '-'}
+                                                <span className={`px-2 py-1 rounded text-sm font-bold ${dayStatus.type === 'late' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                                    {getTimeString(day.entry)}
+                                                </span>
+                                            ) : <span className="text-gray-400">-</span>}
+                                            {day.entry?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1" title="Editado">*</span>}
                                         </td>
-                                        <td className="px-6 py-4 text-center">
-                                            {day.lunchStart ? (
-                                                <div className="flex items-center justify-center gap-1 group relative">
-                                                    <span className="text-sm text-gray-600">{getTimeString(day.lunchStart)}</span>
-                                                    {day.lunchStart.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1" title="Editado Manualmente">*</span>}
-                                                    {userProfile?.permissions?.canManageAttendance && (
-                                                      <button onClick={() => openEditModal(day.lunchStart)} className="hidden group-hover:block p-1 text-gray-400 hover:text-brand-600"><Edit2 size={12} /></button>
-                                                    )}
-                                                </div>
-                                            ) : '-'}
+                                        {/* ALMOÇO */}
+                                        <td className="px-4 py-3 text-center text-sm text-gray-600">
+                                            {day.lunchStart ? getTimeString(day.lunchStart) : '-'}
+                                            {day.lunchStart?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1">*</span>}
                                         </td>
-                                        <td className="px-6 py-4 text-center">
-                                            {day.lunchEnd ? (
-                                                <div className="flex items-center justify-center gap-1 group relative">
-                                                    <span className="text-sm text-gray-600">{getTimeString(day.lunchEnd)}</span>
-                                                    {day.lunchEnd.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1" title="Editado Manualmente">*</span>}
-                                                    {userProfile?.permissions?.canManageAttendance && (
-                                                      <button onClick={() => openEditModal(day.lunchEnd)} className="hidden group-hover:block p-1 text-gray-400 hover:text-brand-600"><Edit2 size={12} /></button>
-                                                    )}
-                                                </div>
-                                            ) : '-'}
+                                        {/* VOLTA */}
+                                        <td className="px-4 py-3 text-center text-sm text-gray-600">
+                                            {day.lunchEnd ? getTimeString(day.lunchEnd) : '-'}
+                                            {day.lunchEnd?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1">*</span>}
                                         </td>
-                                        <td className="px-6 py-4 text-center">
+                                        {/* SAÍDA */}
+                                        <td className="px-4 py-3 text-center text-sm font-bold">
                                             {day.exit ? (
-                                                <div className="flex items-center justify-center gap-1 group relative font-bold">
-                                                    <div className="flex flex-col items-center">
-                                                      <span>{getTimeString(day.exit)}</span>
-                                                      {day.exit.forcedClose && <span className="text-[10px] text-red-500 font-normal">ForÃƒÆ’Ã‚Â§ado</span>}
-                                                    </div>
-                                                    {day.exit.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1" title="Editado Manualmente">*</span>}
-                                                    {userProfile?.permissions?.canManageAttendance && (
-                                                      <button onClick={() => openEditModal(day.exit)} className="hidden group-hover:block p-1 text-gray-400 hover:text-brand-600"><Edit2 size={12} /></button>
-                                                    )}
+                                                <div className="flex flex-col items-center">
+                                                    <span>{getTimeString(day.exit)}</span>
+                                                    {day.exit.forcedClose && <span className="text-[10px] text-red-500 font-normal">Forçado</span>}
                                                 </div>
-                                            ) : '-'}
+                                            ) : <span className="text-gray-400 font-normal">-</span>}
+                                            {day.exit?.editedBy && <span className="text-[10px] text-orange-500 font-bold ml-1">*</span>}
                                         </td>
-                                        <td className={`px-6 py-4 text-center text-sm ${totalColor} whitespace-nowrap`}>
+                                        {/* TOTAL / CARGA */}
+                                        <td className={`px-4 py-3 text-center text-sm ${totalColor} whitespace-nowrap`}>
                                             {worked ? worked.display : '--'}
                                         </td>
-                                        <td className="px-6 py-4 text-center">
+                                        {/* STATUS */}
+                                        <td className="px-4 py-3 text-center">
                                             <div className="flex flex-col items-center gap-1">
                                                 <span className={`text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${dayStatus.color}`}>
                                                     {dayStatus.label}
                                                 </span>
 
-                                                {/* Sprint 48 â€” Ocorrência badge */}
+                                                {/* Ocorrência badge */}
                                                 {(() => {
                                                   const dayOccs = occurrencesForReport.filter(o => o.data === day.date);
                                                   if (dayOccs.length === 0) return null;
@@ -1471,52 +1484,69 @@ const AttendanceReports: React.FC = () => {
                                                           <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border ${OCCURRENCE_COLORS[occ.tipo]}`}>
                                                             {OCCURRENCE_LABELS[occ.tipo]}
                                                           </span>
-                                                          {occ.arquivoUrl && (
-                                                            <a href={occ.arquivoUrl} target="_blank" rel="noreferrer"
-                                                              className="text-[9px] text-brand-600 hover:underline font-bold" title="Ver atestado">
-                                                              ðŸ“Ž
-                                                            </a>
-                                                          )}
                                                         </div>
                                                       ))}
                                                     </div>
                                                   );
                                                 })()}
 
-                                                {/* Map Links for All Entries */}
-                                                {(day.entry?.mapsUrl || day.lunchStart?.mapsUrl || day.lunchEnd?.mapsUrl || day.exit?.mapsUrl) && (
-                                                    <div className="flex flex-col gap-0.5 mt-1">
+                                                {/* Map Links */}
+                                                {(day.entry?.mapsUrl || day.exit?.mapsUrl) && (
+                                                    <div className="flex gap-1 mt-1">
                                                         {day.entry?.mapsUrl && (
-                                                            <a href={day.entry.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Entrada)
-                                                            </a>
-                                                        )}
-                                                        {day.lunchStart?.mapsUrl && (
-                                                            <a href={day.lunchStart.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Ida Almoço)
-                                                            </a>
-                                                        )}
-                                                        {day.lunchEnd?.mapsUrl && (
-                                                            <a href={day.lunchEnd.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Volta Almoço)
+                                                            <a href={day.entry.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5">
+                                                                <MapPin size={8} /> E
                                                             </a>
                                                         )}
                                                         {day.exit?.mapsUrl && (
-                                                            <a href={day.exit.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center justify-center gap-1">
-                                                                <MapPin size={10} /> Mapa (Saída)
+                                                            <a href={day.exit.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5">
+                                                                <MapPin size={8} /> S
                                                             </a>
                                                         )}
                                                     </div>
                                                 )}
                                             </div>
                                         </td>
+                                        {/* DESTINO EXTRA */}
+                                        <td className="px-4 py-3 text-center">
+                                            {worked && worked.diffMinutes > 10 && !processedDates.has(day.date) && (
+                                                <select
+                                                    value={dayDestinations[day.date] || 'pay'}
+                                                    onChange={(e) => setDayDestinations({
+                                                        ...dayDestinations,
+                                                        [day.date]: e.target.value as 'pay' | 'bank'
+                                                    })}
+                                                    className="text-xs border rounded px-1 py-0.5 bg-white text-gray-900"
+                                                >
+                                                    <option value="pay">💰 Pagar</option>
+                                                    <option value="bank">🏦 Banco</option>
+                                                </select>
+                                            )}
+                                            {processedDates.has(day.date) && (
+                                                <span className="text-[10px] font-bold text-green-600 flex items-center justify-center gap-1">
+                                                    <CheckCircle size={10} /> Processado
+                                                </span>
+                                            )}
+                                        </td>
+                                        {/* AÇÕES */}
+                                        {userProfile?.permissions?.canManageAttendance && (
+                                          <td className="px-4 py-3 text-center">
+                                            <button
+                                              onClick={() => openDayEditModal(day)}
+                                              className="p-2 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                              title="Editar registros do dia"
+                                            >
+                                              <Pencil size={16} />
+                                            </button>
+                                          </td>
+                                        )}
                                     </tr>
                                 );
                             })}
                         </tbody>
                         <tfoot className="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300">
                             <tr>
-                                <td colSpan={6} className="px-6 py-4 text-right uppercase text-xs tracking-wider">Totais do MÃƒÆ’Ã‚Âªs</td>
+                                <td colSpan={6} className="px-6 py-4 text-right uppercase text-xs tracking-wider">Totais do Mês</td>
                                 <td className="px-6 py-4 text-center text-brand-700 text-base">{summary.totalTime}</td>
                                 <td className="px-6 py-4 text-center text-xs font-normal">
                                     <div className="flex flex-col gap-1">
@@ -1561,14 +1591,14 @@ const AttendanceReports: React.FC = () => {
                      </div>
                      <div className="mt-6 p-4 bg-brand-50 border border-brand-200 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
                           <div className="flex flex-col gap-2">
-                              <p className="text-sm text-brand-700 font-bold uppercase tracking-wide">SalÃƒÆ’Ã‚Â¡rio Bruto Calculado</p>
+                              <p className="text-sm text-brand-700 font-bold uppercase tracking-wide">Salário Bruto Calculado</p>
                               <p className="text-3xl font-black text-brand-900">R$ {financialSummary.totalValue.toFixed(2)}</p>
                               {(() => {
                                 const user = users.find(u => u.uid === selectedUser);
                                 return typeof user?.accumulatedPrize === 'number' ? (
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 px-2 py-1 rounded-lg font-bold">
-                                      ÃƒÂ°Ã…Â¸Ã‚Âââ‚¬Â  Cofre Acumulado: R$ {user.accumulatedPrize.toFixed(2)}
+                                      💰 Cofre Acumulado: R$ {user.accumulatedPrize.toFixed(2)}
                                     </span>
                                   </div>
                                 ) : null;
@@ -1590,7 +1620,7 @@ const AttendanceReports: React.FC = () => {
       {activeTab === 'adjustments' && (
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm max-w-2xl mx-auto">
               <div className="mb-6">
-                  <h2 className="text-lg font-bold text-gray-900">LanÃƒÆ’Ã‚Â§amento Manual de Ponto</h2>
+                  <h2 className="text-lg font-bold text-gray-900">Lançamento Manual de Ponto</h2>
                   <p className="text-sm text-gray-500">Utilize esta ferramenta para corrigir esquecimentos ou erros no registro de ponto dos colaboradores.</p>
               </div>
 
@@ -1618,9 +1648,9 @@ const AttendanceReports: React.FC = () => {
                               required
                           >
                               <option value="entry">Entrada</option>
-                              <option value="lunch_start">InÃƒÆ’Ã‚Â­cio AlmoÃƒÆ’Ã‚Â§o</option>
-                              <option value="lunch_end">Fim AlmoÃƒÆ’Ã‚Â§o</option>
-                              <option value="exit">SaÃƒÆ’Ã‚Â­da</option>
+                              <option value="lunch_start">Início Almoço</option>
+                              <option value="lunch_end">Fim Almoço</option>
+                              <option value="exit">Saída</option>
                           </select>
                       </div>
                       <div>
@@ -1642,7 +1672,7 @@ const AttendanceReports: React.FC = () => {
                           onChange={e => setAdjReason(e.target.value)}
                           className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                           rows={3}
-                          placeholder="Ex: Colaborador esqueceu de bater o ponto na volta do almoÃƒÆ’Ã‚Â§o."
+                          placeholder="Ex: Colaborador esqueceu de bater o ponto na volta do almoço."
                           required
                       />
                   </div>
@@ -1809,13 +1839,13 @@ const AttendanceReports: React.FC = () => {
              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
                  <h2 className="text-xl font-bold text-gray-900 mb-2">Encerrar Turno Manualmente</h2>
                  <p className="text-sm text-gray-500 mb-6">
-                     VocÃƒÆ’Ã‚Âª estÃƒÆ’Ã‚Â¡ forÃƒÆ’Ã‚Â§ando a saÃƒÆ’Ã‚Â­da de <strong className="text-gray-900">{selectedShiftToClose.user.displayName}</strong>. 
-                     Esta aÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o ficarÃƒÆ’Ã‚Â¡ registrada na auditoria.
+                     Você está forçando a saída de <strong className="text-gray-900">{selectedShiftToClose.user.displayName}</strong>. 
+                     Esta ação ficará registrada na auditoria.
                  </p>
 
                  <div className="space-y-4">
                      <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-1">Data/Hora da SaÃƒÆ’Ã‚Â­da</label>
+                         <label className="block text-sm font-medium text-gray-700 mb-1">Data/Hora da Saída</label>
                          <input 
                             type="datetime-local" 
                             value={exitTime} 
@@ -1830,7 +1860,7 @@ const AttendanceReports: React.FC = () => {
                             value={exitReason} 
                             onChange={e => setExitReason(e.target.value)}
                             className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
-                            placeholder="Ex: Colaborador esqueceu de registrar saÃƒÆ’Ã‚Â­da."
+                            placeholder="Ex: Colaborador esqueceu de registrar saída."
                          />
                      </div>
                  </div>
@@ -1854,51 +1884,107 @@ const AttendanceReports: React.FC = () => {
          </div>
       )}
 
-      {/* EDIT ENTRY MODAL */}
-      {editModalOpen && entryToEdit && (
-         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-             <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-                 <h2 className="text-xl font-bold text-gray-900 mb-2">Editar Registro de HorÃƒÆ’Ã‚Â¡rio</h2>
-                 <p className="text-sm text-gray-500 mb-6">
-                     VocÃƒÆ’Ã‚Âª estÃƒÆ’Ã‚Â¡ alterando um registro do dia <strong className="text-gray-900">{entryToEdit.timestamp.toDate().toLocaleDateString()}</strong>. 
-                     Esta aÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o ficarÃƒÆ’Ã‚Â¡ registrada na auditoria do sistema.
-                 </p>
+      {/* DAY EDIT MODAL */}
+      {dayEditModalOpen && dayEditData && (
+         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
+             <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full my-8">
+                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                   <div>
+                     <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                       <Pencil size={18} className="text-brand-600" /> Editar Registros do Dia
+                     </h2>
+                     <p className="text-xs text-gray-500 mt-0.5">
+                       {new Date(dayEditData.date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                     </p>
+                   </div>
+                   <button onClick={() => setDayEditModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
+                     <X size={20} />
+                   </button>
+                 </div>
 
-                 <div className="space-y-4">
-                     <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-1">Nova Data/Hora</label>
-                         <input 
-                            type="datetime-local" 
-                            value={editEntryTime} 
-                            onChange={e => setEditEntryTime(e.target.value)}
-                            className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-                         />
+                 <div className="p-6 space-y-4">
+                     {/* Entrada */}
+                     <div className="flex items-center gap-3">
+                       <div className="flex-1">
+                         <label className="block text-xs font-bold text-green-700 mb-1">⏰ Entrada</label>
+                         <input type="datetime-local" value={dayEditTimes.entry}
+                           onChange={e => setDayEditTimes(p => ({...p, entry: e.target.value}))}
+                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-300 outline-none" />
+                       </div>
+                       {dayEditData.entry && (
+                         <button onClick={() => { deleteTimeEntry(dayEditData.entry); setDayEditModalOpen(false); }}
+                           className="mt-5 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir entrada">
+                           <Trash2 size={16} />
+                         </button>
+                       )}
                      </div>
-                     <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-1">Motivo / Justificativa</label>
-                         <textarea 
-                            rows={2}
-                            value={editEntryReason} 
-                            onChange={e => setEditEntryReason(e.target.value)}
-                            className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
-                            placeholder="Ex: CorreÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o de esquecimento."
-                         />
+
+                     {/* Almoço */}
+                     <div className="flex items-center gap-3">
+                       <div className="flex-1">
+                         <label className="block text-xs font-bold text-orange-700 mb-1">🍽️ Ida Almoço</label>
+                         <input type="datetime-local" value={dayEditTimes.lunchStart}
+                           onChange={e => setDayEditTimes(p => ({...p, lunchStart: e.target.value}))}
+                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-300 outline-none" />
+                       </div>
+                       {dayEditData.lunchStart && (
+                         <button onClick={() => { deleteTimeEntry(dayEditData.lunchStart); setDayEditModalOpen(false); }}
+                           className="mt-5 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir ida almoço">
+                           <Trash2 size={16} />
+                         </button>
+                       )}
+                     </div>
+
+                     {/* Volta */}
+                     <div className="flex items-center gap-3">
+                       <div className="flex-1">
+                         <label className="block text-xs font-bold text-blue-700 mb-1">🔄 Volta Almoço</label>
+                         <input type="datetime-local" value={dayEditTimes.lunchEnd}
+                           onChange={e => setDayEditTimes(p => ({...p, lunchEnd: e.target.value}))}
+                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-300 outline-none" />
+                       </div>
+                       {dayEditData.lunchEnd && (
+                         <button onClick={() => { deleteTimeEntry(dayEditData.lunchEnd); setDayEditModalOpen(false); }}
+                           className="mt-5 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir volta almoço">
+                           <Trash2 size={16} />
+                         </button>
+                       )}
+                     </div>
+
+                     {/* Saída */}
+                     <div className="flex items-center gap-3">
+                       <div className="flex-1">
+                         <label className="block text-xs font-bold text-red-700 mb-1">🚪 Saída</label>
+                         <input type="datetime-local" value={dayEditTimes.exit}
+                           onChange={e => setDayEditTimes(p => ({...p, exit: e.target.value}))}
+                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-300 outline-none" />
+                       </div>
+                       {dayEditData.exit && (
+                         <button onClick={() => { deleteTimeEntry(dayEditData.exit); setDayEditModalOpen(false); }}
+                           className="mt-5 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir saída">
+                           <Trash2 size={16} />
+                         </button>
+                       )}
+                     </div>
+
+                     {/* Motivo */}
+                     <div className="pt-2 border-t border-gray-100">
+                       <label className="block text-xs font-bold text-gray-700 mb-1">📝 Motivo / Justificativa</label>
+                       <textarea rows={2} value={dayEditReason} onChange={e => setDayEditReason(e.target.value)}
+                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-brand-300 outline-none"
+                         placeholder="Ex: Correção de esquecimento de registro." />
                      </div>
                  </div>
 
-                 <div className="flex gap-3 mt-6">
-                     <button 
-                        onClick={() => setEditModalOpen(false)}
-                        className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-                     >
-                        Cancelar
+                 <div className="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+                     <button onClick={() => setDayEditModalOpen(false)}
+                       className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 font-medium text-sm">
+                       Cancelar
                      </button>
-                     <button 
-                        onClick={submitEditEntry}
-                        disabled={isSavingEdit || !editEntryTime || !editEntryReason}
-                        className="flex-1 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-                     >
-                        {isSavingEdit ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Salvar
+                     <button onClick={submitDayEdit}
+                       disabled={isSavingDayEdit || !dayEditReason}
+                       className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                       {isSavingDayEdit ? <><Loader2 className="animate-spin" size={16}/> Salvando...</> : <><Save size={16}/> Salvar Alterações</>}
                      </button>
                  </div>
              </div>
