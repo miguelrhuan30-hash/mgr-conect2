@@ -324,9 +324,10 @@ const MyLunch: React.FC = () => {
   const openEditDay = (day: DayKey) => {
     if (!existingChoice) return;
     const dc = existingChoice.escolhas[day] as LunchDayChoice | null | undefined;
+    // Filter out IDs that no longer exist in the current active menu
     setEditSelections({
-      misturas: dc?.misturas?.map(m => m.id) ?? [],
-      guarnicoes: dc?.guarnicoes?.map(g => g.id) ?? [],
+      misturas: dc?.misturas?.filter(m => currentDishIds.has(m.id)).map(m => m.id) ?? [],
+      guarnicoes: dc?.guarnicoes?.filter(g => currentDishIds.has(g.id)).map(g => g.id) ?? [],
     });
     setEditingDay(day);
   };
@@ -513,8 +514,33 @@ const MyLunch: React.FC = () => {
                   )}
 
                   {/* Inline edit form */}
-                  {isEditing && (
+                  {isEditing && (() => {
+                    // Find which previously-selected items are now missing from the menu
+                    const removedMisturas = dc?.misturas?.filter(m => !currentDishIds.has(m.id)) ?? [];
+                    const removedGuarnicoes = dc?.guarnicoes?.filter(g => !currentDishIds.has(g.id)) ?? [];
+                    const hasRemovedItems = removedMisturas.length > 0 || removedGuarnicoes.length > 0;
+
+                    return (
                     <div className="mt-2 space-y-3 bg-blue-50/50 border border-blue-200 rounded-xl p-3">
+                      {/* Warning: removed items */}
+                      {hasRemovedItems && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
+                          <p className="text-[10px] font-bold text-red-700 mb-1.5">⚠️ Itens removidos do cardápio:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {removedMisturas.map(m => (
+                              <span key={m.id} className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300 line-through font-medium">
+                                🥩 {m.nome}
+                              </span>
+                            ))}
+                            {removedGuarnicoes.map(g => (
+                              <span key={g.id} className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300 line-through font-medium">
+                                🥗 {g.nome}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-red-600 mt-1.5">Selecione novos itens abaixo para substituí-los.</p>
+                        </div>
+                      )}
                       {/* Misturas */}
                       <div>
                         <div className="flex items-center gap-2 mb-1.5">
@@ -589,7 +615,8 @@ const MyLunch: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })}
