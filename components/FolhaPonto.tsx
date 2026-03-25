@@ -489,7 +489,7 @@ const FolhaPonto: React.FC = () => {
                                 />
                                 <button
                                   onClick={() => salvarEdicao(turno, tipo)}
-                                  disabled={saving || !editMotivo.trim()}
+                                  disabled={saving}
                                   className="p-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
                                   title="Salvar alteração"
                                 >
@@ -515,7 +515,7 @@ const FolhaPonto: React.FC = () => {
                                 />
                                 <button
                                   onClick={() => salvarEdicao(turno, tipo)}
-                                  disabled={saving || !editMotivo.trim() || !editTimes[tipo]}
+                                  disabled={saving || !editTimes[tipo]}
                                   className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
                                   title="Adicionar registro"
                                 >
