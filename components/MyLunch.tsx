@@ -6,7 +6,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  CollectionName, LunchMenu, LunchDish, LunchChoice, LunchDayChoice,
+  CollectionName, LunchMenu, LunchMenuMode, LunchDish, LunchChoice, LunchDayChoice,
   LunchLocation, LunchLocationType, LunchConfig, MarmitaSize,
 } from '../types';
 import {
@@ -32,6 +32,13 @@ const DAY_LABELS: Record<DayKey, string> = {
 };
 
 const MAX_PER_CATEGORY = 2;
+
+/** Para modo diario: retorna o DayKey de hoje */
+const todayDayKey = (): DayKey => {
+  const d = new Date().getDay();
+  const map: Record<number, DayKey> = { 1:'segunda', 2:'terca', 3:'quarta', 4:'quinta', 5:'sexta' };
+  return map[d] ?? 'segunda';
+};
 
 /** Seleção de um dia: lista de IDs de misturas e guarnições escolhidas */
 type DaySelection = { misturas: string[]; guarnicoes: string[] };
@@ -376,6 +383,11 @@ const MyLunch: React.FC = () => {
      RENDER STATES
      ════════════════════════════════════════════════════════════════ */
 
+  // Modo do cardapio ativo: diario mostra so hoje, semanal/fixo mostra 5 dias
+  const menuModo = (activeMenu?.modo || 'semanal') as LunchMenuMode;
+  const isDiario = menuModo === 'diario';
+  const daysToShow: readonly DayKey[] = isDiario ? [todayDayKey()] : DAY_KEYS;
+
   const hasAnySelection = DAY_KEYS.some(d => selections[d].misturas.length > 0 || selections[d].guarnicoes.length > 0);
 
   if (loadingMenu || loadingChoice || loadingLocation) {
@@ -455,7 +467,7 @@ const MyLunch: React.FC = () => {
             </div>
           )}
           <div className="divide-y divide-gray-50">
-            {DAY_KEYS.map(day => {
+            {daysToShow.map(day => {
               const dc = existingChoice.escolhas[day] as LunchDayChoice | null | undefined;
               const isEditing = editingDay === day;
 
@@ -752,7 +764,7 @@ const MyLunch: React.FC = () => {
         </div>
 
         <div className="divide-y divide-gray-100">
-          {DAY_KEYS.map(day => {
+          {daysToShow.map(day => {
             const sel = selections[day];
             return (
               <div key={day} className="px-4 py-4">

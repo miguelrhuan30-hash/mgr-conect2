@@ -1050,10 +1050,14 @@ export interface LunchDish {
   categoria: 'mistura' | 'guarnicao'; // 'mistura' = proteína principal; 'guarnicao' = acompanhamento
 }
 
+export type LunchMenuMode = 'semanal' | 'diario' | 'fixo';
+
 export interface LunchMenu {
   id: string;
-  weekStart: string;           // "2026-03-23" (segunda-feira ISO)
-  weekEnd: string;             // "2026-03-27" (sexta-feira ISO)
+  modo?: LunchMenuMode;         // 'semanal' | 'diario' | 'fixo' — default "semanal" para retrocompatibilidade
+  weekStart: string;            // "2026-03-23" — usado no modo "semanal"
+  weekEnd: string;              // "2026-03-27" — usado no modo "semanal"
+  dataUnica?: string;           // "2026-03-24" — usado apenas no modo "diario"
   status: 'rascunho' | 'ativo' | 'encerrado';
   pratos: LunchDish[];
   criadoPor: string;

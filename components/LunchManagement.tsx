@@ -6,7 +6,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  CollectionName, LunchMenu, LunchDish, LunchChoice, LunchDayChoice,
+  CollectionName, LunchMenu, LunchMenuMode, LunchDish, LunchChoice, LunchDayChoice,
   LunchLocation, LunchLocationType, LunchConfig, MarmitaSize,
 } from '../types';
 import {
@@ -69,6 +69,14 @@ const LunchManagement: React.FC = () => {
 
   // ── Form: novo cardápio ──
   const [showForm, setShowForm] = useState(false);
+  const [modoNovo, setModoNovo] = useState<LunchMenuMode>('semanal');
+  const [dataUnica, setDataUnica] = useState(new Date().toISOString().split('T')[0]);
+  const [textoLivre, setTextoLivre] = useState('');
+
+  // Parser de texto livre para tags (modo diario)
+  const parsearTextoLivre = (texto: string): string[] => {
+    return texto.split(/[,\n;]+/).map(s => s.trim()).filter(s => s.length > 1).slice(0, 10);
+  };
   const [weekStart, setWeekStart] = useState(getNextMonday());
   // tags (strings com o nome de cada item)
   const [misturasTags, setMisturasTags] = useState<string[]>([]);
@@ -206,8 +214,10 @@ const LunchManagement: React.FC = () => {
         ...allGuarnicoes.map((nome, i) => ({ id: generateId(), nome, descricao: '', ordem: i + 1, categoria: 'guarnicao' as const })),
       ];
       await addDoc(collection(db, CollectionName.LUNCH_MENUS), {
-        weekStart,
-        weekEnd: getFridayFromMonday(weekStart),
+        modo: modoNovo,
+        weekStart: modoNovo === 'semanal' ? weekStart : '',
+        weekEnd: modoNovo === 'semanal' ? getFridayFromMonday(weekStart) : '',
+        dataUnica: modoNovo === 'diario' ? dataUnica : null,
         status: 'ativo',
         pratos: allPratos,
         criadoPor: currentUser.uid,
@@ -219,6 +229,7 @@ const LunchManagement: React.FC = () => {
       setGuarnicoesTags([]);
       setMisturaDraft('');
       setGuarnicaoDraft('');
+      setTextoLivre('');
     } catch (err) {
       console.error('Erro ao salvar cardápio:', err);
       alert('Erro ao salvar cardápio.');
@@ -559,29 +570,89 @@ const LunchManagement: React.FC = () => {
       {activeTab === 'cardapio' && (
         <div className="space-y-6">
           {!showForm && (
-            <button onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 px-5 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium shadow-sm">
-              <Plus size={18} /> Cadastrar Cardápio da Semana
-            </button>
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-600">Novo cardápio:</p>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'semanal' as LunchMenuMode, label: 'Semanal (seg-sex)', emoji: '📅' },
+                  { value: 'diario' as LunchMenuMode,  label: 'Diário (data única)', emoji: '📆' },
+                  { value: 'fixo' as LunchMenuMode,    label: 'Fixo (sem data)',    emoji: '📌' },
+                ] as const).map(opt => (
+                  <button key={opt.value}
+                    onClick={() => { setModoNovo(opt.value); setShowForm(true); }}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-lg font-medium text-sm hover:bg-orange-600 transition-colors shadow-sm">
+                    {opt.emoji} {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {showForm && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-6">
-              <h2 className="text-lg font-bold text-gray-900">Novo Cardápio Semanal</h2>
-
-              {/* Dates */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Início da Semana (Segunda)</label>
-                  <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fim da Semana (Sexta)</label>
-                  <input type="date" value={getFridayFromMonday(weekStart)} readOnly
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
-                </div>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-bold text-gray-900">
+                  {modoNovo === 'semanal' ? 'Novo Cardápio Semanal' : modoNovo === 'diario' ? 'Novo Cardápio Diário' : 'Novo Cardápio Fixo'}
+                </h2>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                  modoNovo === 'semanal' ? 'bg-blue-100 text-blue-700 border-blue-200'
+                  : modoNovo === 'diario' ? 'bg-purple-100 text-purple-700 border-purple-200'
+                  : 'bg-gray-100 text-gray-700 border-gray-200'
+                }`}>
+                  {modoNovo === 'semanal' ? '📅 Semanal' : modoNovo === 'diario' ? '📆 Diário' : '📌 Fixo'}
+                </span>
               </div>
+
+              {/* Dates — adaptive per mode */}
+              {modoNovo === 'semanal' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Início da Semana (Segunda)</label>
+                    <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Fim da Semana (Sexta)</label>
+                    <input type="date" value={getFridayFromMonday(weekStart)} readOnly
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                  </div>
+                </div>
+              )}
+              {modoNovo === 'diario' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data do Cardápio</label>
+                    <input type="date" value={dataUnica} onChange={e => setDataUnica(e.target.value)}
+                      className="w-full sm:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-300 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Cadastro rápido (cole o menu do dia)</label>
+                    <textarea
+                      value={textoLivre}
+                      onChange={e => setTextoLivre(e.target.value)}
+                      placeholder={'Cole o menu aqui (separe por vírgula, ponto-e-vírgula ou linha):\nFrango Grelhado, Bife acebolado\nArroz, Feijão, Salada'}
+                      rows={4}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-300 outline-none"
+                    />
+                    {textoLivre.trim() && (
+                      <div className="mt-2">
+                        <p className="text-xs text-gray-500 mb-1">Itens detectados:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {parsearTextoLivre(textoLivre).map((item, i) => (
+                            <span key={i} className="text-xs bg-purple-100 text-purple-800 border border-purple-200 px-2 py-0.5 rounded-full">{item}</span>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">💡 Use as seções abaixo para separar em misturas e guarnições, ou adicione tudo como misturas.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {modoNovo === 'fixo' && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-600">
+                  📌 Cardápio fixo — sem data de vigência. Fica ativo até ser substituído por outro.
+                </div>
+              )}
 
               {/* ── Seção Misturas ── */}
               <div className="space-y-3">
@@ -689,8 +760,22 @@ const LunchManagement: React.FC = () => {
                   className={`bg-white rounded-xl border shadow-sm p-5 ${menu.status === 'ativo' ? 'border-green-300 ring-1 ring-green-100' : 'border-gray-200'}`}>
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-gray-900">Semana {formatDateBR(menu.weekStart)} a {formatDateBR(menu.weekEnd)}</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-gray-900">
+                          {(menu.modo === 'diario' || (!menu.modo && !menu.weekStart)) && menu.dataUnica
+                            ? `Cardápio ${formatDateBR(menu.dataUnica)}`
+                            : menu.modo === 'fixo'
+                            ? 'Cardápio Fixo'
+                            : `Semana ${formatDateBR(menu.weekStart)} a ${formatDateBR(menu.weekEnd)}`
+                          }
+                        </span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                          (menu.modo || 'semanal') === 'semanal' ? 'bg-blue-50 text-blue-600 border-blue-200'
+                          : menu.modo === 'diario' ? 'bg-purple-50 text-purple-600 border-purple-200'
+                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                        }`}>
+                          {(menu.modo || 'semanal') === 'semanal' ? '📅' : menu.modo === 'diario' ? '📆' : '📌'} {(menu.modo || 'semanal').charAt(0).toUpperCase() + (menu.modo || 'semanal').slice(1)}
+                        </span>
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
                           menu.status === 'ativo' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
                           {menu.status === 'ativo' ? '● Ativo' : 'Encerrado'}
