@@ -653,7 +653,9 @@ const AttendanceReports: React.FC = () => {
     const minutes = totalMinutes % 60;
 
     let plannedMinutes = 0;
-    if (schedule.active && schedule.startTime && schedule.endTime) {
+    if (schedule.dailyWorkMinutes && schedule.dailyWorkMinutes > 0) {
+        plannedMinutes = schedule.dailyWorkMinutes;
+    } else if (schedule.active && schedule.startTime && schedule.endTime) {
         const [sh, sm] = schedule.startTime.split(':').map(Number);
         const [eh, em] = schedule.endTime.split(':').map(Number);
         plannedMinutes = ((eh * 60) + em) - ((sh * 60) + sm) - (schedule.lunchDuration || 0);
@@ -782,7 +784,9 @@ const AttendanceReports: React.FC = () => {
        const totalWorkedHrs = worked.totalMinutes / 60;
        
        let plannedMinutes = 0;
-       if (schedule.startTime && schedule.endTime) {
+       if (schedule.dailyWorkMinutes && schedule.dailyWorkMinutes > 0) {
+         plannedMinutes = schedule.dailyWorkMinutes;
+       } else if (schedule.startTime && schedule.endTime) {
          const [sh, sm] = schedule.startTime.split(':').map(Number);
          const [eh, em] = schedule.endTime.split(':').map(Number);
          plannedMinutes = ((eh * 60) + em) - ((sh * 60) + sm) - (schedule.lunchDuration || 0);

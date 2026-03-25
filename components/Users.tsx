@@ -114,7 +114,7 @@ const EmployeeDetailPanel: React.FC<{
 
   // ── Jornada ──
   const [scheduleType, setScheduleType] = useState<'FIXED'|'FLEXIBLE'>(user.scheduleType || 'FIXED');
-  const [schedule, setSchedule] = useState({ start: user.workSchedule?.startTime || '08:00', lunch: user.workSchedule?.lunchDuration || 60, end: user.workSchedule?.endTime || '17:00' });
+  const [schedule, setSchedule] = useState({ start: user.workSchedule?.startTime || '08:00', lunch: user.workSchedule?.lunchDuration || 60, end: user.workSchedule?.endTime || '17:00', dailyWorkMinutes: user.workSchedule?.dailyWorkMinutes || 0 });
   const defaultDay = (s: string, l: number, e: string) => ({ active: true, startTime: s, lunchDuration: l, endTime: e });
   const [flexSchedule, setFlexSchedule] = useState<any>(() => {
     const ws = user.workSchedule;
@@ -167,8 +167,8 @@ const EmployeeDetailPanel: React.FC<{
     setSaving(true);
     try {
       const ws = scheduleType === 'FIXED'
-        ? { startTime: schedule.start, lunchDuration: schedule.lunch, endTime: schedule.end }
-        : { ...flexSchedule, startTime: schedule.start, lunchDuration: schedule.lunch, endTime: schedule.end };
+        ? { startTime: schedule.start, lunchDuration: schedule.lunch, endTime: schedule.end, dailyWorkMinutes: schedule.dailyWorkMinutes || null }
+        : { ...flexSchedule, startTime: schedule.start, lunchDuration: schedule.lunch, endTime: schedule.end, dailyWorkMinutes: schedule.dailyWorkMinutes || null };
       const sectorName = sectors.find(s => s.id === sectorId)?.name || '';
       await updateDoc(doc(db, CollectionName.USERS, user.uid), {
         nomeCompleto, cargo: cargo || null, cpf: cpf || null, phone: phone || null,
@@ -342,6 +342,9 @@ const EmployeeDetailPanel: React.FC<{
                   </div>
                   <div><label className="text-xs font-bold text-gray-600 block mb-1">Almoço (minutos)</label>
                     <input type="number" value={schedule.lunch} onChange={e => setSchedule({...schedule, lunch: parseInt(e.target.value)})} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+                  <div><label className="text-xs font-bold text-gray-600 block mb-1">Horas por Turno (minutos)</label>
+                    <input type="number" value={schedule.dailyWorkMinutes || ''} onChange={e => setSchedule({...schedule, dailyWorkMinutes: parseInt(e.target.value) || 0})} placeholder="Ex: 540 = 9h" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                    <p className="text-[10px] text-gray-400 mt-0.5">Se preenchido, define as horas líquidas esperadas (sobrepõe cálculo horário). 480=8h, 540=9h.</p></div>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -358,6 +361,7 @@ const EmployeeDetailPanel: React.FC<{
                         <span className="text-[10px] text-gray-400">—</span>
                         <input disabled={!d.active} type="time" value={d.endTime} onChange={e => setFlexSchedule({...flexSchedule, [day]: {...d, endTime: e.target.value}})} className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-20" />
                         <input disabled={!d.active} type="number" title="Almoço (min)" value={d.lunchDuration} onChange={e => setFlexSchedule({...flexSchedule, [day]: {...d, lunchDuration: parseInt(e.target.value)}})} className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-14 text-center" />
+                        <input disabled={!d.active} type="number" title="Horas líquidas (min)" placeholder="min" value={d.dailyWorkMinutes || ''} onChange={e => setFlexSchedule({...flexSchedule, [day]: {...d, dailyWorkMinutes: parseInt(e.target.value) || 0}})} className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-14 text-center" />
                       </div>
                     );
                   })}

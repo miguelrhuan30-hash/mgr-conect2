@@ -97,14 +97,15 @@ export interface UserProfile {
     startTime?: string;
     lunchDuration?: number;
     endTime?: string;
+    dailyWorkMinutes?: number;   // Horas líquidas esperadas (ex: 540 = 9h). Sobrepõe cálculo de start/end/lunch.
     // New flexible mapping
-    monday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
-    tuesday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
-    wednesday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
-    thursday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
-    friday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
-    saturday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
-    sunday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string };
+    monday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string; dailyWorkMinutes?: number };
+    tuesday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string; dailyWorkMinutes?: number };
+    wednesday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string; dailyWorkMinutes?: number };
+    thursday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string; dailyWorkMinutes?: number };
+    friday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string; dailyWorkMinutes?: number };
+    saturday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string; dailyWorkMinutes?: number };
+    sunday?: { active: boolean; startTime: string; lunchDuration: number; endTime: string; dailyWorkMinutes?: number };
   };
   allowedLocationIds?: string[]; // IDs of WorkLocations
   
