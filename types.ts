@@ -140,6 +140,8 @@ export interface WorkLocation {
   longitude: number;
   radius: number; // meters
   active: boolean;
+  clientId?: string;    // ID do cliente vinculado
+  clientName?: string;  // Nome do cliente vinculado (denormalized)
 }
 
 export interface Partner {

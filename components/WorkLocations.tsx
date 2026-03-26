@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, query, orderBy, QuerySnapshot, DocumentData, getDocs, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, WorkLocation, UserProfile } from '../types';
-import { MapPin, Plus, Trash2, Save, Loader2, Navigation, Search, Eye, Pencil, X, Check, Users } from 'lucide-react';
+import { CollectionName, WorkLocation, UserProfile, Client } from '../types';
+import { MapPin, Plus, Trash2, Save, Loader2, Navigation, Search, Eye, Pencil, X, Check, Users, Building2, ChevronDown } from 'lucide-react';
 
 /* ════════════════════════════════════════════════════════════════
    Google Maps API declaration
@@ -23,24 +23,29 @@ interface RadiusMapProps {
   mode?: 'view' | 'pick';
   /** Raio para usar quando em modo pick */
   pickRadius?: number;
+  /** Centralizar o mapa em coordenadas específicas (ex: coordenadas do cliente) */
+  panTo?: { lat: number; lng: number } | null;
 }
 
 const DEFAULT_LAT = -23.1024;
 const DEFAULT_LNG = -47.2094;
 
 const RadiusMapViewer: React.FC<RadiusMapProps> = ({
-  locations, highlighted, onSelectPosition, mode = 'view', pickRadius = 100,
+  locations, highlighted, onSelectPosition, mode = 'view', pickRadius = 100, panTo,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const circlesRef = useRef<any[]>([]);
   const pickerMarkerRef = useRef<any>(null);
   const pickerCircleRef = useRef<any>(null);
   const geocoderRef = useRef<any>(null);
+  const autocompleteInitRef = useRef(false);
   const [apiReady, setApiReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [gettingGPS, setGettingGPS] = useState(false);
+  const [searchText, setSearchText] = useState('');
 
   // Check Google Maps API
   useEffect(() => {
@@ -198,6 +203,31 @@ const RadiusMapViewer: React.FC<RadiusMapProps> = ({
       });
     }
 
+    // Setup Places Autocomplete for pick mode
+    if (mode === 'pick' && searchInputRef.current && !autocompleteInitRef.current) {
+      autocompleteInitRef.current = true;
+      const autocomplete = new google.maps.places.Autocomplete(searchInputRef.current, {
+        types: ['establishment', 'geocode'],
+        componentRestrictions: { country: 'br' },
+        fields: ['geometry', 'formatted_address', 'name'],
+      });
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (place.geometry?.location) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          map.panTo({ lat, lng });
+          map.setZoom(17);
+          if (pickerMarkerRef.current) pickerMarkerRef.current.setPosition({ lat, lng });
+          if (pickerCircleRef.current) pickerCircleRef.current.setCenter({ lat, lng });
+          const addr = place.name && !place.formatted_address?.startsWith(place.name)
+            ? `${place.name} — ${place.formatted_address}`
+            : place.formatted_address || '';
+          onSelectPosition?.(lat, lng, addr);
+        }
+      });
+    }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiReady, locations, highlighted, mode, pickRadius]);
 
@@ -207,6 +237,20 @@ const RadiusMapViewer: React.FC<RadiusMapProps> = ({
       pickerCircleRef.current.setRadius(pickRadius);
     }
   }, [pickRadius]);
+
+  // Pan to specific coordinates (e.g. when a client is selected)
+  useEffect(() => {
+    if (!panTo || !mapRef.current) return;
+    const { lat, lng } = panTo;
+    mapRef.current.panTo({ lat, lng });
+    mapRef.current.setZoom(17);
+    if (pickerMarkerRef.current) pickerMarkerRef.current.setPosition({ lat, lng });
+    if (pickerCircleRef.current) pickerCircleRef.current.setCenter({ lat, lng });
+    geocoderRef.current?.geocode({ location: { lat, lng } }, (results: any[], status: string) => {
+      const addr = status === 'OK' && results?.[0] ? results[0].formatted_address : '';
+      onSelectPosition?.(lat, lng, addr);
+    });
+  }, [panTo, onSelectPosition]);
 
   // GPS: Minha Localização
   const handleMyLocation = () => {
@@ -235,6 +279,25 @@ const RadiusMapViewer: React.FC<RadiusMapProps> = ({
 
   return (
     <div className="relative rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
+      {/* Search bar (pick mode only) */}
+      {mode === 'pick' && (
+        <div className="px-4 py-3 bg-white border-b border-gray-200">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              placeholder="Buscar endereço ou nome do estabelecimento..."
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-violet-400 focus:border-violet-400 outline-none"
+            />
+          </div>
+          <p className="text-[10px] text-gray-400 mt-1.5 flex items-center gap-1">
+            <MapPin size={10} /> Digite o nome do local ou endereço. Depois ajuste arrastando o pin vermelho.
+          </p>
+        </div>
+      )}
       {(loading || !apiReady) && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
           <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
@@ -279,6 +342,14 @@ const WorkLocations: React.FC = () => {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [userSearch, setUserSearch] = useState('');
 
+  // Client State
+  const [allClients, setAllClients] = useState<(Client & { id: string })[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedClientName, setSelectedClientName] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [mapPanTo, setMapPanTo] = useState<{ lat: number; lng: number } | null>(null);
+
   useEffect(() => {
     const q = query(collection(db, CollectionName.WORK_LOCATIONS), orderBy('name', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
@@ -300,6 +371,16 @@ const WorkLocations: React.FC = () => {
     };
     loadUsers();
 
+    // Load all clients
+    const loadClients = async () => {
+      try {
+        const snap = await getDocs(collection(db, CollectionName.CLIENTS));
+        const clients = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as (Client & { id: string })[];
+        setAllClients(clients.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+      } catch (err) { console.error('Error loading clients:', err); }
+    };
+    loadClients();
+
     return () => unsubscribe();
   }, []);
 
@@ -314,13 +395,18 @@ const WorkLocations: React.FC = () => {
     if (!name || !lat || !lng) return;
     setIsSubmitting(true);
     try {
-      const docRef = await addDoc(collection(db, CollectionName.WORK_LOCATIONS), {
+      const locData: Record<string, any> = {
         name,
         latitude: parseFloat(lat),
         longitude: parseFloat(lng),
         radius: parseInt(radius) || 100,
         active: true,
-      });
+      };
+      if (selectedClientId) {
+        locData.clientId = selectedClientId;
+        locData.clientName = selectedClientName;
+      }
+      const docRef = await addDoc(collection(db, CollectionName.WORK_LOCATIONS), locData);
 
       // Atualizar allowedLocationIds dos colaboradores selecionados
       if (selectedUserIds.length > 0) {
@@ -333,7 +419,9 @@ const WorkLocations: React.FC = () => {
       }
 
       setName(''); setLat(''); setLng(''); setRadius('100');
-      setPickedAddress(''); setSelectedUserIds([]); setUserSearch(''); setShowForm(false);
+      setPickedAddress(''); setSelectedUserIds([]); setUserSearch('');
+      setSelectedClientId(''); setSelectedClientName(''); setClientSearch(''); setShowClientDropdown(false);
+      setMapPanTo(null); setShowForm(false);
     } catch (error) {
       console.error("Error adding location:", error);
       alert("Erro ao adicionar local.");
@@ -387,6 +475,7 @@ const WorkLocations: React.FC = () => {
           mode={showForm ? 'pick' : 'view'}
           pickRadius={parseInt(radius) || 100}
           onSelectPosition={showForm ? handleMapSelect : undefined}
+          panTo={mapPanTo}
         />
       )}
 
@@ -437,6 +526,77 @@ const WorkLocations: React.FC = () => {
                 <input required type="text" value={lng} onChange={e => setLng(e.target.value)} readOnly
                   className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm bg-gray-50 text-gray-600 font-mono" />
               </div>
+            </div>
+
+            {/* Client Selector */}
+            <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                  <Building2 size={16} className="text-violet-500" /> Cliente Vinculado
+                </label>
+                {selectedClientId && (
+                  <button type="button" onClick={() => { setSelectedClientId(''); setSelectedClientName(''); setClientSearch(''); }}
+                    className="text-xs text-red-500 hover:text-red-700 font-medium">Remover</button>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">
+                Vincule este local a um cliente cadastrado. Opcional — se nenhum for selecionado, o local ficará sem vínculo.
+              </p>
+              {selectedClientId ? (
+                <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex items-center gap-2">
+                  <Building2 size={14} className="text-violet-600 flex-shrink-0" />
+                  <span className="text-sm font-bold text-violet-800">{selectedClientName}</span>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text" value={clientSearch}
+                    onChange={e => { setClientSearch(e.target.value); setShowClientDropdown(true); }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    placeholder="Buscar cliente pelo nome..."
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-violet-300 outline-none pr-8"
+                  />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  {showClientDropdown && (
+                    <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-[200px] overflow-y-auto">
+                      {allClients
+                        .filter(c => !clientSearch || c.name?.toLowerCase().includes(clientSearch.toLowerCase()) || c.nomeFantasia?.toLowerCase().includes(clientSearch.toLowerCase()))
+                        .map(c => (
+                          <button key={c.id} type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-violet-50 transition-colors flex items-center justify-between gap-2"
+                            onClick={() => {
+                              setSelectedClientId(c.id);
+                              setSelectedClientName(c.name || c.nomeFantasia || '');
+                              setClientSearch('');
+                              setShowClientDropdown(false);
+                              // Auto-center map if client has geolocation
+                              const geo = c.geolocalizacao || c.geo;
+                              if (geo) {
+                                const cLat = (geo as any).latitude ?? (geo as any).lat;
+                                const cLng = (geo as any).longitude ?? (geo as any).lng;
+                                if (cLat && cLng) setMapPanTo({ lat: cLat, lng: cLng });
+                              }
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <span className="font-medium text-gray-800">{c.name || c.nomeFantasia}</span>
+                              {c.nomeFantasia && c.name !== c.nomeFantasia && (
+                                <span className="text-[10px] text-gray-400 ml-1.5">{c.nomeFantasia}</span>
+                              )}
+                              {c.address && <p className="text-[10px] text-gray-400 truncate">{c.address}</p>}
+                            </div>
+                            {(c.geolocalizacao || c.geo) && (
+                              <span title="Tem geolocalização"><MapPin size={12} className="text-green-500 flex-shrink-0" /></span>
+                            )}
+                          </button>
+                        ))}
+                      {allClients.filter(c => !clientSearch || c.name?.toLowerCase().includes(clientSearch.toLowerCase()) || c.nomeFantasia?.toLowerCase().includes(clientSearch.toLowerCase())).length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-3">Nenhum cliente encontrado.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-violet-600 font-medium flex items-center gap-1">
@@ -522,6 +682,12 @@ const WorkLocations: React.FC = () => {
                   </div>
                   <div className="min-w-0">
                     <h4 className="font-bold text-gray-900">{loc.name}</h4>
+                    {loc.clientName && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <Building2 size={11} className="text-amber-500" />
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">{loc.clientName}</span>
+                      </div>
+                    )}
                     <div className="text-xs text-gray-500 font-mono mt-0.5">
                       {loc.latitude.toFixed(6)}, {loc.longitude.toFixed(6)}
                     </div>
