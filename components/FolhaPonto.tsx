@@ -108,11 +108,12 @@ const FolhaPonto: React.FC = () => {
         collection(db, CollectionName.TIME_ENTRIES),
         where('userId', '==', uid),
         where('timestamp', '>=', Timestamp.fromDate(new Date(dataInicio + 'T00:00:00'))),
-        where('timestamp', '<=', Timestamp.fromDate(new Date(dataFim + 'T23:59:59.999'))),
-        orderBy('timestamp', 'asc')
+        where('timestamp', '<=', Timestamp.fromDate(new Date(dataFim + 'T23:59:59.999')))
       );
       const snap = await getDocs(q);
-      const entries = snap.docs.map(d => ({ id: d.id, ...d.data() } as TimeEntry));
+      const entries = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as TimeEntry))
+        .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
       setRawEntries(entries);
       setTurnos(calcularTurnos(entries));
       setTurnoEmEdicao(null);
