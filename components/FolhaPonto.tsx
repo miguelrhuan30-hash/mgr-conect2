@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  collection, query, where, getDocs, Timestamp, orderBy
+  collection, query, where, getDocs, Timestamp
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, TimeEntry, UserProfile } from '../types';
@@ -115,7 +115,53 @@ const FolhaPonto: React.FC = () => {
         .map(d => ({ id: d.id, ...d.data() } as TimeEntry))
         .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
       setRawEntries(entries);
-      setTurnos(calcularTurnos(entries));
+
+      // 1. Calcular turnos a partir dos registros existentes
+      const turnosCalculados = calcularTurnos(entries);
+
+      // 2. Deduplica por data — mantém o turno mais completo
+      const turnosPorData = new Map<string, Turno>();
+      for (const t of turnosCalculados) {
+        const existing = turnosPorData.get(t.data);
+        if (!existing) {
+          turnosPorData.set(t.data, t);
+        } else {
+          // Manter o turno com mais registros preenchidos
+          const countRegs = (turno: Turno) =>
+            [turno.entry, turno.lunchStart, turno.lunchEnd, turno.exit].filter(Boolean).length;
+          if (countRegs(t) > countRegs(existing)) {
+            turnosPorData.set(t.data, t);
+          }
+        }
+      }
+
+      // 3. Gerar grade completa de datas do período
+      const turnosCompletos: Turno[] = [];
+      const dStart = new Date(dataInicio + 'T12:00:00');
+      const dEnd = new Date(dataFim + 'T12:00:00');
+      for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
+        const dateStr = toDateStr(d);
+        const turnoExistente = turnosPorData.get(dateStr);
+        if (turnoExistente) {
+          turnosCompletos.push(turnoExistente);
+        } else {
+          // Dia sem nenhum registro — placeholder editável
+          turnosCompletos.push({
+            data: dateStr,
+            entry: null,
+            lunchStart: null,
+            lunchEnd: null,
+            exit: null,
+            status: 'sem_saida',
+            duracaoTotalMinutos: null,
+            duracaoTrabalhoMinutos: null,
+            intervaloAlmocoMinutos: null,
+            inconsistente: false,
+          });
+        }
+      }
+
+      setTurnos(turnosCompletos);
       setTurnoEmEdicao(null);
     } catch (err) {
       console.error('Erro ao buscar registros:', err);
