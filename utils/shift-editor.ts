@@ -1,8 +1,5 @@
 import {
   collection,
-  query,
-  where,
-  getDocs,
   addDoc,
   updateDoc,
   doc,
@@ -47,27 +44,6 @@ export const adicionarRegistro = async (
   adminNome: string,
   motivo: string,
 ): Promise<void> => {
-  const { inicio, fim } = getDayBounds(timestampManual);
-
-  // Verificar se já existe registro ativo do mesmo tipo no mesmo dia
-  const existente = await getDocs(
-    query(
-      collection(db, CollectionName.TIME_ENTRIES),
-      where('userId', '==', userId),
-      where('type', '==', tipo),
-      where('timestamp', '>=', Timestamp.fromDate(inicio)),
-      where('timestamp', '<=', Timestamp.fromDate(fim)),
-    ),
-  );
-
-  // Filtrar os que não foram soft-deleted
-  const ativos = existente.docs.filter((d) => !d.data().excluido);
-  if (ativos.length > 0) {
-    throw new Error(
-      `Já existe um registro de "${TIPO_LABELS[tipo]}" para este dia. Edite ou exclua o existente antes de adicionar novo.`,
-    );
-  }
-
   await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
     userId,
     type: tipo,
