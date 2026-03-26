@@ -336,6 +336,7 @@ const WorkLocations: React.FC = () => {
   // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRadius, setEditRadius] = useState('');
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
 
   // Users State (for collaborator picker)
   const [allUsers, setAllUsers] = useState<(UserProfile & { id: string })[]>([]);
@@ -405,27 +406,73 @@ const WorkLocations: React.FC = () => {
       if (selectedClientId) {
         locData.clientId = selectedClientId;
         locData.clientName = selectedClientName;
+      } else {
+        locData.clientId = null;
+        locData.clientName = null;
       }
-      const docRef = await addDoc(collection(db, CollectionName.WORK_LOCATIONS), locData);
 
-      // Atualizar allowedLocationIds dos colaboradores selecionados
-      if (selectedUserIds.length > 0) {
-        const newLocId = docRef.id;
+      if (editingLocationId) {
+        // ── UPDATE existing location ──
+        await updateDoc(doc(db, CollectionName.WORK_LOCATIONS, editingLocationId), locData);
+
+        // Sync collaborators: remove old, add new
+        const prevAssigned = allUsers.filter(u => u.allowedLocationIds?.includes(editingLocationId));
+        for (const u of prevAssigned) {
+          if (!selectedUserIds.includes(u.id)) {
+            await updateDoc(doc(db, CollectionName.USERS, u.id), {
+              allowedLocationIds: arrayRemove(editingLocationId),
+            });
+          }
+        }
         for (const uid of selectedUserIds) {
           await updateDoc(doc(db, CollectionName.USERS, uid), {
-            allowedLocationIds: arrayUnion(newLocId),
+            allowedLocationIds: arrayUnion(editingLocationId),
           });
+        }
+      } else {
+        // ── CREATE new location ──
+        const docRef = await addDoc(collection(db, CollectionName.WORK_LOCATIONS), locData);
+        if (selectedUserIds.length > 0) {
+          for (const uid of selectedUserIds) {
+            await updateDoc(doc(db, CollectionName.USERS, uid), {
+              allowedLocationIds: arrayUnion(docRef.id),
+            });
+          }
         }
       }
 
-      setName(''); setLat(''); setLng(''); setRadius('100');
-      setPickedAddress(''); setSelectedUserIds([]); setUserSearch('');
-      setSelectedClientId(''); setSelectedClientName(''); setClientSearch(''); setShowClientDropdown(false);
-      setMapPanTo(null); setShowForm(false);
+      resetForm();
     } catch (error) {
-      console.error("Error adding location:", error);
-      alert("Erro ao adicionar local.");
+      console.error("Error saving location:", error);
+      alert("Erro ao salvar local.");
     } finally { setIsSubmitting(false); }
+  };
+
+  const resetForm = () => {
+    setName(''); setLat(''); setLng(''); setRadius('100');
+    setPickedAddress(''); setSelectedUserIds([]); setUserSearch('');
+    setSelectedClientId(''); setSelectedClientName(''); setClientSearch(''); setShowClientDropdown(false);
+    setMapPanTo(null); setEditingLocationId(null); setShowForm(false);
+  };
+
+  const handleEditLocation = (loc: WorkLocation) => {
+    setEditingLocationId(loc.id);
+    setName(loc.name);
+    setLat(loc.latitude.toFixed(6));
+    setLng(loc.longitude.toFixed(6));
+    setRadius(String(loc.radius));
+    setPickedAddress('');
+    setSelectedClientId(loc.clientId || '');
+    setSelectedClientName(loc.clientName || '');
+    setClientSearch('');
+    setShowClientDropdown(false);
+    // Pre-select collaborators assigned to this location
+    const assigned = allUsers.filter(u => u.allowedLocationIds?.includes(loc.id)).map(u => u.id);
+    setSelectedUserIds(assigned);
+    setUserSearch('');
+    setMapPanTo({ lat: loc.latitude, lng: loc.longitude });
+    setShowForm(true);
+    setShowMap(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -460,7 +507,7 @@ const WorkLocations: React.FC = () => {
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 transition-colors">
             <Eye size={16} /> {showMap ? 'Ocultar Mapa' : 'Ver Mapa'}
           </button>
-          <button onClick={() => { setShowForm(!showForm); if (!showForm) setShowMap(true); }}
+          <button onClick={() => { setShowForm(!showForm); if (!showForm) { setShowMap(true); resetForm(); } }}
             className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-violet-600 rounded-xl hover:bg-violet-700 transition-colors shadow-sm">
             <Plus size={16} /> Novo Local
           </button>
@@ -484,9 +531,10 @@ const WorkLocations: React.FC = () => {
         <div className="bg-white rounded-2xl border border-violet-200 shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
-              <Plus className="w-5 h-5 text-violet-600" /> Adicionar Novo Local
+              {editingLocationId ? <Pencil className="w-5 h-5 text-violet-600" /> : <Plus className="w-5 h-5 text-violet-600" />}
+              {editingLocationId ? 'Editar Local de Trabalho' : 'Adicionar Novo Local'}
             </h3>
-            <button onClick={() => setShowForm(false)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg"><X size={18} /></button>
+            <button onClick={resetForm} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg"><X size={18} /></button>
           </div>
 
           {pickedAddress && (
@@ -648,7 +696,7 @@ const WorkLocations: React.FC = () => {
             <button type="submit" disabled={isSubmitting || !lat || !lng}
               className="w-full py-3 bg-violet-600 text-white rounded-xl font-bold hover:bg-violet-700 flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-sm">
               {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-              {isSubmitting ? 'Salvando...' : 'Salvar Local'}
+              {isSubmitting ? 'Salvando...' : editingLocationId ? 'Salvar Alterações' : 'Salvar Local'}
             </button>
           </form>
         </div>
@@ -743,12 +791,21 @@ const WorkLocations: React.FC = () => {
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={e => { e.stopPropagation(); handleDelete(loc.id); }}
-                  className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                >
-                  <Trash2 size={18} />
-                </button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={e => { e.stopPropagation(); handleEditLocation(loc); }}
+                    className="p-2 text-gray-300 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                    title="Editar local"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDelete(loc.id); }}
+                    className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

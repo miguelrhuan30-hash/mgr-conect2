@@ -61,6 +61,14 @@ const GoogleMapPicker: React.FC<GoogleMapPickerProps> = ({
   const [gettingGPS, setGettingGPS] = useState(false);
   const [apiReady, setApiReady] = useState(false);
 
+  // ── Fix: Ensure Places Autocomplete dropdown appears above the modal ──
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = '.pac-container { z-index: 99999 !important; }';
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+
   // ── Check if Google Maps API is loaded ──
   useEffect(() => {
     const check = () => {
