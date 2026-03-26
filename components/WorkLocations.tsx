@@ -448,11 +448,16 @@ const WorkLocations: React.FC = () => {
     } finally { setIsSubmitting(false); }
   };
 
-  const resetForm = () => {
+  const clearFormFields = () => {
     setName(''); setLat(''); setLng(''); setRadius('100');
     setPickedAddress(''); setSelectedUserIds([]); setUserSearch('');
     setSelectedClientId(''); setSelectedClientName(''); setClientSearch(''); setShowClientDropdown(false);
-    setMapPanTo(null); setEditingLocationId(null); setShowForm(false);
+    setMapPanTo(null); setEditingLocationId(null);
+  };
+
+  const resetForm = () => {
+    clearFormFields();
+    setShowForm(false);
   };
 
   const handleEditLocation = (loc: WorkLocation) => {
@@ -507,7 +512,7 @@ const WorkLocations: React.FC = () => {
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 transition-colors">
             <Eye size={16} /> {showMap ? 'Ocultar Mapa' : 'Ver Mapa'}
           </button>
-          <button onClick={() => { setShowForm(!showForm); if (!showForm) { setShowMap(true); resetForm(); } }}
+          <button onClick={() => { if (showForm) { resetForm(); } else { clearFormFields(); setShowForm(true); setShowMap(true); } }}
             className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-violet-600 rounded-xl hover:bg-violet-700 transition-colors shadow-sm">
             <Plus size={16} /> Novo Local
           </button>
