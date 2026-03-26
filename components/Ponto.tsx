@@ -531,12 +531,22 @@ const Ponto: React.FC = () => {
   const handleRegister = async () => {
     const nextAction = getNextAction();
 
+    // ══ IMEDIATAMENTE bloquear botão e mostrar carregamento ══
+    if (processing) return; // Bloquear double-click
+    setProcessing(true);
+    setProcessMessage('Preparando...');
+    setErrorMessage('');
+
     // 1. Pre-checks
-    if (!currentUser || !videoRef.current) return;
+    if (!currentUser || !videoRef.current) {
+      setProcessing(false);
+      return;
+    }
 
     if (nextAction.type === 'lunch_end') {
       const lunchCheck = validateLunchMinTime();
       if (!lunchCheck.valid) {
+        setProcessing(false);
         setErrorMessage(
           `⏱ Almoço mínimo de 1 hora não cumprido.\n` +
           `Tempo restante: ${lunchCheck.remaining}`
@@ -554,6 +564,7 @@ const Ponto: React.FC = () => {
     }
 
     if (nextAction.type === 'lunch_start' || nextAction.type === 'lunch_end') {
+      setProcessMessage('Verificando GPS...');
       const gpsOk = await new Promise<boolean>((resolve) => {
         if (!navigator.geolocation) { resolve(false); return; }
         navigator.geolocation.getCurrentPosition(
@@ -566,12 +577,14 @@ const Ponto: React.FC = () => {
         );
       });
       if (!gpsOk) {
+        setProcessing(false);
         setErrorMessage("GPS necessário para registrar almoço. Ative a localização e tente novamente.");
         return;
       }
     }
 
     if (!streamRef.current || !streamRef.current.active) {
+        setProcessing(false);
         setErrorMessage("Câmera desconectada. Recarregue a página.");
         return;
     }
@@ -580,11 +593,13 @@ const Ponto: React.FC = () => {
     const hasRestrictedPerimeter = userProfile?.allowedLocationIds && userProfile.allowedLocationIds.length > 0;
 
     if (requiresLocation && hasRestrictedPerimeter && !detectedLocation && userProfile?.role !== 'admin') {
+        setProcessing(false);
         setErrorMessage("Você está fora do perímetro permitido.");
         return;
     }
     
     // GET FRESH GPS
+    setProcessMessage('Verificando localização...');
     let freshLocation = currentLocation;
     try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -596,14 +611,13 @@ const Ponto: React.FC = () => {
     
     const profilePhotoUrl = userProfile?.avatar || userProfile?.photoURL;
     if (!profilePhotoUrl) {
+       setProcessing(false);
        setErrorMessage("Foto de perfil não cadastrada.");
        return;
     }
 
-    // 2. Start Process
-    setProcessing(true);
+    // 2. Captura e registro
     setProcessMessage('Capturando...');
-    setErrorMessage('');
 
     try {
         const canvas = document.createElement('canvas');
@@ -635,8 +649,14 @@ const Ponto: React.FC = () => {
             aiValidation: null,         // será atualizado pelo background
         });
 
-        // ─── PASSO 2: LIBERAR A UI APÓS CONFIRMAÇÃO DO FIRESTORE ───
-        setSuccessMessage(`${nextAction.label} REGISTRADA!`);
+        const actionLabels: Record<string, string> = {
+          entry: '✅ ENTRADA REGISTRADA!',
+          lunch_start: '✅ ALMOÇO INICIADO!',
+          lunch_end: '✅ RETORNO REGISTRADO!',
+          exit: '✅ SAÍDA REGISTRADA!',
+        };
+        const timeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        setSuccessMessage(`${actionLabels[nextAction.type] || '✅ REGISTRADO!'}\n${timeStr}`);
         setProcessing(false);
         stopCamera();
 
@@ -650,11 +670,11 @@ const Ponto: React.FC = () => {
         }
         logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success', `Ponto gravado: ${nextAction.label}`, { extra: { docId: docRef.id } });
 
-        // Auto-reset after 3s
+        // Auto-reset after 5s (was 3s — increased so user can read)
         setTimeout(() => {
             setSuccessMessage('');
             setActiveTab('history');
-        }, 3000);
+        }, 5000);
 
         // ─── PASSO 3: PROCESSAR FOTO E IA EM BACKGROUND (updateDoc) ───
         (async () => {
@@ -837,10 +857,13 @@ const Ponto: React.FC = () => {
                  {/* Success Overlay */}
                  {successMessage && (
                     <div className="absolute inset-0 bg-green-50 flex flex-col items-center justify-center z-30 animate-in zoom-in">
-                       <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                          <CheckCircle2 className="w-10 h-10 text-green-600" />
+                       <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-4 animate-bounce">
+                          <CheckCircle2 className="w-14 h-14 text-green-600" />
                        </div>
-                       <h3 className="text-2xl font-bold text-green-800 text-center px-4">{successMessage}</h3>
+                       {successMessage.split('\n').map((line, i) => (
+                         <h3 key={i} className={`font-bold text-center px-4 ${i === 0 ? 'text-2xl text-green-800' : 'text-lg text-green-600 font-mono mt-1'}`}>{line}</h3>
+                       ))}
+                       <p className="text-sm text-green-500 mt-3">Registro confirmado com sucesso!</p>
                     </div>
                  )}
 
@@ -990,7 +1013,11 @@ const Ponto: React.FC = () => {
             {mostrarVehicleCheck && (
               <VehicleCheck
                 timeEntryId={novoTimeEntryId}
-                onComplete={() => setMostrarVehicleCheck(false)}
+                onComplete={() => {
+                  setMostrarVehicleCheck(false);
+                  setSuccessMessage('✅ ABERTURA DO VEÍCULO CONCLUÍDA!');
+                  setTimeout(() => setSuccessMessage(''), 4000);
+                }}
                 onSkip={() => setMostrarVehicleCheck(false)}
               />
             )}
