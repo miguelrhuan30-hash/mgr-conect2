@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   collection, addDoc, deleteDoc, doc, serverTimestamp,
-  query, orderBy, onSnapshot, updateDoc, Timestamp
+  query, orderBy, onSnapshot, updateDoc, Timestamp, getDocs, where
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, Client, ClientContact, ClientStatus } from '../types';
@@ -62,6 +62,49 @@ const EMPTY_FORM = {
 };
 
 type FormData = typeof EMPTY_FORM;
+
+// ── Sync: Client → WorkLocation ───────────────────────────────────────────────
+// When saving a client with geolocation, auto-create or update a WorkLocation
+async function syncWorkLocationFromClient(
+  clientId: string,
+  clientName: string,
+  geolocalizacao: { latitude: number; longitude: number; raioMetros: number; enderecoReferencia?: string | null } | null,
+  raio: number,
+) {
+  try {
+    // Find existing WorkLocation linked to this client
+    const q = query(
+      collection(db, CollectionName.WORK_LOCATIONS),
+      where('clientId', '==', clientId),
+    );
+    const snap = await getDocs(q);
+
+    if (geolocalizacao && geolocalizacao.latitude && geolocalizacao.longitude) {
+      const locData = {
+        name: clientName,
+        latitude: geolocalizacao.latitude,
+        longitude: geolocalizacao.longitude,
+        radius: raio || geolocalizacao.raioMetros || 200,
+        active: true,
+        clientId,
+        clientName,
+      };
+
+      if (snap.empty) {
+        // Create new WorkLocation
+        await addDoc(collection(db, CollectionName.WORK_LOCATIONS), locData);
+      } else {
+        // Update existing
+        await updateDoc(doc(db, CollectionName.WORK_LOCATIONS, snap.docs[0].id), locData);
+      }
+    } else if (!snap.empty) {
+      // Geolocation removed → deactivate the linked WorkLocation
+      await updateDoc(doc(db, CollectionName.WORK_LOCATIONS, snap.docs[0].id), { active: false });
+    }
+  } catch (err) {
+    console.error('Erro ao sincronizar local de trabalho:', err);
+  }
+}
 
 // ── Client Modal (create + edit) ──────────────────────────────────────────────
 interface ClientModalProps {
@@ -153,6 +196,8 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
 
       if (isEdit && initial) {
         await updateDoc(doc(db, CollectionName.CLIENTS, initial.id), payload);
+        // ── Sync WorkLocation ────────────────────────────────────────
+        await syncWorkLocationFromClient(initial.id, form.name.trim(), payload.geolocalizacao, parseInt(form.geoRaio) || 200);
       } else {
         const docRef = await addDoc(collection(db, CollectionName.CLIENTS), {
           ...payload,
@@ -169,6 +214,8 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
           entityType: 'client',
           payload: { nome: form.name.trim(), status: form.status },
         });
+        // ── Sync WorkLocation ────────────────────────────────────────
+        await syncWorkLocationFromClient(docRef.id, form.name.trim(), payload.geolocalizacao, parseInt(form.geoRaio) || 200);
       }
       onClose();
     } catch (err) {
