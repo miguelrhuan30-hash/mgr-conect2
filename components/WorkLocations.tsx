@@ -606,6 +606,7 @@ const WorkLocations: React.FC = () => {
                     type="text" value={clientSearch}
                     onChange={e => { setClientSearch(e.target.value); setShowClientDropdown(true); }}
                     onFocus={() => setShowClientDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowClientDropdown(false), 180)}
                     placeholder="Buscar cliente pelo nome..."
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-violet-300 outline-none pr-8"
                   />
