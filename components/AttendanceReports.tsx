@@ -38,6 +38,7 @@ const AttendanceReports: React.FC = () => {
   const [exitTime, setExitTime] = useState('');
   const [exitReason, setExitReason] = useState('');
   const [isSavingExit, setIsSavingExit] = useState(false);
+  const [expandedShiftIdx, setExpandedShiftIdx] = useState<number | null>(null);
 
   // Adjustments State
   const [adjUser, setAdjUser] = useState('');
@@ -1315,6 +1316,104 @@ const AttendanceReports: React.FC = () => {
                                   >
                                       <X size={14} /> Encerrar Turno (Forçar Saída)
                                   </button>
+
+                                  {/* Botão para inspecionar registros */}
+                                  <button
+                                      onClick={() => setExpandedShiftIdx(expandedShiftIdx === idx ? null : idx)}
+                                      className="w-full mt-2 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+                                  >
+                                      <Search size={12} />
+                                      {expandedShiftIdx === idx ? 'Ocultar Registros' : 'Inspecionar Registros'}
+                                  </button>
+
+                                  {/* Painel de debug — mostra exatamente o que o card está usando */}
+                                  {expandedShiftIdx === idx && (() => {
+                                    const userEntries = allMonitoringEntries
+                                      .filter(e => e.userId === shift.user.uid)
+                                      .sort((a, b) => a.timestamp.toDate().getTime() - b.timestamp.toDate().getTime());
+                                    const lastEntry = [...userEntries].sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime())[0];
+                                    const shiftEntryTs = shift.entry.timestamp.toDate();
+                                    const elapsedMs = Date.now() - shiftEntryTs.getTime();
+                                    const elapsedH = Math.floor(elapsedMs / 3600000);
+                                    const elapsedM = Math.floor((elapsedMs % 3600000) / 60000);
+                                    return (
+                                      <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
+                                        {/* Por que está aberto */}
+                                        <div className="bg-red-50 px-3 py-2 border-b border-red-200">
+                                          <h4 className="text-xs font-bold text-red-700 mb-1">⚠️ Por que este turno aparece como aberto?</h4>
+                                          <p className="text-[10px] text-red-600">
+                                            Última ação: <strong>{lastEntry?.type || '?'}</strong> em {lastEntry?.timestamp.toDate().toLocaleString('pt-BR')}
+                                            {' '}— Como não é "exit", o sistema considera o turno aberto.
+                                          </p>
+                                          <p className="text-[10px] text-red-600 mt-0.5">
+                                            Entrada usada no card: <strong>{shiftEntryTs.toLocaleString('pt-BR')}</strong> — Há <strong>{elapsedH}h {elapsedM}m</strong>
+                                          </p>
+                                        </div>
+
+                                        {/* Entradas que o card usa */}
+                                        <div className="bg-blue-50 px-3 py-2 border-b border-blue-200">
+                                          <h4 className="text-xs font-bold text-blue-700 mb-1">📌 Registros usados neste card</h4>
+                                          <div className="space-y-1 text-[11px]">
+                                            <div className="flex justify-between">
+                                              <span className="text-blue-800">🟢 Entrada (shift.entry)</span>
+                                              <span className="font-mono text-blue-700">{shiftEntryTs.toLocaleString('pt-BR')} <span className="bg-blue-100 px-1 rounded text-[9px]">ID: {shift.entry.id?.slice(-6)}</span></span>
+                                            </div>
+                                            {shift.lunchEntry && (
+                                              <div className="flex justify-between">
+                                                <span className="text-blue-800">🍽️ Almoço (lunchEntry)</span>
+                                                <span className="font-mono text-blue-700">{shift.lunchEntry.timestamp.toDate().toLocaleString('pt-BR')} <span className="bg-blue-100 px-1 rounded text-[9px]">ID: {shift.lunchEntry.id?.slice(-6)}</span></span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Todos os registros do usuário na janela de monitoramento */}
+                                        <div className="bg-gray-50 px-3 py-2 border-b border-gray-200">
+                                          <h4 className="text-xs font-bold text-gray-700">
+                                            📋 Todos os registros deste usuário na janela de monitoramento — {userEntries.length} encontrado(s)
+                                          </h4>
+                                        </div>
+                                        <div className="max-h-[300px] overflow-y-auto divide-y divide-gray-100">
+                                          {userEntries.length === 0 ? (
+                                            <p className="text-xs text-gray-400 text-center py-4">Nenhum registro encontrado.</p>
+                                          ) : userEntries.map((e, eIdx) => {
+                                            const ts = e.timestamp.toDate();
+                                            const isShiftEntry = e.id === shift.entry.id;
+                                            const isLunchEntry = e.id === shift.lunchEntry?.id;
+                                            const typeLabels: Record<string, string> = {
+                                              entry: '🟢 Entrada',
+                                              lunch_start: '🍽️ Ida Almoço',
+                                              lunch_end: '🍽️ Volta Almoço',
+                                              exit: '🔴 Saída',
+                                            };
+                                            return (
+                                              <div key={e.id || eIdx} className={`px-3 py-2 text-xs ${isShiftEntry ? 'bg-green-50 border-l-4 border-green-500' : isLunchEntry ? 'bg-orange-50 border-l-4 border-orange-400' : e.isManual ? 'bg-yellow-50' : ''}`}>
+                                                <div className="flex items-center justify-between gap-2">
+                                                  <span className="font-bold text-gray-800">
+                                                    {typeLabels[e.type] || e.type}
+                                                    {isShiftEntry && <span className="ml-1 text-[9px] bg-green-200 text-green-800 px-1 rounded">← USADO NO CARD</span>}
+                                                    {isLunchEntry && <span className="ml-1 text-[9px] bg-orange-200 text-orange-800 px-1 rounded">← ALMOÇO NO CARD</span>}
+                                                  </span>
+                                                  <span className="font-mono text-gray-600">
+                                                    {ts.toLocaleDateString('pt-BR')} {ts.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit', second: '2-digit'})}
+                                                  </span>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2 mt-1 text-[10px] text-gray-500">
+                                                  <span className="font-mono bg-gray-100 px-1 rounded">ID: {e.id?.slice(-6)}</span>
+                                                  {e.locationId && <span>Local: {e.locationId.slice(0, 12)}</span>}
+                                                  {e.isManual && <span className="text-orange-600 font-bold">✏️ Manual</span>}
+                                                  {e.editedBy && <span className="text-blue-600">Editado por: {(e as any).editedByNome || e.editedBy.slice(0, 8)}</span>}
+                                                  {e.editReason && <span className="text-purple-600">Motivo: {e.editReason}</span>}
+                                                  {(e as any).forcedClose && <span className="text-red-600 font-bold">⚡ Forçado</span>}
+                                                  {(e as any).deleted && <span className="text-red-600 font-bold">🗑 Deletado</span>}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                               </div>
                           );
                       })}
