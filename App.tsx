@@ -350,7 +350,7 @@ const AppContent: React.FC = () => {
               SPRINT VEÍCULOS — Controle de Frota
           ════════════════════════════════════════ */}
           <Route path="veiculos"
-            element={hasPermission('canViewAttendanceReports') ? <VehicleLog /> : <Navigate to="/app" />} />
+            element={(hasPermission('canRegisterAttendance') || hasPermission('canViewAttendanceReports')) ? <VehicleLog /> : <Navigate to="/app" />} />
           <Route path="veiculos/config"
             element={hasPermission('canManageSettings') ? <VehicleCheckConfig /> : <Navigate to="/app/veiculos" />} />
           <Route path="veiculos/:id"

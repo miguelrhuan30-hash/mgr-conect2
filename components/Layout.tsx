@@ -286,8 +286,9 @@ const Layout: React.FC = () => {
       to: '/app/veiculos',
       icon: Car,
       label: 'Gestão de Veículos',
-      visible: can('canViewVehicles') || can('canViewAttendanceReports'),
+      visible: can('canRegisterAttendance') || can('canViewVehicles') || can('canViewAttendanceReports'),
       children: [
+        { to: '/app/veiculos',        icon: Car,      label: 'Abertura de Veículo',          visible: can('canRegisterAttendance') },
         { to: '/app/veiculos',        icon: Car,      label: 'Controle de Veículos', visible: can('canViewVehicles') || can('canViewAttendanceReports') },
         { to: '/app/veiculos/config', icon: Settings, label: 'Config. Veículos',     visible: can('canManageSettings') },
       ],

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 
 
@@ -27,11 +28,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { GoogleGenAI } from "@google/genai";
 import { 
   Clock, MapPin, ShieldCheck, Loader2, AlertTriangle, 
-  History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2, Car, Bell 
+  History, ScanFace, Camera, Coffee, LogOut, LogIn, CheckCircle2, Car, Bell, X 
 } from 'lucide-react';
 import { logEvent } from '../utils/logger';
 import { Analytics } from '../utils/mgr-analytics';
-import VehicleCheck from './VehicleCheck';
 
 // Tipos de Ação do Ponto
 type ActionType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
@@ -58,6 +58,7 @@ interface ActionState {
 
 const Ponto: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
+  const navigate = useNavigate();
   
   // --- STATE ---
   const [activeTab, setActiveTab] = useState<'register' | 'history'>('register');
@@ -78,9 +79,9 @@ const Ponto: React.FC = () => {
   const [lastEntry, setLastEntry] = useState<TimeEntry | null>(null);
   const [lunchCountdown, setLunchCountdown] = useState<string | null>(null);
   const [entryCountdown, setEntryCountdown] = useState<string | null>(null);
-  // ── Veículos ──
-  const [mostrarVehicleCheck, setMostrarVehicleCheck] = useState(false);
-  const [novoTimeEntryId, setNovoTimeEntryId] = useState<string | undefined>(undefined);
+  // ── Popup de veículo ──
+  const [showVehiclePrompt, setShowVehiclePrompt] = useState(false);
+  const autoRedirectRef = useRef<NodeJS.Timeout | null>(null);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -663,15 +664,15 @@ const Ponto: React.FC = () => {
         // Analytics RH
         if (nextAction.type === 'entry') {
           Analytics.logEvent({ eventType: 'ponto_entrada', area: 'rh', userId: currentUser.uid, entityId: docRef.id, payload: { tipo: 'entry', locationId: detectedLocation?.id } });
-          setNovoTimeEntryId(docRef.id);
-          setMostrarVehicleCheck(true);
+          // Mostrar popup de veículo após 2s
+          setTimeout(() => setShowVehiclePrompt(true), 2000);
         } else if (nextAction.type === 'exit') {
           Analytics.logEvent({ eventType: 'ponto_saida', area: 'rh', userId: currentUser.uid, entityId: docRef.id, payload: { tipo: 'exit', locationId: detectedLocation?.id } });
         }
         logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success', `Ponto gravado: ${nextAction.label}`, { extra: { docId: docRef.id } });
 
-        // Auto-reset after 5s (was 3s — increased so user can read)
-        setTimeout(() => {
+        // Auto-reset after 5s — só se o popup de veículo NÃO estiver aberto
+        autoRedirectRef.current = setTimeout(() => {
             setSuccessMessage('');
             setActiveTab('history');
         }, 5000);
@@ -794,6 +795,7 @@ const Ponto: React.FC = () => {
   const isBlocked = processing || !!successMessage || !!errorMessage || (requiresLocation && !detectedLocation) || isLunchBlocked || isLunchWithoutGPS;
 
   return (
+    <>
     <div className="max-w-xl mx-auto space-y-4 animate-in fade-in duration-500 pb-20">
       
       {/* 1. Header (Compact) */}
@@ -954,24 +956,7 @@ const Ponto: React.FC = () => {
                       </a>
                     </div>
 
-                    {/* ── Atalho de abertura de veículo ── */}
-                    {!mostrarVehicleCheck && (
-                      <div className="mt-4 border-t border-amber-200 pt-4">
-                        <button
-                          onClick={() => setMostrarVehicleCheck(true)}
-                          className="w-full flex items-center justify-center gap-2 py-2.5
-                                     bg-white border border-amber-300 rounded-xl text-sm
-                                     font-semibold text-amber-800 hover:bg-amber-50
-                                     active:scale-95 transition-all"
-                        >
-                          <Car className="w-4 h-4" />
-                          Registrar abertura de veículo
-                        </button>
-                        <p className="text-center text-xs text-amber-500 mt-1.5">
-                          Faça agora enquanto prepara as ferramentas
-                        </p>
-                      </div>
-                    )}
+
                   </div>
                 )}
 
@@ -1009,18 +994,7 @@ const Ponto: React.FC = () => {
                 </div>
             )}
 
-            {/* ─── ABERTURA DE VEÍCULO (após entrada) ─── */}
-            {mostrarVehicleCheck && (
-              <VehicleCheck
-                timeEntryId={novoTimeEntryId}
-                onComplete={() => {
-                  setMostrarVehicleCheck(false);
-                  setSuccessMessage('✅ ABERTURA DO VEÍCULO CONCLUÍDA!');
-                  setTimeout(() => setSuccessMessage(''), 4000);
-                }}
-                onSkip={() => setMostrarVehicleCheck(false)}
-              />
-            )}
+
         </div>
       )}
 
@@ -1073,6 +1047,67 @@ const Ponto: React.FC = () => {
         </div>
       )}
     </div>
+
+      {/* ─── POPUP: Vai sair com veículo? ─── */}
+      {showVehiclePrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          style={{ touchAction: 'none' }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 relative animate-in fade-in zoom-in-95 duration-300">
+            {/* Fechar */}
+            <button
+              onClick={() => setShowVehiclePrompt(false)}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Ícone */}
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                <Car className="w-8 h-8 text-blue-600" />
+              </div>
+            </div>
+
+            {/* Texto */}
+            <h3 className="text-lg font-bold text-gray-800 text-center mb-2">
+              Vai sair com algum veículo?
+            </h3>
+            <p className="text-sm text-gray-500 text-center mb-6 leading-relaxed">
+              Não esqueça de fazer a abertura do veículo antes de iniciar o deslocamento.
+            </p>
+
+            {/* Botões */}
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setShowVehiclePrompt(false);
+                  if (autoRedirectRef.current) clearTimeout(autoRedirectRef.current);
+                  setSuccessMessage('');
+                  navigate('/app/veiculos');
+                }}
+                className="w-full py-3 rounded-xl text-sm font-bold text-white
+                           bg-emerald-600 hover:bg-emerald-700 active:scale-[0.97]
+                           transition-all flex items-center justify-center gap-2 shadow-md"
+              >
+                <Car className="w-4 h-4" />
+                Sim, realizar abertura
+              </button>
+
+              <button
+                onClick={() => setShowVehiclePrompt(false)}
+                className="w-full py-3 rounded-xl text-sm font-bold text-white
+                           bg-red-500 hover:bg-red-600 active:scale-[0.97]
+                           transition-all flex items-center justify-center gap-2"
+              >
+                Não, hoje vou sair sem veículos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

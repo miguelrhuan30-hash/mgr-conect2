@@ -25,6 +25,57 @@ function aplicarMascara(valor: string): string {
   return v.slice(0, 3) + '-' + v.slice(3, 7);
 }
 
+// ─── Helper: comprimir imagem (Canvas) ────────────────────────────────────────
+
+const MAX_DIMENSION = 1920;
+const JPEG_QUALITY  = 0.7;
+
+function compressImage(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        const ratio = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+        width  = Math.round(width  * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width  = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('Canvas context failed')); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('toBlob returned null'))),
+        'image/jpeg',
+        JPEG_QUALITY,
+      );
+    };
+    img.onerror = () => reject(new Error('Falha ao carregar a imagem'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// ─── Helper: upload com 1 retry ───────────────────────────────────────────────
+
+async function uploadWithRetry(
+  storageRef: ReturnType<typeof ref>,
+  blob: Blob,
+): Promise<string> {
+  const attempt = async () => {
+    await uploadBytes(storageRef, blob);
+    return getDownloadURL(storageRef);
+  };
+  try {
+    return await attempt();
+  } catch {
+    // 1 retry
+    await new Promise(r => setTimeout(r, 1000));
+    return await attempt();
+  }
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 interface VehicleCheckProps {
@@ -61,6 +112,7 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
   const [error, setError]           = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState('');
 
   const inputRefs = useRef<Partial<Record<FotoKey, HTMLInputElement | null>>>({});
 
@@ -85,24 +137,59 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
     .every(s => !!fotos[s.key]);
   const podeSalvar  = placaValida && kmValido && todasFotos && !saving && !loadingConfig;
 
-  // ── Upload e gravação ──────────────────────────────────────────────────────
+  // ── Upload e gravação (com compressão + paralelo + retry) ──────────────────
   const handleSalvar = async () => {
     if (!currentUser || !podeSalvar) return;
     setSaving(true);
     setError(null);
+    setUploadProgress('Comprimindo fotos...');
 
     try {
-      const urls: Record<FotoKey, string> = {};
+      // 1. Comprimir todas as fotos
+      const slotsComFoto = fotoSlots.filter(s => !!fotos[s.key]);
+      const compressed: { key: string; blob: Blob }[] = [];
 
-      for (const slot of fotoSlots) {
-        const file = fotos[slot.key];
-        if (!file) continue; // slots opcionais sem foto são pulados
-        const path = `vehicle_checks/${currentUser.uid}/${Date.now()}_${slot.key}.jpg`;
-        const storageRef = ref(storage, path);
-        await uploadBytes(storageRef, file);
-        urls[slot.key] = await getDownloadURL(storageRef);
+      for (let i = 0; i < slotsComFoto.length; i++) {
+        const slot = slotsComFoto[i];
+        setUploadProgress(`Comprimindo foto ${i + 1}/${slotsComFoto.length}...`);
+        try {
+          const blob = await compressImage(fotos[slot.key]!);
+          compressed.push({ key: slot.key, blob });
+        } catch {
+          compressed.push({ key: slot.key, blob: fotos[slot.key]! });
+        }
       }
 
+      // 2. Upload paralelo com retry
+      setUploadProgress(`Enviando ${compressed.length} fotos...`);
+      let uploadedCount = 0;
+
+      const uploadPromises = compressed.map(async ({ key, blob }) => {
+        const path = `vehicle_checks/${currentUser.uid}/${Date.now()}_${key}.jpg`;
+        const storageRef = ref(storage, path);
+        const url = await uploadWithRetry(storageRef, blob);
+        uploadedCount++;
+        setUploadProgress(`Enviando foto ${uploadedCount}/${compressed.length}...`);
+        return { key, url };
+      });
+
+      const results = await Promise.allSettled(uploadPromises);
+
+      // Verificar se algum upload falhou
+      const failedUploads = results.filter(r => r.status === 'rejected');
+      if (failedUploads.length > 0) {
+        throw new Error(`Falha no envio de ${failedUploads.length} foto(s). Tente novamente.`);
+      }
+
+      const urls: Record<FotoKey, string> = {};
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          urls[r.value.key] = r.value.url;
+        }
+      }
+
+      // 3. Salvar documento no Firestore
+      setUploadProgress('Salvando registro...');
       const docRef = await addDoc(collection(db, CollectionName.VEHICLE_CHECKS), {
         userId:      currentUser.uid,
         userName:    userProfile?.displayName || currentUser.email || 'Colaborador',
@@ -114,7 +201,8 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         ...(timeEntryId ? { timeEntryId } : {}),
       });
 
-      await Analytics.logEvent({
+      // 4. Analytics (fire-and-forget)
+      Analytics.logEvent({
         eventType: 'veiculo_abertura',
         area: 'veiculos',
         userId: currentUser.uid,
@@ -127,9 +215,10 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
       setTimeout(() => onComplete?.(), 1800);
     } catch (err: any) {
       console.error('[VehicleCheck] Erro ao salvar:', err);
-      setError('Erro ao salvar. Verifique a conexão e tente novamente.');
+      setError(err?.message || 'Erro ao salvar. Verifique a conexão e tente novamente.');
     } finally {
       setSaving(false);
+      setUploadProgress('');
     }
   };
 
@@ -165,7 +254,7 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
           <div className="bg-white rounded-2xl shadow-2xl px-8 py-7 flex flex-col items-center gap-4 max-w-xs w-full mx-4">
             <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
             <div className="text-center">
-              <p className="font-semibold text-gray-800 text-base">Enviando fotos...</p>
+              <p className="font-semibold text-gray-800 text-base">{uploadProgress || 'Enviando fotos...'}</p>
               <p className="text-sm text-gray-500 mt-1">Aguarde, não saia desta tela</p>
             </div>
             {/* barra de progresso animada */}
