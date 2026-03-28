@@ -1029,6 +1029,10 @@ export interface EmployeeOccurrence {
   descricao?: string;
   arquivoUrl?: string;       // URL do atestado/imagem
   arquivoNome?: string;
+  horaInicio?: string;       // "08:00" — para atestado parcial
+  horaFim?: string;          // "12:00" — para atestado parcial
+  diaCompleto?: boolean;     // true = abona o dia inteiro (default true p/ atestado sem horário)
+  minutosAbonados?: number;  // minutos justificados (calculado ao salvar)
   criadoPor: string;
   criadoEm: Timestamp;
   atualizadoEm?: Timestamp;
