@@ -1,0 +1,76 @@
+{
+  "indexes": [
+    { "collectionGroup": "time_entries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "time_entries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "ASCENDING" } ] },
+    { "collectionGroup": "time_entries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "type", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "time_entries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "timestamp", "order": "ASCENDING" }, { "fieldPath": "userId", "order": "ASCENDING" } ] },
+
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "workflowStatus", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "clientId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assetId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "workflowStatus", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "placa", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "timestamp", "order": "ASCENDING" }, { "fieldPath": "placa", "order": "ASCENDING" } ] },
+    { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "timestamp", "order": "DESCENDING" }, { "fieldPath": "placa", "order": "ASCENDING" } ] },
+
+    { "collectionGroup": "client_assets", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "clientId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "client_assets", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "clientId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "receivables", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "receivables", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "taskId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "receivables", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "previsaoPagamento", "order": "ASCENDING" } ] },
+    { "collectionGroup": "receivables", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "clientId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "receivables", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "createdBy", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "notas_intel", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "notas_intel", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "applied", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "notas_intel", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "applied", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "hub_eisenhower", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "hub_eisenhower", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "hub_ishikawa", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "hub_ishikawa", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "category", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "hub_canvas", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "hub_roadmap", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "hub_processos", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "hub_manual_steps", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "processoId", "order": "ASCENDING" }, { "fieldPath": "ordem", "order": "ASCENDING" } ] },
+
+    { "collectionGroup": "hub_requirements", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "processoId", "order": "ASCENDING" }, { "fieldPath": "obrigatorio", "order": "ASCENDING" } ] },
+
+    { "collectionGroup": "clients", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "segment", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "users", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "role", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "users", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "sectorId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "users", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "xp", "order": "DESCENDING" }, { "fieldPath": "level", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "system_logs", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "system_logs", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "severity", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "system_logs", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "action", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "time_bank", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "time_bank", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "projects", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "clientId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" } ] },
+
+    { "collectionGroup": "contact_messages", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "read", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "eventType", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "area", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "mes", "order": "ASCENDING" }, { "fieldPath": "eventType", "order": "ASCENDING" } ] },
+    { "collectionGroup": "mgr_events", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "entityId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
+    { "collectionGroup": "clients", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "clients", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "ultimaOSData", "order": "ASCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}
