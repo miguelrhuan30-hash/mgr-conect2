@@ -67,7 +67,8 @@ const PhotoAnnotator = lazy(() => import('./components/PhotoAnnotator'));
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 47: Orçamento
 // ─────────────────────────────────────────────
-const OrcamentoModule = lazy(() => import('./components/Orcamento'));
+const OrcamentoModule  = lazy(() => import('./components/Orcamento'));
+const OrcamentoPublico = lazy(() => import('./components/OrcamentoPublico'));
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 49: Módulo Meu Almoço
@@ -218,6 +219,9 @@ const AppContent: React.FC = () => {
         {/* ── ROTAS PÚBLICAS ── */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
+
+        {/* ── ORÇAMENTO PÚBLICO (sem autenticação, link para clientes) ── */}
+        <Route path="/orcamentos/:id" element={<OrcamentoPublico />} />
 
         <Route
           path="/aguardando-aprovacao"

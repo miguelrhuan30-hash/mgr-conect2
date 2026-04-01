@@ -576,6 +576,14 @@ export interface Orcamento {
   rejeitadoPor?: string;
   rejeitadoMotivo?: string;
   rejeitadoEm?: Timestamp;
+
+  // Sprint 51 — PDF Upload + Link Público
+  pdfUrl?: string;                  // URL pública do PDF no Firebase Storage
+  pdfNome?: string;                 // Nome original do arquivo PDF
+  pdfTamanhoBytes?: number;         // Tamanho do arquivo em bytes
+  pdfUploadEm?: Timestamp;          // Data do upload
+  linkPublicoAtivo?: boolean;       // Se o link público está habilitado
+  linkPublicoViews?: number;        // Contador de visualizações via link público
 }
 
 // Motivos pré-definidos para reagendamento de O.S.
