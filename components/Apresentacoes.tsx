@@ -40,9 +40,10 @@ const SLIDE_TYPES: { type: SlideType; label: string; emoji: string }[] = [
 ];
 
 const TEMAS_LIST: { value: PresentationTema; label: string; dot: string }[] = [
-  { value: 'dark-navy',  label: 'Dark Navy',  dot: '#3b82f6' },
-  { value: 'dark-slate', label: 'Dark Slate', dot: '#22d3ee' },
-  { value: 'dark-teal',  label: 'Dark Teal',  dot: '#10b981' },
+  { value: 'mgr-classic', label: 'MGR Laranja (Padrão)', dot: '#E8593C' },
+  { value: 'dark-navy',   label: 'Dark Navy',            dot: '#3b82f6' },
+  { value: 'dark-slate',  label: 'Dark Slate',           dot: '#22d3ee' },
+  { value: 'dark-teal',   label: 'Dark Teal',            dot: '#10b981' },
 ];
 
 // ── Gera slug único sem nanoid ──
@@ -391,7 +392,7 @@ const Apresentacoes: React.FC = () => {
           pdfStoragePath: null,
           orcamentoId: orcId,
           status: 'rascunho',
-          tema: 'dark-navy',
+          tema: 'mgr-classic',
           slideAutoplay: true,
           slideDelayMs: 6000,
         };
@@ -901,7 +902,7 @@ const Apresentacoes: React.FC = () => {
       ) : (
         <div className="grid gap-4">
           {filtered.map(p => {
-            const tema = { 'dark-navy': '#3b82f6', 'dark-slate': '#22d3ee', 'dark-teal': '#10b981' }[p.tema ?? 'dark-navy'];
+            const tema = { 'dark-navy': '#3b82f6', 'dark-slate': '#22d3ee', 'dark-teal': '#10b981', 'mgr-classic': '#E8593C' }[p.tema ?? 'mgr-classic'];
             return (
               <div key={p.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden">
                 <div className="flex items-stretch">

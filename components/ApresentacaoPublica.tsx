@@ -17,13 +17,72 @@ import {
 } from './ApresentacaoSlides';
 import {
   ChevronLeft, ChevronRight, Pause, Play,
-  Loader2, AlertCircle, Grid3X3,
+  Loader2, AlertCircle, Grid3X3, Download, FileText, X,
 } from 'lucide-react';
 
 // ── Labels para cada tipo de slide ──
 const SLIDE_LABELS: Record<string, string> = {
   cover: 'Capa', overview: 'Visão Geral', deliverables: 'Entregas',
   timeline: 'Cronograma', investment: 'Investimento', closing: 'Encerramento',
+};
+
+// ── PDF Overlay — ORC-05 ─────────────────────────────────────────────────────────────────
+type PDFTema = { cardBg: string; border: string; accent: string; text: string; textMuted: string };
+const PDFOverlay: React.FC<{ url: string; titulo: string; tema: PDFTema; onClose: () => void }> = ({
+  url, titulo, tema, onClose,
+}) => {
+  const [zoom, setZoom] = useState(1.0);
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+  const btn: React.CSSProperties = {
+    background: tema.cardBg, border: `1px solid ${tema.border}`, color: tema.text,
+    borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontSize: 13,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+  };
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.92)',
+        backdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column',
+        fontFamily: 'system-ui, sans-serif' }}
+      onClick={e => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 16px', background: tema.cardBg, borderBottom: `1px solid ${tema.border}`,
+        flexShrink: 0, gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FileText size={15} color={tema.accent} />
+          <span style={{ color: tema.text, fontWeight: 700, fontSize: 13, maxWidth: 260,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titulo}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button style={btn} onClick={() => setZoom(z => parseFloat(Math.max(0.5, z - 0.25).toFixed(2)))}>−</button>
+          <span style={{ color: tema.textMuted, fontSize: 12, minWidth: 40, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+          <button style={btn} onClick={() => setZoom(z => parseFloat(Math.min(2.0, z + 0.25).toFixed(2)))}>+</button>
+          <div style={{ width: 1, height: 20, background: tema.border, margin: '0 2px' }} />
+          <a href={url} target="_blank" rel="noopener noreferrer"
+            style={{ ...btn, textDecoration: 'none', color: tema.accent }}>
+            <Download size={13} /> Download
+          </a>
+          <button style={{ ...btn, background: '#ef444411', borderColor: '#ef444466', color: '#ef4444' }} onClick={onClose}>
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+      {/* PDF iframe */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', padding: 16 }}>
+        <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center',
+          transition: 'transform 0.2s', width: Math.min(window.innerWidth - 32, 960), flexShrink: 0 }}>
+          <iframe src={url} title="Proposta"
+            style={{ width: '100%', height: Math.max(window.innerHeight - 80, 500),
+              border: 'none', borderRadius: 8, boxShadow: '0 8px 40px rgba(0,0,0,0.6)', display: 'block' }} />
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const ApresentacaoPublica: React.FC = () => {
@@ -35,9 +94,13 @@ const ApresentacaoPublica: React.FC = () => {
   const [playing, setPlaying] = useState(true);
   const [showDots, setShowDots] = useState(true);
   const [showNav, setShowNav] = useState(false);
-  const [slideKey, setSlideKey] = useState(0); // força remount para re-animar
+  const [showPDF, setShowPDF] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const [slideKey, setSlideKey] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideDotsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartX = useRef<number>(0);
+  const touchEndX = useRef<number>(0);
 
   // ── Busca por slug ──
   useEffect(() => {
@@ -99,9 +162,9 @@ const ApresentacaoPublica: React.FC = () => {
     hideDotsRef.current = setTimeout(() => setShowDots(false), 3000);
   }, []);
 
-  // ── Autoplay ──
+  // ── Autoplay — pausa no hover ou interação manual ──
   useEffect(() => {
-    if (!presentation || !playing || total === 0) return;
+    if (!presentation || !playing || total === 0 || isHovering) return;
     const delay = presentation.slideDelayMs ?? 6000;
     timerRef.current = setInterval(() => {
       setCurrentIdx(prev => {
@@ -111,7 +174,7 @@ const ApresentacaoPublica: React.FC = () => {
       });
     }, delay);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [presentation, playing, total]);
+  }, [presentation, playing, total, isHovering]);
 
   // ── Teclado ──
   useEffect(() => {
@@ -184,12 +247,24 @@ const ApresentacaoPublica: React.FC = () => {
   const currentSlide = visibleSlides[currentIdx];
   const progress = ((currentIdx) / (total - 1)) * 100;
 
+  // ── Touch handlers (swipe mobile) ──
+  const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    touchEndX.current = e.changedTouches[0].clientX;
+    const diff = touchStartX.current - touchEndX.current;
+    if (Math.abs(diff) > 50) { setPlaying(false); if (diff > 0) goNext(); else goPrev(); }
+  };
+
   return (
-    <div style={{
-      width: '100vw', height: '100vh', overflow: 'hidden',
-      background: tema.bg, position: 'relative', fontFamily: 'system-ui, sans-serif',
-      userSelect: 'none',
-    }}>
+    <div
+      style={{ width: '100vw', height: '100vh', overflow: 'hidden',
+        background: tema.bg, position: 'relative', fontFamily: 'system-ui, sans-serif',
+        userSelect: 'none' }}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* ── CSS animações ── */}
       <style>{SLIDE_KEYFRAMES}</style>
 
@@ -202,6 +277,7 @@ const ApresentacaoPublica: React.FC = () => {
           slide={currentSlide}
           tema={tema}
           pdfUrl={presentation.pdfUrl}
+          onOpenPDF={() => setShowPDF(true)}
           presentation={{
             responsavel: presentation.responsavel,
             responsavelEmail: presentation.responsavelEmail,
@@ -357,6 +433,16 @@ const ApresentacaoPublica: React.FC = () => {
         style={{ position: 'absolute', inset: 0, zIndex: 10 }}
         onClick={() => { if (!showNav) { setPlaying(false); goNext(); } }}
       />
+
+      {/* ── PDF Overlay (ORC-05) — abre lazy ao clicar no botão CTA ── */}
+      {showPDF && presentation.pdfUrl && (
+        <PDFOverlay
+          url={presentation.pdfUrl}
+          titulo={presentation.projetoTitulo}
+          tema={tema}
+          onClose={() => setShowPDF(false)}
+        />
+      )}
     </div>
   );
 };

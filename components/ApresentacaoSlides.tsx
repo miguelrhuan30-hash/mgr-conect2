@@ -51,6 +51,14 @@ export const TEMAS: Record<PresentationTema, TemaConfig> = {
     textMuted: '#94a3b8',    border: '#065f46',
     cardBg: '#1a3040',
   },
+  // Tema laranja MGR — replica o visual dos HTMLs aprovados pela equipe
+  'mgr-classic': {
+    bg: '#0A1628',           bgSecondary: '#0d1f35',
+    accent: '#E8593C',       accentLight: '#f07249',
+    accentMuted: '#3d1a10',  text: '#f8fafc',
+    textMuted: '#94a3b8',    border: '#1e3550',
+    cardBg: '#0d1f35',
+  },
 };
 
 // ─── CSS de animação injetado globalmente ─────────────────────────────────────
@@ -498,8 +506,9 @@ export const SlideClosing: React.FC<{
   data: ClosingData;
   tema: TemaConfig;
   pdfUrl?: string | null;
+  onOpenPDF?: () => void;
   presentation: { responsavel?: string; responsavelEmail?: string; responsavelTelefone?: string };
-}> = ({ data, tema, pdfUrl, presentation }) => (
+}> = ({ data, tema, pdfUrl, onOpenPDF, presentation }) => (
   <div style={{
     width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center',
@@ -519,12 +528,10 @@ export const SlideClosing: React.FC<{
       </p>
     )}
 
-    {/* Botão CTA — PDF */}
+    {/* Botão CTA — abre overlay de PDF (ORC-05) */}
     {pdfUrl && (
-      <a
-        href={pdfUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        onClick={onOpenPDF}
         className="slide-anim-in slide-delay-3"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,
@@ -532,23 +539,23 @@ export const SlideClosing: React.FC<{
           color: 'white', fontWeight: 800,
           fontSize: 'clamp(13px, 1.8vw, 18px)',
           padding: '14px 32px', borderRadius: 50,
-          textDecoration: 'none', marginBottom: 40,
+          border: 'none', cursor: 'pointer', marginBottom: 40,
           boxShadow: `0 8px 30px ${tema.accent}55`,
           transition: 'transform .2s, box-shadow .2s',
         }}
         onMouseEnter={e => {
-          (e.target as HTMLElement).style.transform = 'translateY(-2px)';
-          (e.target as HTMLElement).style.boxShadow = `0 12px 40px ${tema.accent}77`;
+          e.currentTarget.style.transform = 'translateY(-2px)';
+          e.currentTarget.style.boxShadow = `0 12px 40px ${tema.accent}77`;
         }}
         onMouseLeave={e => {
-          (e.target as HTMLElement).style.transform = '';
-          (e.target as HTMLElement).style.boxShadow = `0 8px 30px ${tema.accent}55`;
+          e.currentTarget.style.transform = '';
+          e.currentTarget.style.boxShadow = `0 8px 30px ${tema.accent}55`;
         }}
       >
         <FileText size={18} />
         {data.textoCTA || 'Ver proposta completa'}
         <ExternalLink size={14} />
-      </a>
+      </button>
     )}
 
     {/* Contato */}
@@ -589,15 +596,16 @@ export const SlideRenderer: React.FC<{
   slide: SlideData;
   tema: TemaConfig;
   pdfUrl?: string | null;
+  onOpenPDF?: () => void;
   presentation: { responsavel?: string; responsavelEmail?: string; responsavelTelefone?: string };
-}> = ({ slide, tema, pdfUrl, presentation }) => {
+}> = ({ slide, tema, pdfUrl, onOpenPDF, presentation }) => {
   switch (slide.type) {
     case 'cover':        return <SlideCover        data={slide.data} tema={tema} />;
     case 'overview':     return <SlideOverview      data={slide.data} tema={tema} />;
     case 'deliverables': return <SlideDeliverables  data={slide.data} tema={tema} />;
     case 'timeline':     return <SlideTimeline      data={slide.data} tema={tema} />;
     case 'investment':   return <SlideInvestment    data={slide.data} tema={tema} />;
-    case 'closing':      return <SlideClosing data={slide.data} tema={tema} pdfUrl={pdfUrl} presentation={presentation} />;
+    case 'closing':      return <SlideClosing data={slide.data} tema={tema} pdfUrl={pdfUrl} onOpenPDF={onOpenPDF} presentation={presentation} />;
     default:             return null;
   }
 };

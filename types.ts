@@ -1213,7 +1213,7 @@ export interface SurveyTemplate {
 
 export type SlideType = 'cover' | 'overview' | 'deliverables' | 'timeline' | 'investment' | 'closing';
 export type PresentationStatus = 'ativa' | 'rascunho' | 'arquivada';
-export type PresentationTema = 'dark-navy' | 'dark-slate' | 'dark-teal';
+export type PresentationTema = 'dark-navy' | 'dark-slate' | 'dark-teal' | 'mgr-classic';
 
 // ── Slide: Cover ──
 export interface CoverData {
