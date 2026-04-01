@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, doc,
-  Timestamp, getDocs, getDoc, setDoc
+  Timestamp, getDocs, getDoc, setDoc, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,6 +16,7 @@ import {
   Map as MapIcon, Drumstick, Salad, Pencil, X, Loader2,
 } from 'lucide-react';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
+import * as XLSX from 'xlsx';
 
 /* ════════════════════════════════════════════════════════════════
    HELPERS
@@ -91,6 +92,9 @@ const LunchManagement: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<DayKey>('segunda');
   const [copied, setCopied] = useState(false);
   const [copiedGrouped, setCopiedGrouped] = useState(false);
+  const [exportingXLS, setExportingXLS] = useState(false);
+  const [cleaningDups, setCleaningDups] = useState(false);
+  const [cleanMsg, setCleanMsg] = useState('');
 
   // ── Locations ──
   const [locations, setLocations] = useState<LunchLocation[]>([]);
@@ -471,6 +475,125 @@ const LunchManagement: React.FC = () => {
     } catch { alert('Falha ao copiar.'); }
   };
 
+  /* ── Exportar XLS ── */
+  const handleExportXLS = () => {
+    setExportingXLS(true);
+    try {
+      const wb = XLSX.utils.book_new();
+      const dayDate = getDayDateISO();
+      const dayLabel = DAY_LABELS[selectedDay];
+      const dateBR = dayDate ? formatDateBR(dayDate) : '';
+
+      // Dedup locations
+      const latestLocs = new Map<string, LunchLocation>();
+      locations.forEach(l => {
+        const key = `${l.userId}_${l.data}`;
+        const ex = latestLocs.get(key);
+        if (!ex || (l.informadoEm?.toMillis?.() ?? 0) > (ex.informadoEm?.toMillis?.() ?? 0)) latestLocs.set(key, l);
+      });
+      const dedupLocs = Array.from(latestLocs.values());
+      const menuObj = menus.find(m => m.id === selectedMenuId);
+      const getLocForUser = (userId: string) => {
+        if (!menuObj?.weekStart) return null;
+        const idx = DAY_KEYS.indexOf(selectedDay);
+        const d = new Date(menuObj.weekStart + 'T12:00:00'); d.setDate(d.getDate() + idx);
+        return dedupLocs.find(l => l.userId === userId && l.data === d.toISOString().split('T')[0]) ?? null;
+      };
+      const locLabel = (l: LunchLocation | null) => {
+        if (!l || l.tipo === 'sede') return sedeNome + (sedeEndereco ? ` - ${sedeEndereco}` : '');
+        if (l.tipo === 'fora_cidade') return 'Fora da Cidade';
+        return [l.clienteNome, l.endereco].filter(Boolean).join(' - ') || 'Campo';
+      };
+      const locTipo = (l: LunchLocation | null) => {
+        if (!l || l.tipo === 'sede') return 'Sede'; if (l.tipo === 'fora_cidade') return 'Fora da Cidade'; return 'Campo';
+      };
+
+      // Aba 1: Pedidos
+      const pedidosData = filteredChoices.map((c, i) => {
+        const dc = c.escolhas[selectedDay] as LunchDayChoice | null;
+        const loc = getLocForUser(c.userId);
+        return {
+          'Nº': i + 1,
+          'Nome': c.userName,
+          'Setor': c.userSector || '',
+          'Misturas': dc?.misturas?.map(m => m.nome).join(' + ') || '—',
+          'Guarnições': dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—',
+          'Tamanho': dc?.tamanho || 'média',
+          'Tipo Localização': locTipo(loc),
+          'Endereço Entrega': locLabel(loc),
+        };
+      });
+      const ws1 = XLSX.utils.json_to_sheet(pedidosData);
+      ws1['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 16 }, { wch: 36 }];
+      XLSX.utils.book_append_sheet(wb, ws1, 'Pedidos');
+
+      // Aba 2: Por Endereço
+      const endData: Record<string, any>[] = [];
+      groupedByAddress.forEach(group => {
+        group.meals.forEach((m, i) => {
+          endData.push({
+            'Endereço': i === 0 ? group.address : '',
+            'Nº': i + 1,
+            'Nome': m.userName,
+            'Misturas': m.misturas,
+            'Guarnições': m.guarnicoes,
+            'Tamanho': m.tamanho,
+          });
+        });
+        endData.push({});
+      });
+      const ws2 = XLSX.utils.json_to_sheet(endData);
+      ws2['!cols'] = [{ wch: 36 }, { wch: 4 }, { wch: 22 }, { wch: 28 }, { wch: 28 }, { wch: 10 }];
+      XLSX.utils.book_append_sheet(wb, ws2, 'Por Endereço');
+
+      // Aba 3: Fora da Cidade
+      const foraData = filteredChoices
+        .filter(c => getLocForUser(c.userId)?.tipo === 'fora_cidade')
+        .map(c => ({ 'Nome': c.userName, 'Setor': c.userSector || '' }));
+      if (foraData.length > 0) {
+        const ws3 = XLSX.utils.json_to_sheet(foraData);
+        XLSX.utils.book_append_sheet(wb, ws3, 'Fora da Cidade');
+      }
+
+      const safeDateBR = dateBR.replace(/\//g, '-');
+      XLSX.writeFile(wb, `Pedidos_Almoco_${dayLabel}_${safeDateBR}.xlsx`);
+    } catch (err) {
+      console.error('Erro ao exportar XLS:', err);
+      alert('Erro ao exportar. Tente novamente.');
+    } finally {
+      setExportingXLS(false);
+    }
+  };
+
+  /* ── Limpar duplicados de LunchChoices (migração) ── */
+  const handleCleanDuplicates = async () => {
+    if (!confirm('Isso vai remover registros duplicados de pedidos (mantendo o mais recente por colaborador). Continuar?')) return;
+    setCleaningDups(true); setCleanMsg('');
+    try {
+      const snap = await getDocs(collection(db, CollectionName.LUNCH_CHOICES));
+      const groups = new Map<string, { id: string; ref: any; ts: number }[]>();
+      snap.docs.forEach(d => {
+        const data = d.data() as any;
+        const key = `${data.userId}_${data.menuId}`;
+        const ts = data.enviadoEm?.toMillis?.() ?? 0;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push({ id: d.id, ref: d.ref, ts });
+      });
+      let deleted = 0;
+      for (const [, docs] of groups) {
+        if (docs.length <= 1) continue;
+        docs.sort((a, b) => b.ts - a.ts); // newest first
+        for (let i = 1; i < docs.length; i++) { await deleteDoc(docs[i].ref); deleted++; }
+      }
+      setCleanMsg(`✅ Limpeza concluída: ${deleted} duplicata(s) removida(s).`);
+      setTimeout(() => setCleanMsg(''), 5000);
+    } catch (err) {
+      console.error(err); setCleanMsg('❌ Erro ao limpar duplicatas.');
+    } finally {
+      setCleaningDups(false);
+    }
+  };
+
   /* ─── Location helpers ─── */
   const getLocIcon = (tipo: LunchLocationType) => {
     switch (tipo) {
@@ -537,7 +660,7 @@ const LunchManagement: React.FC = () => {
               <p className="text-xs text-gray-400 mt-1">Colaboradores devem informar até este horário</p>
             </div>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <button onClick={handleSaveSede} disabled={savingSede}
               className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors text-sm font-medium">
               <Save size={14} /> {savingSede ? 'Salvando...' : 'Salvar Configurações'}
@@ -546,10 +669,16 @@ const LunchManagement: React.FC = () => {
               className="flex items-center gap-2 px-5 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium">
               <MapIcon size={14} /> Abrir Mapa
             </button>
+            <button onClick={handleCleanDuplicates} disabled={cleaningDups}
+              className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors text-sm font-medium">
+              {cleaningDups ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              {cleaningDups ? 'Limpando...' : 'Limpar Duplicados'}
+            </button>
             <button onClick={() => setShowSedeConfig(false)}
               className="px-4 py-2 text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm">
               Fechar
             </button>
+
           </div>
           {showSedeMapPicker && (
             <GoogleMapPicker initialSearch={sedeEndereco || sedeNome} title="Selecionar Localização da Sede"
@@ -558,6 +687,12 @@ const LunchManagement: React.FC = () => {
           )}
         </div>
       )}
+      {cleanMsg && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-medium ${cleanMsg.startsWith('✅') ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+          {cleanMsg}
+        </div>
+      )}
+
 
       {/* Tabs */}
       <div className="border-b border-gray-200 flex gap-0 overflow-x-auto">
@@ -891,18 +1026,25 @@ const LunchManagement: React.FC = () => {
 
           {/* Lista de pedidos */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-gray-100">
               <h3 className="text-sm font-bold text-gray-800">
                 📋 Lista de Pedidos — {DAY_LABELS[selectedDay]}
                 <span className="ml-2 text-xs font-normal text-gray-500">({filteredChoices.length} pedido{filteredChoices.length !== 1 ? 's' : ''})</span>
               </h3>
               {filteredChoices.length > 0 && (
-                <button onClick={handleCopy}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    copied ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'}`}>
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? 'Copiado!' : 'Copiar Lista'}
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={handleCopy}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      copied ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'}`}>
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                    {copied ? 'Copiado!' : 'Copiar Lista'}
+                  </button>
+                  <button onClick={handleExportXLS} disabled={exportingXLS}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all disabled:opacity-50">
+                    {exportingXLS ? <Loader2 size={14} className="animate-spin" /> : <span>📊</span>}
+                    {exportingXLS ? 'Exportando...' : 'Exportar Excel'}
+                  </button>
+                </div>
               )}
             </div>
             {filteredChoices.length === 0 ? (

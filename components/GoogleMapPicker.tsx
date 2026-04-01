@@ -60,6 +60,7 @@ const GoogleMapPicker: React.FC<GoogleMapPickerProps> = ({
   const [loading, setLoading] = useState(true);
   const [gettingGPS, setGettingGPS] = useState(false);
   const [apiReady, setApiReady] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   // ── Fix: Ensure Places Autocomplete dropdown appears above the modal ──
   useEffect(() => {
@@ -248,6 +249,35 @@ const GoogleMapPicker: React.FC<GoogleMapPickerProps> = ({
     );
   };
 
+  // ── Manual text search (when user types and clicks Search instead of autocomplete) ──
+  const handleManualSearch = useCallback(() => {
+    const text = searchInputRef.current?.value?.trim();
+    if (!text || !mapRef.current) return;
+    setSearching(true);
+    const service = new google.maps.places.PlacesService(mapRef.current);
+    service.findPlaceFromQuery(
+      { query: text, fields: ['geometry', 'formatted_address', 'name'] },
+      (results: any[], status: string) => {
+        setSearching(false);
+        if (status === google.maps.places.PlacesServiceStatus.OK && results?.[0]) {
+          const place = results[0];
+          if (place.geometry?.location) {
+            const lat = place.geometry.location.lat();
+            const lng = place.geometry.location.lng();
+            moveMarker(lat, lng);
+            mapRef.current?.setZoom(17);
+            const addr = place.formatted_address || '';
+            setSelectedAddress(
+              place.name && !addr.startsWith(place.name) ? `${place.name} — ${addr}` : addr
+            );
+          }
+        } else {
+          alert('Endereço não encontrado. Tente um termo mais específico.');
+        }
+      }
+    );
+  }, [moveMarker]);
+
   // ── Confirm selection ──
   const handleConfirm = () => {
     onConfirm({
@@ -273,19 +303,34 @@ const GoogleMapPicker: React.FC<GoogleMapPickerProps> = ({
           </button>
         </div>
 
-        {/* Search bar */}
         {showSearch && (
           <div className="px-5 pt-4 pb-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Buscar endereço ou nome do estabelecimento..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                defaultValue={initialSearch || ''}
-              />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Buscar endereço ou nome do estabelecimento..."
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                  defaultValue={initialSearch || ''}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleManualSearch(); } }}
+                />
+              </div>
+              <button
+                onClick={handleManualSearch}
+                disabled={searching || !apiReady}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap"
+              >
+                {searching
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Search className="w-4 h-4" />}
+                Buscar
+              </button>
             </div>
+            <p className="text-[11px] text-gray-400 mt-1.5">
+              Digite e clique em <strong>Buscar</strong>, ou clique no mapa para posicionar o marcador.
+            </p>
           </div>
         )}
 
