@@ -205,7 +205,8 @@ const AppContent: React.FC = () => {
     }
   };
 
-  if (loading || (currentUser && checkingShift)) return <LoadingScreen />;
+  const isPublicRoute = ['/p/', '/orcamentos/'].some(pr => location.pathname.startsWith(pr));
+  if (!isPublicRoute && (loading || (currentUser && checkingShift))) return <LoadingScreen />;
 
   const isAvatarMissing =
     currentUser &&

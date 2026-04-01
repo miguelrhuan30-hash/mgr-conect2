@@ -549,7 +549,7 @@ const Apresentacoes: React.FC = () => {
     }
   };
   const handleCopyLink = async (p: Partial<Presentation>) => {
-    const url = `https://mgrrefrigeracao.com.br/p/${p.slug}`;
+    const url = `${window.location.origin}/#/p/${p.slug}`;
     try { await navigator.clipboard.writeText(url); } catch { }
     setToast({ msg: 'Link copiado!', type: 'info' });
   };
@@ -610,7 +610,7 @@ const Apresentacoes: React.FC = () => {
 
   // ── Render: Editor ──
   if (editing !== null) {
-    const publicUrl = editing.slug ? `https://mgrrefrigeracao.com.br/p/${editing.slug}` : null;
+    const publicUrl = editing.slug ? `${window.location.origin}/#/p/${editing.slug}` : null;
     const currentSlide = slides[selectedIdx];
     const type = currentSlide ? SLIDE_TYPES.find(t => t.type === currentSlide.type) : null;
 
@@ -663,7 +663,7 @@ const Apresentacoes: React.FC = () => {
 
             {/* Abrir (se salvo) */}
             {saved && editing.slug && (
-              <button onClick={() => window.open(`/p/${editing.slug}`, '_blank')} style={{
+              <button onClick={() => window.open(`/#/p/${editing.slug}`, '_blank')} style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 border: '1px solid #e5e7eb', borderRadius: 8,
                 padding: '7px 14px', background: 'white', cursor: 'pointer', fontSize: 13,
@@ -928,7 +928,7 @@ const Apresentacoes: React.FC = () => {
                 </p>
                 <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: 10 }}>
                   <code style={{ fontSize: 11, color: '#2563eb', display: 'block', wordBreak: 'break-all', lineHeight: 1.5 }}>
-                    mgrrefrigeracao.com.br/p/{editing.slug}
+                    {window.location.origin.replace(/https?:\/\//, '')}/#/p/{editing.slug}
                   </code>
                   <button onClick={() => handleCopyLink(editing)} style={{
                     marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -1073,7 +1073,7 @@ const Apresentacoes: React.FC = () => {
                           className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors">
                           <Settings size={12} /> Editar
                         </button>
-                        <a href={`/p/${p.slug}`} target="_blank" rel="noopener noreferrer"
+                        <a href={`/#/p/${p.slug}`} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-1.5 px-3 py-1.5 border border-indigo-200 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors">
                           <Eye size={12} /> Visualizar
                         </a>
