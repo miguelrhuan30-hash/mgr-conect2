@@ -930,6 +930,7 @@ export enum CollectionName {
   SURVEY_TEMPLATES = 'survey_templates',
   // Sprint 51 — Apresentações Interativas
   PRESENTATIONS = 'presentations',
+  PRESENTATION_VIEWS = 'presentationViews', // ORC-08
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -1222,6 +1223,7 @@ export interface CoverData {
   clienteNome: string;
   dataValidade?: string;
   usarLogoMGR?: boolean;
+  logoClienteUrl?: string | null; // ORC-09
 }
 
 // ── Slide: Overview ──
@@ -1302,12 +1304,25 @@ export interface Presentation {
   responsavelTelefone?: string;
   pdfUrl?: string | null;
   pdfStoragePath?: string | null;
+  logoClienteUrl?: string | null;     // ORC-09
+  logoClienteStoragePath?: string | null; // ORC-09
   status: PresentationStatus;
   tema: PresentationTema;
   slides: SlideData[];
   slideAutoplay?: boolean;
   slideDelayMs?: number;
+  linkPublicoViews?: number;          // ORC-08
+  linkPublicoLastAccess?: any;        // ORC-08 (Firestore Timestamp)
   createdAt: Timestamp;
   updatedAt?: Timestamp;
   createdBy: string;
+}
+
+// ── ORC-08: Vista de apresentação (analytics) ──
+export interface PresentationView {
+  presentationId: string;
+  slug: string;
+  viewedAt: any; // Timestamp
+  userAgent: string;
+  device: 'mobile' | 'tablet' | 'desktop';
 }

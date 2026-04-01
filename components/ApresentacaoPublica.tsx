@@ -9,7 +9,7 @@
  */
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { collection, query, where, getDocs, updateDoc, doc, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, increment, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Presentation, SlideData, CollectionName } from '../types';
 import {
@@ -102,7 +102,7 @@ const ApresentacaoPublica: React.FC = () => {
   const touchStartX = useRef<number>(0);
   const touchEndX = useRef<number>(0);
 
-  // ── Busca por slug ──
+  // ── Busca por slug + view tracking (ORC-08) ──
   useEffect(() => {
     if (!slug) { setNotFound(true); setLoading(false); return; }
     const fetch = async () => {
@@ -113,8 +113,34 @@ const ApresentacaoPublica: React.FC = () => {
         const d = snap.docs[0];
         const data = { id: d.id, ...d.data() } as Presentation;
         setPresentation(data);
-        // Incrementa visualizações (fire-and-forget)
-        updateDoc(doc(db, CollectionName.PRESENTATIONS, d.id), { linkPublicoViews: increment(1) }).catch(() => {});
+
+        // ── Rate limiting: 1 registro por slug a cada 30min (localStorage) ──
+        const RL_KEY = `mgr_view_${slug}`;
+        const lastView = localStorage.getItem(RL_KEY);
+        const now = Date.now();
+        const skip = lastView && now - parseInt(lastView) < 30 * 60 * 1000;
+
+        if (!skip) {
+          localStorage.setItem(RL_KEY, now.toString());
+          // Detectar dispositivo
+          const ua = navigator.userAgent;
+          const device: 'mobile' | 'tablet' | 'desktop' =
+            /Mobi|Android|iPhone/i.test(ua) ? 'mobile' :
+            /iPad|Tablet/i.test(ua) ? 'tablet' : 'desktop';
+          // Incrementa contador + atualiza lastAccess no Presentation
+          updateDoc(doc(db, CollectionName.PRESENTATIONS, d.id), {
+            linkPublicoViews: increment(1),
+            linkPublicoLastAccess: serverTimestamp(),
+          }).catch(() => {});
+          // Registra documento em presentationViews
+          addDoc(collection(db, CollectionName.PRESENTATION_VIEWS), {
+            presentationId: d.id,
+            slug,
+            viewedAt: serverTimestamp(),
+            userAgent: ua.slice(0, 300), // limita tamanho
+            device,
+          }).catch(() => {});
+        }
       } catch {
         setNotFound(true);
       } finally {

@@ -370,9 +370,11 @@ const Apresentacoes: React.FC = () => {
   const [saved, setSaved]         = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [toast, setToast]         = useState<{ msg: string; type?: 'success' | 'error' | 'info' } | null>(null);
   const [statusFilter, setStatusFilter] = useState<'todas' | 'ativa' | 'rascunho' | 'arquivada'>('todas');
   const fileRef = useRef<HTMLInputElement>(null);
+  const fileRefLogo = useRef<HTMLInputElement>(null);
 
   // ── Auto-abrir editor se vier de ?orcamentoId= (integração com Orçamentos) ──
   useEffect(() => {
@@ -516,7 +518,36 @@ const Apresentacoes: React.FC = () => {
     }
   };
 
-  // ── Copiar link ──
+  // ── Upload Logo do Cliente (ORC-09) ──
+  const handleUploadLogo = async (file: File) => {
+    if (!editing) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setToast({ msg: 'O logo deve ter no máximo 2 MB.', type: 'error' }); return;
+    }
+    const slug = editing.slug ?? `temp-${Date.now()}`;
+    setUploadingLogo(true);
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const logoRef = storageRef(storage, `presentations/${slug}/logo-cliente.${ext}`);
+      const task = uploadBytesResumable(logoRef, file, { contentType: file.type });
+      await new Promise<void>((resolve, reject) => {
+        task.on('state_changed', undefined, reject, async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          const path = `presentations/${slug}/logo-cliente.${ext}`;
+          setEditing(prev => ({ ...prev!, logoClienteUrl: url, logoClienteStoragePath: path }));
+          if (editing.id) {
+            await updateDoc(doc(db, CollectionName.PRESENTATIONS, editing.id), { logoClienteUrl: url, logoClienteStoragePath: path });
+          }
+          resolve();
+        });
+      });
+      setToast({ msg: 'Logo enviado com sucesso!', type: 'success' });
+    } catch {
+      setToast({ msg: 'Erro ao enviar logo.', type: 'error' });
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
   const handleCopyLink = async (p: Partial<Presentation>) => {
     const url = `https://mgrrefrigeracao.com.br/p/${p.slug}`;
     try { await navigator.clipboard.writeText(url); } catch { }
@@ -843,6 +874,52 @@ const Apresentacoes: React.FC = () => {
               )}
             </div>
 
+            {/* Logo do Cliente — ORC-09 */}
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 10px' }}>
+                Logo do Cliente
+              </p>
+              <input ref={fileRefLogo} type="file" accept="image/png,image/svg+xml,image/jpeg" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadLogo(f); }} />
+              {editing.logoClienteUrl ? (
+                <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <img src={editing.logoClienteUrl} alt="Logo cliente" style={{ height: 32, width: 'auto', objectFit: 'contain', borderRadius: 4 }} />
+                    <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>Logo vinculado</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => fileRefLogo.current?.click()} style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                      background: 'white', border: '1px solid #d1d5db', borderRadius: 7,
+                      padding: '5px 0', fontSize: 12, cursor: 'pointer', color: '#374151',
+                    }}>
+                      <Upload size={11} /> Substituir
+                    </button>
+                    <button onClick={() => {
+                      setEditing(prev => ({ ...prev!, logoClienteUrl: null, logoClienteStoragePath: null }));
+                      if (editing.id) updateDoc(doc(db, CollectionName.PRESENTATIONS, editing.id), { logoClienteUrl: null, logoClienteStoragePath: null }).catch(() => {});
+                    }} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 7,
+                      padding: '5px 10px', fontSize: 12, cursor: 'pointer', color: '#dc2626',
+                    }}>
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => fileRefLogo.current?.click()} disabled={uploadingLogo} style={{
+                  width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                  border: '2px dashed #d8b4fe', borderRadius: 10, padding: '16px 0',
+                  background: '#faf5ff', cursor: uploadingLogo ? 'not-allowed' : 'pointer',
+                }}>
+                  {uploadingLogo
+                    ? <><Loader2 size={18} color="#7c3aed" style={{ animation: 'spin 1s linear infinite' }} /><span style={{ color: '#7c3aed', fontSize: 11 }}>Enviando...</span></>
+                    : <><Upload size={18} color="#7c3aed" /><span style={{ color: '#7c3aed', fontSize: 11, fontWeight: 600 }}>Logo PNG/SVG</span><span style={{ color: '#c4b5fd', fontSize: 10 }}>máx. 2 MB</span></>}
+                </button>
+              )}
+            </div>
+
             {/* Link público */}
             {saved && editing.slug && (
               <div>
@@ -960,7 +1037,7 @@ const Apresentacoes: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-sm text-gray-500">{p.clienteNome}</p>
-                        <div className="flex items-center gap-1 mt-1">
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
                           <code className="text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md font-mono">
                             /p/{p.slug}
                           </code>
@@ -972,6 +1049,21 @@ const Apresentacoes: React.FC = () => {
                           )}
                           {(p as any).createdAt && (
                             <span className="text-xs text-gray-400">· {new Date((p as any).createdAt.toDate?.() ?? (p as any).createdAt).toLocaleDateString('pt-BR')}</span>
+                          )}
+                        </div>
+                        {/* ORC-08: analytics */}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          {(p.linkPublicoViews ?? 0) > 0 ? (
+                            <span className="text-xs text-indigo-600 font-semibold">
+                              👁️ {p.linkPublicoViews} {p.linkPublicoViews === 1 ? 'visualização' : 'visualizações'}
+                              {p.linkPublicoLastAccess && (
+                                <span className="text-gray-400 font-normal">
+                                  {' '}· último acesso {new Date((p.linkPublicoLastAccess as any).toDate?.() ?? p.linkPublicoLastAccess).toLocaleDateString('pt-BR')}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-300">Ainda não acessada</span>
                           )}
                         </div>
                       </div>
