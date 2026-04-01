@@ -928,6 +928,8 @@ export enum CollectionName {
   SURVEY_RESPONSES = 'survey_responses',
   SURVEY_PARTICIPATION = 'survey_participation',
   SURVEY_TEMPLATES = 'survey_templates',
+  // Sprint 51 — Apresentações Interativas
+  PRESENTATIONS = 'presentations',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -1205,4 +1207,107 @@ export interface SurveyTemplate {
   criadoPor: string;
   criadoEm: Timestamp;
   builtIn?: boolean;            // true = modelo pré-cadastrado pelo sistema
+}
+
+// ─── Sprint 51 — Apresentações Interativas ────────────────────────────────────
+
+export type SlideType = 'cover' | 'overview' | 'deliverables' | 'timeline' | 'investment' | 'closing';
+export type PresentationStatus = 'ativa' | 'rascunho' | 'arquivada';
+export type PresentationTema = 'dark-navy' | 'dark-slate' | 'dark-teal';
+
+// ── Slide: Cover ──
+export interface CoverData {
+  titulo: string;
+  subtitulo?: string;
+  clienteNome: string;
+  dataValidade?: string;
+  usarLogoMGR?: boolean;
+}
+
+// ── Slide: Overview ──
+export interface OverviewData {
+  descricao?: string;
+  localizacao?: string;
+  temperatura?: string;
+  finalidade?: string;
+  metragem?: string;
+}
+
+// ── Slide: Deliverables ──
+export interface DeliverableItem {
+  id: string;
+  categoria: string;
+  descricao: string;
+}
+export interface DeliverablesData {
+  items: DeliverableItem[];
+}
+
+// ── Slide: Timeline ──
+export interface TimelineFase {
+  id: string;
+  nome: string;
+  prazo: string;
+  descricao?: string;
+}
+export interface TimelineData {
+  fases: TimelineFase[];
+  totalDias?: string;
+}
+
+// ── Slide: Investment ──
+export interface InvestmentBreakdownItem {
+  id: string;
+  label: string;
+  valor: string;
+}
+export interface InvestmentParcela {
+  id: string;
+  percentual: string;
+  label: string;
+  valor: string;
+}
+export interface InvestmentData {
+  valorTotal: string;
+  breakdown?: InvestmentBreakdownItem[];
+  parcelas: InvestmentParcela[];
+  observacoes?: string;
+}
+
+// ── Slide: Closing ──
+export interface ClosingData {
+  textoCTA?: string;
+  textoFechamento?: string;
+  exibirContato?: boolean;
+}
+
+// ── Discriminated union ──
+export type SlideData =
+  | { type: 'cover';        order: number; visible: boolean; data: CoverData }
+  | { type: 'overview';     order: number; visible: boolean; data: OverviewData }
+  | { type: 'deliverables'; order: number; visible: boolean; data: DeliverablesData }
+  | { type: 'timeline';     order: number; visible: boolean; data: TimelineData }
+  | { type: 'investment';   order: number; visible: boolean; data: InvestmentData }
+  | { type: 'closing';      order: number; visible: boolean; data: ClosingData };
+
+// ── Root document ──
+export interface Presentation {
+  id: string;
+  slug: string;
+  orcamentoId?: string | null;
+  clienteNome: string;
+  projetoTitulo: string;
+  responsavel?: string;
+  responsavelEmail?: string;
+  responsavelTelefone?: string;
+  pdfUrl?: string | null;
+  pdfStoragePath?: string | null;
+  status: PresentationStatus;
+  tema: PresentationTema;
+  slides: SlideData[];
+  slideAutoplay?: boolean;
+  slideDelayMs?: number;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+  createdBy: string;
 }

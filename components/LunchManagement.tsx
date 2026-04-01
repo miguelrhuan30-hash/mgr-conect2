@@ -323,9 +323,13 @@ const LunchManagement: React.FC = () => {
   /* ─── Locations split ─── */
   const dayLocations = useMemo(() => {
     const menuObj = menus.find(m => m.id === selectedMenuId);
-    if (!menuObj) return { sede: [] as LunchLocation[], campo: [] as LunchLocation[], fora: [] as LunchLocation[] };
+    const empty = { sede: [] as LunchLocation[], campo: [] as LunchLocation[], fora: [] as LunchLocation[] };
+    if (!menuObj) return empty;
+    // Menus do tipo 'fixo' ou 'diario' sem weekStart não têm localização por dia da semana
+    if (!menuObj.weekStart || typeof menuObj.weekStart !== 'string' || menuObj.weekStart.trim() === '') return empty;
     const dayIndex = DAY_KEYS.indexOf(selectedDay);
     const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
+    if (isNaN(menuDate.getTime())) return empty;
     menuDate.setDate(menuDate.getDate() + dayIndex);
     const dateISO = menuDate.toISOString().split('T')[0];
     const dayLocs = locations.filter(l => l.data === dateISO);
@@ -342,8 +346,10 @@ const LunchManagement: React.FC = () => {
   const getDayDateISO = (): string => {
     const menuObj = menus.find(m => m.id === selectedMenuId);
     if (!menuObj) return '';
+    if (!menuObj.weekStart || typeof menuObj.weekStart !== 'string' || menuObj.weekStart.trim() === '') return '';
     const dayIndex = DAY_KEYS.indexOf(selectedDay);
     const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
+    if (isNaN(menuDate.getTime())) return '';
     menuDate.setDate(menuDate.getDate() + dayIndex);
     return menuDate.toISOString().split('T')[0];
   };
@@ -388,8 +394,11 @@ const LunchManagement: React.FC = () => {
     filteredChoices.forEach(c => {
       const menuObj = menus.find(m => m.id === selectedMenuId);
       if (!menuObj) return;
+      // Menus sem weekStart válido (fixo/diario) não têm localização por dia
+      if (!menuObj.weekStart || typeof menuObj.weekStart !== 'string' || menuObj.weekStart.trim() === '') return;
       const dayIndex = DAY_KEYS.indexOf(selectedDay);
       const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
+      if (isNaN(menuDate.getTime())) return;
       menuDate.setDate(menuDate.getDate() + dayIndex);
       const dateISO = menuDate.toISOString().split('T')[0];
       const loc = dedupedLocations.find(l => l.userId === c.userId && l.data === dateISO);
@@ -427,8 +436,10 @@ const LunchManagement: React.FC = () => {
     const foraChoices = filteredChoices.filter(c => {
       const menuObj2 = menus.find(m => m.id === selectedMenuId);
       if (!menuObj2) return false;
+      if (!menuObj2.weekStart || typeof menuObj2.weekStart !== 'string' || menuObj2.weekStart.trim() === '') return false;
       const dayIndex = DAY_KEYS.indexOf(selectedDay);
       const menuDate = new Date(menuObj2.weekStart + 'T12:00:00');
+      if (isNaN(menuDate.getTime())) return false;
       menuDate.setDate(menuDate.getDate() + dayIndex);
       const dateISO = menuDate.toISOString().split('T')[0];
       const loc = locations.find(l => l.userId === c.userId && l.data === dateISO);

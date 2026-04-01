@@ -1,295 +1,34 @@
 /**
- * components/Orcamento.tsx — Sprint 47 → Sprint 51
+ * components/Orcamento.tsx — Sprint 47
  *
- * Módulo de Orçamento — CRUD de orçamentos com itens, status,
+ * Módulo de Orçamento Tradicional — CRUD de orçamentos com itens, status,
  * integração pipeline (PRE_ORCAMENTO / ORCAMENTO_FINAL).
- * Sprint 51: Upload de PDF + Link público compartilhável para clientes.
  * 3 abas: Em Aberto, Aprovados, Rejeitados.
+ *
+ * Para envio de PDFs ao cliente, use o módulo "Propostas PDF" (/app/propostas-pdf)
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   collection, query, orderBy, onSnapshot, addDoc, updateDoc,
-  doc, serverTimestamp, Timestamp, getDocs, increment,
+  doc, serverTimestamp, Timestamp, getDocs,
 } from 'firebase/firestore';
-import {
-  ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject,
-} from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   CollectionName, Orcamento, OrcamentoItem, Client, Task,
   WorkflowStatus as WS,
 } from '../types';
 import {
-  FileSpreadsheet, Plus, Loader2, X, Save, Trash2,
-  CheckCircle2, XCircle, Send, Eye, Search,
-  Clock, AlertCircle, Copy, Link2, Upload, FileText,
-  Download, Check, ExternalLink, Share2, Paperclip,
+  FileSpreadsheet, Plus, Loader2, X, Save, Trash2, DollarSign,
+  CheckCircle2, XCircle, Send, Eye, ChevronDown, Search, ListFilter,
+  Clock, AlertCircle, Copy,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-const formatBRL = (v?: number) =>
-  v != null ? `R$ ${v.toFixed(2).replace('.', ',')}` : '—';
-
-const formatFileSize = (bytes?: number) => {
-  if (!bytes) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+const formatBRL = (v?: number) => v != null ? `R$ ${v.toFixed(2).replace('.', ',')}` : '—';
 
 type TabType = 'abertos' | 'aprovados' | 'rejeitados';
-
-// ─── Toast ────────────────────────────────────────────────────────────────────
-const Toast: React.FC<{ msg: string; type?: 'success' | 'error' | 'info'; onClose: () => void }> = ({ msg, type = 'success', onClose }) => {
-  useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
-  const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
-  return (
-    <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl text-white text-sm font-medium ${colors[type]} animate-fade-in-up`}>
-      {type === 'success' ? <Check size={16} /> : type === 'error' ? <AlertCircle size={16} /> : <Link2 size={16} />}
-      {msg}
-      <button onClick={onClose} className="ml-2 text-white/70 hover:text-white"><X size={14} /></button>
-    </div>
-  );
-};
-
-/* ─── PDF Upload Section ──────────────────────────────────────────────────── */
-const PDFUploadSection: React.FC<{
-  orcamento: Orcamento;
-  onUpdateOrcamento: (data: Partial<Orcamento>) => Promise<void>;
-}> = ({ orcamento, onUpdateOrcamento }) => {
-  const [uploading, setUploading]     = useState(false);
-  const [uploadPct, setUploadPct]     = useState(0);
-  const [sharing, setSharing]         = useState(false);
-  const [toast, setToast]             = useState<{ msg: string; type?: 'success' | 'error' | 'info' } | null>(null);
-  const fileInputRef                  = useRef<HTMLInputElement>(null);
-
-  const publicUrl = `https://mgrrefrigeracao.com.br/orcamentos/${orcamento.id}`;
-
-  // ── Upload PDF ──
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') {
-      setToast({ msg: 'Apenas arquivos PDF são aceitos.', type: 'error' });
-      return;
-    }
-    if (file.size > 30 * 1024 * 1024) {
-      setToast({ msg: 'O arquivo deve ter no máximo 30 MB.', type: 'error' });
-      return;
-    }
-
-    setUploading(true);
-    setUploadPct(0);
-
-    try {
-      // Remover PDF antigo se existir
-      if (orcamento.pdfUrl) {
-        try {
-          const oldRef = storageRef(storage, `orcamentos/${orcamento.id}/${orcamento.pdfNome}`);
-          await deleteObject(oldRef);
-        } catch { /* ignore — may not exist */ }
-      }
-
-      const fileRef = storageRef(storage, `orcamentos/${orcamento.id}/${file.name}`);
-      const uploadTask = uploadBytesResumable(fileRef, file, { contentType: 'application/pdf' });
-
-      uploadTask.on('state_changed',
-        (snap) => setUploadPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-        (_err) => {
-          setUploading(false);
-          setToast({ msg: 'Erro ao fazer upload do PDF.', type: 'error' });
-        },
-        async () => {
-          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-          await onUpdateOrcamento({
-            pdfUrl: downloadUrl,
-            pdfNome: file.name,
-            pdfTamanhoBytes: file.size,
-            pdfUploadEm: Timestamp.now(),
-          });
-          setUploading(false);
-          setToast({ msg: 'PDF enviado com sucesso!', type: 'success' });
-        }
-      );
-    } catch {
-      setUploading(false);
-      setToast({ msg: 'Erro ao fazer upload. Tente novamente.', type: 'error' });
-    }
-
-    // Reset input
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  // ── Ativar link público + copiar ──
-  const handleShare = async () => {
-    setSharing(true);
-    try {
-      // Ativa o link público se ainda não estiver ativo
-      if (!orcamento.linkPublicoAtivo) {
-        await onUpdateOrcamento({ linkPublicoAtivo: true });
-      }
-      // Copia URL para clipboard
-      await navigator.clipboard.writeText(publicUrl);
-      setToast({ msg: 'Link copiado! Compartilhe com o cliente.', type: 'info' });
-    } catch {
-      // Fallback: mostrar a URL
-      setToast({ msg: `Link: ${publicUrl}`, type: 'info' });
-    } finally {
-      setSharing(false);
-    }
-  };
-
-  // ── Desativar link público ──
-  const handleRevokeLink = async () => {
-    if (!confirm('Desativar o link público? O cliente não conseguirá mais acessar.')) return;
-    await onUpdateOrcamento({ linkPublicoAtivo: false });
-    setToast({ msg: 'Link público desativado.', type: 'success' });
-  };
-
-  return (
-    <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/pdf"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-
-      {/* ── Sem PDF: botão Anexar ── */}
-      {!orcamento.pdfUrl && !uploading && (
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 text-gray-500 rounded-xl text-xs font-medium hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50 transition-all w-full justify-center"
-        >
-          <Paperclip size={13} />
-          Anexar PDF do Orçamento
-        </button>
-      )}
-
-      {/* ── Upload em andamento ── */}
-      {uploading && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-gray-600">
-            <span className="flex items-center gap-1.5"><Upload size={12} className="animate-bounce" /> Enviando PDF...</span>
-            <span className="font-bold">{uploadPct}%</span>
-          </div>
-          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-brand-600 rounded-full transition-all duration-300"
-              style={{ width: `${uploadPct}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ── PDF existente ── */}
-      {orcamento.pdfUrl && !uploading && (
-        <div className="bg-gray-50 rounded-xl p-3 space-y-3">
-          {/* Info do arquivo */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
-              <FileText size={16} className="text-red-600" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-gray-800 truncate">{orcamento.pdfNome || 'orcamento.pdf'}</p>
-              <p className="text-[10px] text-gray-400">
-                {formatFileSize(orcamento.pdfTamanhoBytes)}
-                {orcamento.pdfUploadEm &&
-                  ` · Enviado em ${format((orcamento.pdfUploadEm as any).toDate(), 'dd/MM/yy', { locale: ptBR })}`}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <a
-                href={orcamento.pdfUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
-                title="Ver PDF"
-              >
-                <Eye size={13} />
-              </a>
-              <a
-                href={orcamento.pdfUrl}
-                download={orcamento.pdfNome || 'orcamento.pdf'}
-                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
-                title="Baixar PDF"
-              >
-                <Download size={13} />
-              </a>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-brand-600 hover:border-brand-300 transition-colors"
-                title="Substituir PDF"
-              >
-                <Upload size={13} />
-              </button>
-            </div>
-          </div>
-
-          {/* Linha de compartilhamento */}
-          <div className="flex items-center gap-2">
-            {/* Botão compartilhar */}
-            <button
-              onClick={handleShare}
-              disabled={sharing}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-colors"
-            >
-              {sharing
-                ? <Loader2 size={12} className="animate-spin" />
-                : <Share2 size={12} />}
-              {orcamento.linkPublicoAtivo ? 'Copiar Link' : 'Compartilhar por Link'}
-            </button>
-
-            {/* Status do link público */}
-            {orcamento.linkPublicoAtivo && (
-              <div className="flex items-center gap-1.5">
-                <span className="flex items-center gap-1 text-[10px] text-green-700 bg-green-100 px-2 py-1 rounded-full font-bold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                  Link ativo
-                </span>
-                {(orcamento.linkPublicoViews ?? 0) > 0 && (
-                  <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
-                    <Eye size={10} />
-                    {orcamento.linkPublicoViews}
-                  </span>
-                )}
-                <button
-                  onClick={handleRevokeLink}
-                  className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                  title="Desativar link"
-                >
-                  <XCircle size={13} />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* URL preview */}
-          {orcamento.linkPublicoAtivo && (
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2 py-1.5">
-              <Link2 size={11} className="text-brand-600 flex-shrink-0" />
-              <span className="text-[10px] text-gray-500 truncate flex-1">{publicUrl}</span>
-              <a
-                href={publicUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-brand-600 hover:text-brand-700 flex-shrink-0"
-                title="Abrir link"
-              >
-                <ExternalLink size={11} />
-              </a>
-            </div>
-          )}
-        </div>
-      )}
-
-      {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-    </div>
-  );
-};
 
 /* ─── Orcamento Form Modal ──────────────────────────────────────────────── */
 const OrcamentoFormModal: React.FC<{
@@ -515,19 +254,9 @@ const OrcamentoModule: React.FC = () => {
         criadoPor: currentUser.uid,
         criadoPorNome: userProfile?.displayName || '',
         criadoEm: serverTimestamp(),
-        linkPublicoAtivo: false,
-        linkPublicoViews: 0,
       });
     }
     setEditOrc(null); setShowForm(false);
-  };
-
-  // ── Atualizar campos do orçamento (usado pelo PDFUploadSection) ──
-  const handleUpdateOrcamento = async (orcId: string, data: Partial<Orcamento>) => {
-    await updateDoc(doc(db, CollectionName.OS_ORCAMENTOS, orcId), {
-      ...data,
-      atualizadoEm: serverTimestamp(),
-    });
   };
 
   const enviar = async (orc: Orcamento) => {
@@ -583,7 +312,7 @@ const OrcamentoModule: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <FileSpreadsheet className="w-6 h-6 text-brand-600" /> Orçamentos
           </h1>
-          <p className="text-sm text-gray-500">Crie, gerencie e compartilhe orçamentos com clientes</p>
+          <p className="text-sm text-gray-500">Crie e gerencie orçamentos com itens e valores detalhados</p>
         </div>
         <button onClick={() => { setEditOrc(null); setShowForm(true); }}
           className="flex items-center px-4 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700 text-sm font-bold shadow-sm">
@@ -627,10 +356,9 @@ const OrcamentoModule: React.FC = () => {
         <div className="space-y-3">
           {filtered.map(orc => {
             const isRascunho = orc.status === 'rascunho';
-            const isEnviado  = orc.status === 'enviado';
+            const isEnviado = orc.status === 'enviado';
             return (
               <div key={orc.id} className="bg-white rounded-2xl border border-gray-200 p-5 hover:shadow-sm transition-all">
-                {/* ── Header do card ── */}
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div className="min-w-0">
                     <h3 className="font-bold text-gray-900 truncate">{orc.titulo}</h3>
@@ -664,7 +392,6 @@ const OrcamentoModule: React.FC = () => {
                   </div>
                 )}
 
-                {/* ── Ações de status ── */}
                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                   {isRascunho && (
                     <>
@@ -689,12 +416,6 @@ const OrcamentoModule: React.FC = () => {
                     </>
                   )}
                 </div>
-
-                {/* ── Seção de PDF + Link Compartilhável ── */}
-                <PDFUploadSection
-                  orcamento={orc}
-                  onUpdateOrcamento={(data) => handleUpdateOrcamento(orc.id, data)}
-                />
               </div>
             );
           })}

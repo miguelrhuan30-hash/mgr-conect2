@@ -71,6 +71,17 @@ const OrcamentoModule  = lazy(() => import('./components/Orcamento'));
 const OrcamentoPublico = lazy(() => import('./components/OrcamentoPublico'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT 51: Propostas PDF
+// ─────────────────────────────────────────────
+const PropostasPDF = lazy(() => import('./components/PropostasPDF'));
+
+// ─────────────────────────────────────────────
+// LAZY LOAD — SPRINT 51B: Apresentações Interativas
+// ─────────────────────────────────────────────
+const Apresentacoes     = lazy(() => import('./components/Apresentacoes'));
+const ApresentacaoPublica = lazy(() => import('./components/ApresentacaoPublica'));
+
+// ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 49: Módulo Meu Almoço
 // ─────────────────────────────────────────────
 const LunchManagement = lazy(() => import('./components/LunchManagement'));
@@ -220,8 +231,11 @@ const AppContent: React.FC = () => {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
 
-        {/* ── ORÇAMENTO PÚBLICO (sem autenticação, link para clientes) ── */}
+        {/* —— ORÇAMENTO PÚBLICO (sem autenticação, link para clientes) —— */}
         <Route path="/orcamentos/:id" element={<OrcamentoPublico />} />
+
+        {/* —— APRESENTAÇÃO PÚBLICA (sem autenticação, link para clientes) —— */}
+        <Route path="/p/:slug" element={<ApresentacaoPublica />} />
 
         <Route
           path="/aguardando-aprovacao"
@@ -373,6 +387,18 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="orcamentos"
             element={hasPermission('canViewFinancials') ? <OrcamentoModule /> : <Navigate to="/app" />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT 51 — Propostas PDF
+          ════════════════════════════════════════ */}
+          <Route path="propostas-pdf"
+            element={hasPermission('canViewFinancials') ? <PropostasPDF /> : <Navigate to="/app" />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT 51B — Apresentações Interativas
+          ════════════════════════════════════════ */}
+          <Route path="apresentacoes"
+            element={hasPermission('canViewFinancials') ? <Apresentacoes /> : <Navigate to="/app" />} />
 
           {/* ════════════════════════════════════════
               SPRINT 49 — Módulo Meu Almoço
