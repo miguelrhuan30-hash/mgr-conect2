@@ -26,7 +26,7 @@ import {
   Presentation as PresentIcon, Plus, Loader2, X, Save, Search,
   Copy, Check, ExternalLink, Eye, Archive, FileText, Upload,
   ChevronRight, ChevronLeft, Trash2, GripVertical, Link2,
-  Palette, Settings, AlertCircle, Play,
+  Palette, Settings, AlertCircle, Play, CopyPlus, Filter,
 } from 'lucide-react';
 
 // ── Tipos de slide com label ──
@@ -371,6 +371,7 @@ const Apresentacoes: React.FC = () => {
   const [uploadPct, setUploadPct] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast]         = useState<{ msg: string; type?: 'success' | 'error' | 'info' } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'todas' | 'ativa' | 'rascunho' | 'arquivada'>('todas');
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── Auto-abrir editor se vier de ?orcamentoId= (integração com Orçamentos) ──
@@ -414,11 +415,12 @@ const Apresentacoes: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const filtered = presentations.filter(p =>
-    p.status !== 'arquivada' &&
-    (p.projetoTitulo + p.clienteNome + p.slug).toLowerCase().includes(search.toLowerCase())
-  );
-
+  const filtered = presentations.filter(p => {
+    const matchSearch = (p.projetoTitulo + p.clienteNome + p.slug).toLowerCase().includes(search.toLowerCase());
+    if (!matchSearch) return false;
+    if (statusFilter === 'todas') return p.status !== 'arquivada';
+    return p.status === statusFilter;
+  });
   const archived = presentations.filter(p => p.status === 'arquivada');
 
   // ── Criar nova ──
@@ -427,7 +429,7 @@ const Apresentacoes: React.FC = () => {
       clienteNome: '', projetoTitulo: '',
       responsavel: '', responsavelEmail: '', responsavelTelefone: '',
       pdfUrl: null, pdfStoragePath: null,
-      status: 'rascunho', tema: 'dark-navy',
+      status: 'rascunho', tema: 'mgr-classic',
       slideAutoplay: true, slideDelayMs: 6000,
     };
     setEditing(empty);
@@ -525,6 +527,28 @@ const Apresentacoes: React.FC = () => {
   const handleArchive = async (p: Presentation) => {
     if (!confirm(`Arquivar "${p.projetoTitulo}"?`)) return;
     await updateDoc(doc(db, CollectionName.PRESENTATIONS, p.id), { status: 'arquivada' });
+  };
+
+  // ── Duplicar (ORC-06) ──
+  const handleDuplicate = async (p: Presentation) => {
+    if (!currentUser) return;
+    try {
+      const newSlug = await generateSlug();
+      const { id: _id, slug: _slug, ...rest } = p as any;
+      await addDoc(collection(db, CollectionName.PRESENTATIONS), {
+        ...rest,
+        slug: newSlug,
+        projetoTitulo: `${p.projetoTitulo} (cópia)`,
+        status: 'rascunho',
+        linkPublicoViews: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: currentUser.uid,
+      });
+      setToast({ msg: 'Apresentação duplicada como rascunho!', type: 'success' });
+    } catch {
+      setToast({ msg: 'Erro ao duplicar.', type: 'error' });
+    }
   };
 
   // ── Slide ops ──
@@ -878,13 +902,27 @@ const Apresentacoes: React.FC = () => {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm">
-        <div className="relative max-w-sm">
+      {/* Filtros: busca + status */}
+      <div className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="relative max-w-xs w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input type="text" placeholder="Buscar por projeto ou cliente..." value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white outline-none" />
+        </div>
+        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
+          {(['todas', 'ativa', 'rascunho', 'arquivada'] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
+                statusFilter === s ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              {s === 'todas' ? 'Todas' : s === 'ativa' ? '✅ Ativas' : s === 'rascunho' ? '📝 Rascunhos' : '📦 Arquivadas'}
+              <span className="ml-1.5 text-[9px] bg-gray-200 px-1.5 py-0.5 rounded-full font-extrabold">
+                {s === 'todas' ? presentations.filter(p => p.status !== 'arquivada').length
+                  : presentations.filter(p => p.status === s).length}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -932,29 +970,37 @@ const Apresentacoes: React.FC = () => {
                           {p.pdfUrl && (
                             <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">+ PDF</span>
                           )}
+                          {(p as any).createdAt && (
+                            <span className="text-xs text-gray-400">· {new Date((p as any).createdAt.toDate?.() ?? (p as any).createdAt).toLocaleDateString('pt-BR')}</span>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 mt-4 flex-wrap">
-                      <button onClick={() => handleEdit(p)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors">
-                        <Settings size={12} /> Editar
-                      </button>
-                      <a href={`/p/${p.slug}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-1.5 border border-indigo-200 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors">
-                        <Eye size={12} /> Visualizar
-                      </a>
-                      <button onClick={() => handleCopyLink(p)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors">
-                        <Copy size={12} /> Copiar link
-                      </button>
-                      {!p.pdfUrl && (
-                        <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
-                          ⚠️ Sem PDF
-                        </span>
-                      )}
-                      <button onClick={() => handleArchive(p)}
-                        className="ml-auto text-gray-300 hover:text-red-400 transition-colors p-1.5 rounded-lg"
+                      <div className="flex items-center gap-2 mt-4 flex-wrap">
+                        <button onClick={() => handleEdit(p)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors">
+                          <Settings size={12} /> Editar
+                        </button>
+                        <a href={`/p/${p.slug}`} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-indigo-200 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors">
+                          <Eye size={12} /> Visualizar
+                        </a>
+                        <button onClick={() => handleCopyLink(p)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors">
+                          <Copy size={12} /> Copiar link
+                        </button>
+                        <button onClick={() => handleDuplicate(p)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-violet-200 text-violet-600 rounded-xl text-xs font-bold hover:bg-violet-50 transition-colors"
+                          title="Duplicar como rascunho">
+                          <CopyPlus size={12} /> Duplicar
+                        </button>
+                        {!p.pdfUrl && (
+                          <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
+                            ⚠️ Sem PDF
+                          </span>
+                        )}
+                        <button onClick={() => handleArchive(p)}
+                          className="ml-auto text-gray-300 hover:text-red-400 transition-colors p-1.5 rounded-lg"
                         title="Arquivar">
                         <Archive size={14} />
                       </button>

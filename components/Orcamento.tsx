@@ -213,6 +213,8 @@ const OrcamentoModule: React.FC = () => {
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [clients,    setClients]    = useState<Client[]>([]);
   const [tasks,      setTasks]      = useState<Task[]>([]);
+  // ORC-07: mapa orcamentoId -> { id, slug } da apresentação vinculada
+  const [linkedApres, setLinkedApres] = useState<Record<string, { id: string; slug: string }>>({});
   const [loading,    setLoading]    = useState(true);
   const [tab,        setTab]        = useState<TabType>('abertos');
   const [search,     setSearch]     = useState('');
@@ -232,7 +234,21 @@ const OrcamentoModule: React.FC = () => {
       query(collection(db, CollectionName.TASKS), orderBy('createdAt', 'desc')),
       snap => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task)))
     );
-    return () => { unsub(); unsub2(); };
+    // ORC-07: escuta presentations para saber quais orçamentos já têm apresentação
+    const unsub3 = onSnapshot(
+      collection(db, CollectionName.PRESENTATIONS),
+      snap => {
+        const map: Record<string, { id: string; slug: string }> = {};
+        snap.docs.forEach(d => {
+          const data = d.data() as any;
+          if (data.orcamentoId && data.status !== 'arquivada') {
+            map[data.orcamentoId] = { id: d.id, slug: data.slug };
+          }
+        });
+        setLinkedApres(map);
+      }
+    );
+    return () => { unsub(); unsub2(); unsub3(); };
   }, []);
 
   const filtered = orcamentos.filter(o => {
@@ -417,15 +433,35 @@ const OrcamentoModule: React.FC = () => {
                       </button>
                     </>
                   )}
-                  {/* Gap 6: Botão Criar Apresentação (enviado ou aprovado) */}
+                  {/* Gap 6: Botão Criar Apresentação (enviado ou aprovado) — ORC-07 */}
                   {(isEnviado || orc.status === 'aprovado') && (
-                    <button
-                      onClick={() => navigate(`/app/apresentacoes?orcamentoId=${orc.id}`)}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors"
-                      title="Criar apresentação interativa para este orçamento"
-                    >
-                      <MonitorPlay size={11} /> Criar Apresentação
-                    </button>
+                    linkedApres[orc.id] ? (
+                      // Já existe apresentação vinculada
+                      <>
+                        <a
+                          href={`/p/${linkedApres[orc.id].slug}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors"
+                        >
+                          🎬 Ver Apresentação
+                        </a>
+                        <button
+                          onClick={() => navigate(`/app/apresentacoes?orcamentoId=${orc.id}`)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-indigo-200 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-50 transition-colors"
+                        >
+                          ✏️ Editar
+                        </button>
+                      </>
+                    ) : (
+                      // Nenhuma apresentação ainda
+                      <button
+                        onClick={() => navigate(`/app/apresentacoes?orcamentoId=${orc.id}`)}
+                        className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors"
+                        title="Criar apresentação interativa para este orçamento"
+                      >
+                        <MonitorPlay size={11} /> Criar Apresentação
+                      </button>
+                    )
                   )}
                 </div>
               </div>
