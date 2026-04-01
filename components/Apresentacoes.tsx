@@ -8,9 +8,10 @@
  *  - Geração de link público /p/{slug}
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   collection, query, orderBy, onSnapshot, addDoc,
-  updateDoc, doc, serverTimestamp, getDocs, where,
+  updateDoc, doc, getDoc, serverTimestamp, getDocs, where,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -100,10 +101,16 @@ const CoverForm: React.FC<{ data: CoverData; onChange: (d: CoverData) => void }>
     <FieldGroup label="Título do projeto *" hint="Exibido em destaque na capa">
       <input value={data.titulo} onChange={e => onChange({ ...data, titulo: e.target.value })}
         maxLength={80} className="form-input" placeholder="Ex: Câmara Frigorífica Industrial" />
+      <span style={{ fontSize: 11, color: data.titulo.length > 70 ? '#ef4444' : '#9ca3af', textAlign: 'right', display: 'block', marginTop: 4 }}>
+        {data.titulo.length}/80
+      </span>
     </FieldGroup>
     <FieldGroup label="Subtítulo">
       <input value={data.subtitulo ?? ''} onChange={e => onChange({ ...data, subtitulo: e.target.value })}
         maxLength={120} className="form-input" placeholder="Ex: Proposta de Execução" />
+      <span style={{ fontSize: 11, color: (data.subtitulo ?? '').length > 100 ? '#ef4444' : '#9ca3af', textAlign: 'right', display: 'block', marginTop: 4 }}>
+        {(data.subtitulo ?? '').length}/120
+      </span>
     </FieldGroup>
     <FieldGroup label="Nome do cliente *">
       <input value={data.clienteNome} onChange={e => onChange({ ...data, clienteNome: e.target.value })}
@@ -351,6 +358,7 @@ const SlideEditor: React.FC<{
 // ─── Main: Apresentacoes ──────────────────────────────────────────────────────
 const Apresentacoes: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
+  const [searchParams] = useSearchParams();
   const [presentations, setPresentations] = useState<Presentation[]>([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
@@ -363,6 +371,38 @@ const Apresentacoes: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [toast, setToast]         = useState<{ msg: string; type?: 'success' | 'error' | 'info' } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Auto-abrir editor se vier de ?orcamentoId= (integração com Orçamentos) ──
+  useEffect(() => {
+    const orcId = searchParams.get('orcamentoId');
+    if (!orcId) return;
+    const load = async () => {
+      try {
+        const snap = await getDoc(doc(db, CollectionName.OS_ORCAMENTOS, orcId));
+        if (!snap.exists()) return;
+        const orc = snap.data() as any;
+        const empty: Partial<Presentation> = {
+          clienteNome: orc.clientName || '',
+          projetoTitulo: orc.titulo || '',
+          responsavel: '',
+          responsavelEmail: '',
+          responsavelTelefone: '',
+          pdfUrl: orc.pdfUrl || null,
+          pdfStoragePath: null,
+          orcamentoId: orcId,
+          status: 'rascunho',
+          tema: 'dark-navy',
+          slideAutoplay: true,
+          slideDelayMs: 6000,
+        };
+        setEditing(empty);
+        setSlides(defaultSlides(orc.clientName || ''));
+        setSelectedIdx(0);
+        setSaved(false);
+      } catch { /* ignora erros de carregamento */ }
+    };
+    load();
+  }, [searchParams]);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -441,6 +481,10 @@ const Apresentacoes: React.FC = () => {
   // ── Upload PDF ──
   const handleUploadPDF = async (file: File) => {
     if (!editing) return;
+    // Gap 3: validação de 20MB antes de qualquer request ao Storage
+    if (file.size > 20 * 1024 * 1024) {
+      setToast({ msg: 'O PDF deve ter no máximo 20 MB.', type: 'error' }); return;
+    }
     const slug = editing.slug ?? `temp-${Date.now()}`;
     setUploading(true); setUploadPct(0);
     try {
@@ -690,6 +734,19 @@ const Apresentacoes: React.FC = () => {
                 Configurações
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Gap 4: Toggle de status */}
+                <FieldGroup label="Status">
+                  <select
+                    value={editing.status ?? 'rascunho'}
+                    onChange={e => setEditing(prev => ({ ...prev!, status: e.target.value as PresentationStatus }))}
+                    className="form-input"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <option value="rascunho">📝 Rascunho</option>
+                    <option value="ativa">✅ Ativa (link público visível)</option>
+                    <option value="arquivada">📦 Arquivada</option>
+                  </select>
+                </FieldGroup>
                 <FieldGroup label="Responsável">
                   <input value={editing.responsavel ?? ''} onChange={e => setEditing(prev => ({ ...prev!, responsavel: e.target.value }))}
                     className="form-input" placeholder="Nome do responsável" />

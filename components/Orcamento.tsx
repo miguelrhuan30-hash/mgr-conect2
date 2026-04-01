@@ -8,6 +8,7 @@
  * Para envio de PDFs ao cliente, use o módulo "Propostas PDF" (/app/propostas-pdf)
  */
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   collection, query, orderBy, onSnapshot, addDoc, updateDoc,
   doc, serverTimestamp, Timestamp, getDocs,
@@ -21,7 +22,7 @@ import {
 import {
   FileSpreadsheet, Plus, Loader2, X, Save, Trash2, DollarSign,
   CheckCircle2, XCircle, Send, Eye, ChevronDown, Search, ListFilter,
-  Clock, AlertCircle, Copy,
+  Clock, AlertCircle, Copy, MonitorPlay,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -208,6 +209,7 @@ const OrcamentoFormModal: React.FC<{
 /* ─── Main Orcamento ────────────────────────────────────────────────────── */
 const OrcamentoModule: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
+  const navigate = useNavigate();
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [clients,    setClients]    = useState<Client[]>([]);
   const [tasks,      setTasks]      = useState<Task[]>([]);
@@ -392,7 +394,7 @@ const OrcamentoModule: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
                   {isRascunho && (
                     <>
                       <button onClick={() => { setEditOrc(orc); setShowForm(true); }}
@@ -414,6 +416,16 @@ const OrcamentoModule: React.FC = () => {
                         <XCircle size={11} /> Rejeitar
                       </button>
                     </>
+                  )}
+                  {/* Gap 6: Botão Criar Apresentação (enviado ou aprovado) */}
+                  {(isEnviado || orc.status === 'aprovado') && (
+                    <button
+                      onClick={() => navigate(`/app/apresentacoes?orcamentoId=${orc.id}`)}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors"
+                      title="Criar apresentação interativa para este orçamento"
+                    >
+                      <MonitorPlay size={11} /> Criar Apresentação
+                    </button>
                   )}
                 </div>
               </div>
