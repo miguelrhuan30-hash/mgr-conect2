@@ -1,9 +1,0 @@
-{
-  "name": "MGR-CONECT-2",
-  "description": "Sistema Integrado de Gestão (RH e Projetos) - MGR Conect 2",
-  "requestFramePermissions": [
-    "camera",
-    "microphone",
-    "geolocation"
-  ]
-}
