@@ -59,7 +59,11 @@ service cloud.firestore {
         && hasRequiredPontoFields()
         && isValidPontoType()
         && clientCannotElevateBiometric();
-      allow update: if false; // apenas Cloud Run via service account
+      allow update: if isAuthenticated()
+        && isOwner(resource.data.userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['photoURL', 'aiValidation',
+                     'biometricVerified', 'processingStatus']);
       allow delete: if isAdmin();
     }
 

@@ -512,6 +512,7 @@ const Ponto: React.FC = () => {
         timestamp: serverTimestamp(),
         locationId: detectedLocation?.id ?? 'unknown',
         locationName: detectedLocation?.name ?? 'Capturado via GPS',
+        locationVerified: !!detectedLocation,
         isManual: false,
         gpsCoords: { lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy },
         gpsSource: loc.source,
