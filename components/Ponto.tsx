@@ -122,13 +122,13 @@ const Ponto: React.FC = () => {
 
   // ─── Câmera: ligar/desligar apenas por troca de aba ──────────────────────
   useEffect(() => {
-    if (activeTab === 'register') {
+    if (activeTab === 'register' && !showBiometricConsent) {
       camera.restart();
     } else {
       camera.stop();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, showBiometricConsent]);
 
   // ─── Verificar consentimento biométrico ──────────────────────────────────
   useEffect(() => {
@@ -863,6 +863,7 @@ const Ponto: React.FC = () => {
               onClick={() => {
                 localStorage.setItem(BIOMETRIC_CONSENT_KEY, String(Date.now()));
                 setShowBiometricConsent(false);
+                setTimeout(() => camera.restart(), 300);
               }}
               className="w-full py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.97] transition-all">
               Entendi e aceito
