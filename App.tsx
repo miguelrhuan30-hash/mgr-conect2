@@ -205,8 +205,7 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const isPublicRoute = ['/p/', '/orcamentos/'].some(pr => location.pathname.startsWith(pr));
-  if (!isPublicRoute && (loading || (currentUser && checkingShift))) return <LoadingScreen />;
+  if (loading || (currentUser && checkingShift)) return <LoadingScreen />;
 
   const isAvatarMissing =
     currentUser &&
@@ -231,12 +230,6 @@ const AppContent: React.FC = () => {
         {/* ── ROTAS PÚBLICAS ── */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
-
-        {/* —— ORÇAMENTO PÚBLICO (sem autenticação, link para clientes) —— */}
-        <Route path="/orcamentos/:id" element={<OrcamentoPublico />} />
-
-        {/* —— APRESENTAÇÃO PÚBLICA (sem autenticação, link para clientes) —— */}
-        <Route path="/p/:slug" element={<ApresentacaoPublica />} />
 
         <Route
           path="/aguardando-aprovacao"
@@ -429,7 +422,13 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => (
   <AuthProvider>
     <Router>
-      <AppContent />
+      <Suspense fallback={<LoadingScreen />}>
+        <Routes>
+          <Route path="/p/:slug" element={<ApresentacaoPublica />} />
+          <Route path="/orcamentos/:id" element={<OrcamentoPublico />} />
+          <Route path="*" element={<AppContent />} />
+        </Routes>
+      </Suspense>
     </Router>
   </AuthProvider>
 );
