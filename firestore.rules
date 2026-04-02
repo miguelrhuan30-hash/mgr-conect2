@@ -3,23 +3,90 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Funções helper ────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return request.auth.token.role == 'admin';
+    }
+    function isManager() {
+      return request.auth.token.role == 'manager'
+          || request.auth.token.role == 'admin';
+    }
+    function clientCannotElevateBiometric() {
+      let d = request.resource.data;
+      return d.biometricVerified == false
+          && d.processingStatus == 'pending'
+          && d.photoURL == null
+          && d.aiValidation == null;
+    }
+    function hasRequiredPontoFields() {
+      let d = request.resource.data;
+      return d.keys().hasAll([
+        'userId','type','timestamp','isManual',
+        'biometricVerified','processingStatus'
+      ]);
+    }
+    function isValidPontoType() {
+      return request.resource.data.type in [
+        'entry','lunch_start','lunch_end','exit'
+      ];
+    }
+
     // ── Apresentações: leitura pública (link de cliente sem auth) ──
-    // Permite que qualquer cliente acesse /p/{slug} sem precisar de login.
     match /presentations/{presentationId} {
       allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
     }
 
     // ── Orçamentos Públicos: leitura pública (/orcamentos/:id) ──
     match /os_orcamentos/{orcamentoId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if isAuthenticated();
     }
 
-    // ── Regra padrão: apenas autenticados ──
+    // ── Registro de Ponto ─────────────────────────────────────────────────
+    match /timeEntries/{entryId} {
+      allow read: if isAuthenticated()
+        && (isOwner(resource.data.userId) || isManager());
+      allow create: if isAuthenticated()
+        && isOwner(request.resource.data.userId)
+        && hasRequiredPontoFields()
+        && isValidPontoType()
+        && clientCannotElevateBiometric();
+      allow update: if false; // apenas Cloud Run via service account
+      allow delete: if isAdmin();
+    }
+
+    // ── Locais de Trabalho ────────────────────────────────────────────────
+    match /workLocations/{locationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── Usuários ──────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAuthenticated()
+        && (isOwner(userId) || isManager());
+      allow write: if isAuthenticated()
+        && (isOwner(userId) || isAdmin());
+    }
+
+    // ── Tarefas / OS ──────────────────────────────────────────────────────
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated()
+        && (resource.data.assignedTo == request.auth.uid || isManager());
+      allow write: if isManager();
+    }
+
+    // ── Regra padrão: apenas autenticados ────────────────────────────────
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
   }
 }
