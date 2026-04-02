@@ -418,7 +418,7 @@ const Ponto: React.FC = () => {
           aiValidation = { error: sanitizeErrorForLog(aiErr) };
           logEvent(
             uid, userProfile?.displayName,
-            'ponto_ai_failed', 'warning',
+            'ponto_ai_validation_failed', 'warning',
             `IA falhou para doc ${docId}`,
             { extra: { error: sanitizeErrorForLog(aiErr) } }
           );
@@ -441,7 +441,7 @@ const Ponto: React.FC = () => {
       } catch { /* silent */ }
       logEvent(
         uid, userProfile?.displayName,
-        'ponto_bg_failed', 'warning',
+        'ponto_background_processing_failed', 'warning',
         `Background falhou para doc ${docId}`,
         { extra: { error: sanitizeErrorForLog(bgErr) } }
       );
