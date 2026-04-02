@@ -1,102 +1,119 @@
-import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
 import { GoogleGenAI } from '@google/genai';
-import { MGR_INTEL_PROMPT } from './constants/intel.js';
 
-// Configuração para __dirname em ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-import intelRoutes from './routes/intel.js';
-
 const app = express();
-app.use(express.json());
+const port = process.env.PORT || 8080;
 
-// Porta e chaves — fallback para VITE_ em ambientes locais sem arquivo .env
-const PORT = Number(process.env.PORT) || 8080;
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-const hasGeminiKey = !!GEMINI_KEY;
+// ── Segurança: headers HTTP ──────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: [
+        "'self'",
+        "https://firestore.googleapis.com",
+        "https://firebase.googleapis.com",
+        "https://firebasestorage.googleapis.com",
+        "https://storage.googleapis.com",
+        "https://*.googleapis.com",
+        "wss://*.firebaseio.com",
+      ],
+      imgSrc: ["'self'", "data:", "blob:", "https://storage.googleapis.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      mediaSrc: ["'self'", "blob:"],
+      workerSrc: ["'self'", "blob:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // necessário para getUserMedia (câmera)
+}));
 
-// Inicializa Gemini de forma resiliente
-let geminiClient = null;
-try {
-  if (hasGeminiKey) {
-    geminiClient = new GoogleGenAI({ apiKey: GEMINI_KEY });
-  }
-} catch (err) {
-  console.error('⚠️ Falha ao inicializar Gemini SDK:', err.message);
+app.use(express.json({ limit: '3mb' }));
+
+// ── Rate limiting simples (sem dependência extra) ─────────────────
+const requestCounts = new Map();
+function rateLimit(maxReq, windowMs) {
+  return (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+    const entry = requestCounts.get(ip) || { count: 0, start: now };
+    if (now - entry.start > windowMs) { entry.count = 0; entry.start = now; }
+    entry.count++;
+    requestCounts.set(ip, entry);
+    if (entry.count > maxReq) {
+      return res.status(429).json({ error: 'Muitas tentativas. Aguarde 1 minuto.' });
+    }
+    next();
+  };
 }
 
-// ─── ENDPOINT DE SAÚDE ───────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: {
-      firebase: 'connected',
-      gemini: hasGeminiKey ? 'ready' : 'missing_key',
-      intel_engine: geminiClient ? 'ready' : 'disabled'
-    },
-    uptime: process.uptime()
-  });
-});
-
-// ─── ROTA /api/intel/analisar (alias direto no server.js conforme Sprint 21) ─
-app.post('/api/intel/analisar', async (req, res) => {
-  const { text, userId, userName } = req.body;
-
-  if (!text || !userId) {
-    return res.status(400).json({ error: 'text e userId são obrigatórios.' });
-  }
-
-  if (!geminiClient) {
-    return res.status(503).json({
-      error: 'Intel Engine indisponível: GEMINI_API_KEY ausente.',
-      hint: 'Configure a variável de ambiente GEMINI_API_KEY.'
-    });
-  }
-
+// ── Proxy Gemini — análise biométrica ────────────────────────────
+app.post('/api/analyze-face', rateLimit(10, 60_000), async (req, res) => {
   try {
-    const result = await geminiClient.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: `${MGR_INTEL_PROMPT}\n\nNota do colaborador:\n"${text}"`,
-    });
+    const { imageBase64 } = req.body;
 
-    const raw = result.text || '{}';
-    let analysis;
-    try {
-      analysis = JSON.parse(raw.replace(/```json|```/g, '').trim());
-    } catch {
-      throw new Error('Resposta do Gemini em formato inválido (não-JSON).');
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ error: 'imageBase64 é obrigatório' });
+    }
+    if (imageBase64.length > 2_500_000) {
+      return res.status(400).json({ error: 'Imagem muito grande. Máximo ~1.5MB.' });
     }
 
-    res.json({ id: `local-${Date.now()}`, analysis, status: 'classificada' });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      // Fallback gracioso: sem key, retorna "humano" para não bloquear o ponto
+      console.warn('[proxy] GEMINI_API_KEY não configurada. Usando fallback.');
+      return res.json({ isHuman: true, confidence: 0, details: 'Biometria desativada (sem API key).' });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
+            },
+          },
+          {
+            text: `Analise esta imagem.
+        Responda APENAS com um JSON no formato:
+        {"isHuman": true/false, "confidence": 0.0-1.0, "details": "descrição curta"}
+        isHuman deve ser true apenas se houver um rosto humano real e vivo visível.`,
+          },
+        ],
+      },
+      config: { responseMimeType: 'application/json' },
+    });
+
+    const text = (response.text ?? '').trim();
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+
+    return res.json(parsed);
   } catch (err) {
-    console.error('Erro em /api/intel/analisar:', err.message);
-    res.status(500).json({ error: 'Falha ao analisar nota.', details: err.message });
+    console.error('[proxy] Erro na análise biométrica:', err.message);
+    return res.status(500).json({ error: 'Falha na análise biométrica' });
   }
 });
 
-// ─── ROTAS DA API ─────────────────────────────────────────────────────────────
-app.use('/api/intel', intelRoutes);
+// ── Arquivos estáticos e SPA ──────────────────────────────────────
+app.use(express.static(__dirname));
 
-// ─── STATIC + SPA FALLBACK ────────────────────────────────────────────────────
-app.use(express.static(path.join(__dirname, 'dist')));
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ─── INICIALIZAÇÃO ────────────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('\n📦 MGR CONECT — SISTEMA INICIALIZADO\n');
-  console.table([
-    { Module: 'Express Server',   Status: 'Online',    Port: PORT },
-    { Module: 'Firebase Admin',   Status: 'Connected', Port: '—' },
-    { Module: 'Intel Engine',     Status: geminiClient ? 'Ready' : 'Disabled (no key)', Port: '—' },
-    { Module: 'Gemini API',       Status: hasGeminiKey ? 'Ready' : 'Missing Key', Port: '—' },
-    { Module: 'Environment',      Status: process.env.NODE_ENV || 'production', Port: '—' },
-  ]);
-  console.log(`\n🚀 http://0.0.0.0:${PORT}\n`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`✅ Servidor MGRConnect na porta ${port}`);
+  console.log(`🔒 Helmet: ativo`);
+  console.log(`🤖 Gemini proxy: ${process.env.GEMINI_API_KEY ? '✅ Configurado' : '⚠️  Sem API key (fallback ativado)'}`);
 });
