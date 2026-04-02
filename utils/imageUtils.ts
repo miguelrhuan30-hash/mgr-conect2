@@ -1,4 +1,4 @@
-import { CapturedPhoto } from '../hooks/useCamera';
+import { CapturedPhoto } from '../src/hooks/useCamera';
 
 /**
  * Carrega uma imagem de URL como base64.
