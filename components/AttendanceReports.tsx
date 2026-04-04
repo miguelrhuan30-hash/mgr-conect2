@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, deleteDoc, doc, increment } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp, updateDoc, deleteDoc, doc, increment, limit } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, TimeEntry, UserProfile, TimeBankEntry, EmployeeOccurrence, OCCURRENCE_LABELS, OCCURRENCE_COLORS } from '../types';
+import { CollectionName, TimeEntry, UserProfile, TimeBankEntry, EmployeeOccurrence, OCCURRENCE_LABELS, OCCURRENCE_COLORS, ErrorDetail } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { calcularTurnos, Turno, toDateStr } from '../utils/shift-calculator';
 import { adicionarRegistro, editarHorarioRegistro, excluirRegistro } from '../utils/shift-editor';
@@ -9,7 +9,7 @@ import {
   Calendar, User, Search, AlertCircle, CheckCircle, Clock, 
   AlertTriangle, ShieldAlert, X, Save, Loader2, Calculator, 
   FileText, FileSpreadsheet, MapPin, Edit2, Banknote, PiggyBank,
-  History, Camera, Trash2, Pencil
+  History, Camera, Trash2, Pencil, CheckCircle2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,7 +19,17 @@ const AttendanceReports: React.FC = () => {
   const { userProfile, currentUser } = useAuth();
   
   // Tabs
-  const [activeTab, setActiveTab] = useState<'report' | 'monitoring' | 'adjustments'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'pontoLogs'>('monitoring');
+
+  // Ponto Logs State
+  const [pontoLogs, setPontoLogs] = useState<(TimeEntry & { userName?: string })[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logFilterUserId, setLogFilterUserId] = useState('');
+  const [logFilterQuality, setLogFilterQuality] = useState<'all' | 'ok' | 'partial' | 'emergency'>('all');
+  const [logDateFrom, setLogDateFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [logDateTo, setLogDateTo] = useState(new Date().toISOString().slice(0, 10));
+  const [logPage, setLogPage] = useState(0);
+  const LOG_PAGE_SIZE = 25;
 
   // Report State
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -104,6 +114,44 @@ const AttendanceReports: React.FC = () => {
     };
     fetchUsers();
   }, [isAuthorized]);
+
+  // Ponto Logs: busca global de pontos com diagnóstico
+  const fetchPontoLogs = useCallback(async () => {
+    if (!isAuthorized) return;
+    setLoadingLogs(true);
+    try {
+      const startTs = Timestamp.fromDate(new Date(logDateFrom + 'T00:00:00'));
+      const endTs   = Timestamp.fromDate(new Date(logDateTo   + 'T23:59:59'));
+      const q = query(
+        collection(db, CollectionName.TIME_ENTRIES),
+        where('timestamp', '>=', startTs),
+        where('timestamp', '<=', endTs),
+        orderBy('timestamp', 'desc'),
+        limit(300)
+      );
+      const snap = await getDocs(q);
+      let entries = snap.docs.map(d => ({ id: d.id, ...d.data() } as TimeEntry));
+      if (logFilterUserId) entries = entries.filter(e => e.userId === logFilterUserId);
+      if (logFilterQuality !== 'all') {
+        entries = entries.filter(e => (e as any).registrationQuality === logFilterQuality);
+      }
+      // Enrich with user name
+      const enriched = entries.map(e => ({
+        ...e,
+        userName: users.find(u => u.uid === e.userId)?.displayName ?? e.userId,
+      }));
+      setPontoLogs(enriched);
+      setLogPage(0);
+    } catch (err) {
+      console.error('fetchPontoLogs error:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, [isAuthorized, logDateFrom, logDateTo, logFilterUserId, logFilterQuality, users]);
+
+  useEffect(() => {
+    if (activeTab === 'pontoLogs' && isAuthorized && users.length > 0) fetchPontoLogs();
+  }, [activeTab, isAuthorized, users]);
 
   useEffect(() => {
       if (activeTab === 'monitoring' && isAuthorized) {
@@ -1176,9 +1224,29 @@ const AttendanceReports: React.FC = () => {
            <h1 className="text-2xl font-bold text-gray-900">Monitoramento de Turnos</h1>
            <p className="text-gray-500">Acompanhamento em tempo real dos turnos em andamento.</p>
         </div>
+        {/* Tab buttons */}
+        <div className="flex gap-2 bg-gray-100 rounded-xl p-1">
+          <button
+            onClick={() => setActiveTab('monitoring')}
+            className={`px-4 py-2 text-sm font-bold rounded-lg transition-all flex items-center gap-2 ${
+              activeTab === 'monitoring' ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Clock size={14} /> Monitoramento
+          </button>
+          <button
+            onClick={() => setActiveTab('pontoLogs')}
+            className={`px-4 py-2 text-sm font-bold rounded-lg transition-all flex items-center gap-2 ${
+              activeTab === 'pontoLogs' ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <AlertTriangle size={14} /> Logs de Ponto
+          </button>
+        </div>
       </div>
 
-      {/* --- MONITORING --- */}
+      {/* --- MONITORING TAB --- */}
+      {activeTab === 'monitoring' && (
           <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3">
                   <ShieldAlert className="text-blue-600 w-5 h-5 mt-0.5" />
@@ -1413,6 +1481,179 @@ const AttendanceReports: React.FC = () => {
               )}
 
           </div>
+      )}
+
+      {/* --- PONTO LOGS TAB --- */}
+      {activeTab === 'pontoLogs' && (() => {
+        const typeLabel = (type: string) => ({
+          entry: 'Entrada', lunch_start: 'Início Almoço',
+          lunch_end: 'Volta Almoço', exit: 'Saída',
+        }[type] || type);
+
+        const QualityBadge = ({ quality }: { quality?: string }) => {
+          if (!quality || quality === 'ok')
+            return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full"><CheckCircle2 size={10} /> OK</span>;
+          if (quality === 'partial')
+            return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-bold rounded-full"><AlertTriangle size={10} /> Parcial</span>;
+          return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full"><AlertCircle size={10} /> Emergencial</span>;
+        };
+
+        const errDetail = (d: ErrorDetail | null | undefined) => {
+          if (!d) return null;
+          const parts = [`${d.name}: ${d.message}`];
+          if (d.code !== undefined) parts.push(`code=${d.code}`);
+          if (d.deviceContext?.connection) parts.push(`net=${d.deviceContext.connection}`);
+          if (d.deviceContext?.platform) parts.push(`plt=${d.deviceContext.platform}`);
+          return parts.join(' · ');
+        };
+
+        const okCount        = pontoLogs.filter(e => !(e as any).registrationQuality || (e as any).registrationQuality === 'ok').length;
+        const partialCount   = pontoLogs.filter(e => (e as any).registrationQuality === 'partial').length;
+        const emergencyCount = pontoLogs.filter(e => (e as any).registrationQuality === 'emergency').length;
+
+        return (
+          <div className="space-y-4">
+
+            {/* Filtros */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Funcionário</label>
+                  <select value={logFilterUserId} onChange={e => setLogFilterUserId(e.target.value)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5">
+                    <option value="">Todos</option>
+                    {users.map(u => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Qualidade</label>
+                  <select value={logFilterQuality} onChange={e => setLogFilterQuality(e.target.value as any)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5">
+                    <option value="all">Todos</option>
+                    <option value="ok">✅ OK</option>
+                    <option value="partial">⚠️ Parcial</option>
+                    <option value="emergency">🆘 Emergencial</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">De</label>
+                  <input type="date" value={logDateFrom} onChange={e => setLogDateFrom(e.target.value)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Até</label>
+                  <input type="date" value={logDateTo} onChange={e => setLogDateTo(e.target.value)}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1.5" />
+                </div>
+              </div>
+              <button onClick={fetchPontoLogs}
+                className="mt-3 px-4 py-2 bg-brand-600 text-white text-sm font-bold rounded-lg hover:bg-brand-700 flex items-center gap-2">
+                {loadingLogs ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                Buscar Logs
+              </button>
+            </div>
+
+            {/* Resumo */}
+            {pontoLogs.length > 0 && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-black text-green-700">{okCount}</div>
+                  <div className="text-xs font-bold text-green-600">✅ OK</div>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-black text-yellow-700">{partialCount}</div>
+                  <div className="text-xs font-bold text-yellow-600">⚠️ Parcial</div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-black text-red-700">{emergencyCount}</div>
+                  <div className="text-xs font-bold text-red-600">🆘 Emergencial</div>
+                </div>
+              </div>
+            )}
+
+            {/* Tabela */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              {loadingLogs ? (
+                <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-brand-600" /></div>
+              ) : pontoLogs.length === 0 ? (
+                <p className="p-8 text-center text-gray-400 italic">Nenhum registro encontrado. Use os filtros acima e clique em "Buscar Logs".</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">Funcionário</th>
+                          <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">Data/Hora</th>
+                          <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">Tipo</th>
+                          <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">Qualidade</th>
+                          <th className="text-center px-4 py-3 text-xs font-bold text-gray-500 uppercase" title="Câmera"><Camera size={12} /></th>
+                          <th className="text-center px-4 py-3 text-xs font-bold text-gray-500 uppercase" title="GPS"><MapPin size={12} /></th>
+                          <th className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">Detalhe do Erro</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {pontoLogs
+                          .slice(logPage * LOG_PAGE_SIZE, (logPage + 1) * LOG_PAGE_SIZE)
+                          .map(entry => {
+                            const e = entry as any;
+                            const hasError = e.registrationQuality === 'partial' || e.registrationQuality === 'emergency';
+                            const photoErrStr = errDetail(e.photoErrorDetail);
+                            const gpsErrStr   = errDetail(e.gpsErrorDetail);
+                            const fullErrStr  = [photoErrStr && `📷 ${photoErrStr}`, gpsErrStr && `📍 ${gpsErrStr}`].filter(Boolean).join('  ·  ');
+                            return (
+                              <tr key={entry.id} className={`hover:bg-gray-50 transition-colors ${ hasError ? 'bg-red-50/30' : '' }`}>
+                                <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{e.userName}</td>
+                                <td className="px-4 py-3 font-mono text-gray-600 whitespace-nowrap">
+                                  {entry.timestamp?.toDate?.()?.toLocaleDateString('pt-BR')}{' '}
+                                  {entry.timestamp?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td className="px-4 py-3 text-gray-600">{typeLabel(entry.type)}</td>
+                                <td className="px-4 py-3"><QualityBadge quality={e.registrationQuality} /></td>
+                                <td className="px-4 py-3 text-center">
+                                  {e.photoStatus === 'ok'
+                                    ? <Camera size={14} className="text-green-500 mx-auto" />
+                                    : <Camera size={14} className="text-red-400 mx-auto" />}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  {e.gpsStatus === 'ok'
+                                    ? <MapPin size={14} className="text-green-500 mx-auto" />
+                                    : e.gpsStatus === 'best_effort'
+                                    ? <MapPin size={14} className="text-yellow-500 mx-auto" />
+                                    : <MapPin size={14} className="text-red-400 mx-auto" />}
+                                </td>
+                                <td className="px-4 py-3 max-w-xs">
+                                  {fullErrStr
+                                    ? <span className="block text-xs text-gray-600 truncate" title={fullErrStr}>{fullErrStr}</span>
+                                    : <span className="text-gray-300 text-xs">—</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Paginação */}
+                  {pontoLogs.length > LOG_PAGE_SIZE && (
+                    <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+                      <span className="text-xs text-gray-500">
+                        {logPage * LOG_PAGE_SIZE + 1}–{Math.min((logPage + 1) * LOG_PAGE_SIZE, pontoLogs.length)} de {pontoLogs.length}
+                      </span>
+                      <div className="flex gap-2">
+                        <button disabled={logPage === 0} onClick={() => setLogPage(p => p - 1)}
+                          className="px-3 py-1 text-xs font-bold bg-gray-100 rounded-lg disabled:opacity-40 hover:bg-gray-200">← Anterior</button>
+                        <button disabled={(logPage + 1) * LOG_PAGE_SIZE >= pontoLogs.length} onClick={() => setLogPage(p => p + 1)}
+                          className="px-3 py-1 text-xs font-bold bg-gray-100 rounded-lg disabled:opacity-40 hover:bg-gray-200">Próximo →</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

@@ -11,6 +11,7 @@ export type LogAction =
   | 'ponto_gps_check' | 'ponto_gps_denied' | 'ponto_gps_success' | 'ponto_gps_out_of_range'
   | 'ponto_biometric_start' | 'ponto_biometric_success' | 'ponto_biometric_fail'
   | 'ponto_register_attempt' | 'ponto_register_success' | 'ponto_register_error'
+  | 'ponto_register_partial' | 'ponto_register_emergency' | 'ponto_register_firestore_fail'
   | 'ponto_location_blocked' | 'ponto_lunch_time_blocked' | 'ponto_lunch_gps_blocked'
   | 'ponto_upload_photo' | 'ponto_firestore_save'
   | 'ponto_ai_validation_failed' | 'ponto_background_processing_failed'

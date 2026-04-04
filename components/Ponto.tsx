@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { CollectionName, WorkLocation, TimeEntry } from '../types';
+import { CollectionName, WorkLocation, TimeEntry, ErrorDetail } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { GoogleGenAI } from '@google/genai';
 import {
@@ -376,6 +376,78 @@ const Ponto: React.FC = () => {
     return { valid: true };
   };
 
+  // ─── Helper: captura erro estruturado igual ao DevTools ──────────────────
+  const buildErrorDetail = useCallback((err: any): ErrorDetail => {
+    const nav = navigator as any;
+    return {
+      name:    err?.name    ?? 'UnknownError',
+      message: err?.message ?? String(err),
+      code:    err?.code    !== undefined ? Number(err.code) : undefined,
+      stack:   err?.stack   ? String(err.stack).slice(0, 300) : undefined,
+      deviceContext: {
+        connection: nav.connection?.effectiveType ?? nav.connection?.type ?? undefined,
+        screenW:    window.screen?.width,
+        screenH:    window.screen?.height,
+        platform:   nav.userAgentData?.platform ?? nav.platform ?? undefined,
+      },
+    };
+  }, []);
+
+  // ─── Interfaces dos helpers safe ──────────────────────────────────────────
+  interface PhotoResult {
+    photo: import('../src/hooks/useCamera').CapturedPhoto | null;
+    photoStatus: 'ok' | 'unavailable' | 'camera_error';
+    photoErrorDetail: ErrorDetail | null;
+  }
+  interface LocationResult {
+    loc: import('../src/hooks/useGPS').GPSLocation | null;
+    gpsStatus: 'ok' | 'best_effort' | 'unavailable';
+    gpsErrorDetail: ErrorDetail | null;
+    isBestEffort: boolean;
+  }
+
+  // ─── Helper: foto nunca trava ─────────────────────────────────────────────
+  const capturePhotoSafe = useCallback((): PhotoResult => {
+    if (!camera.isReady || camera.error) {
+      const syntheticErr = { name: 'CameraNotReady', message: camera.error ?? 'Câmera não inicializada' };
+      return { photo: null, photoStatus: 'camera_error', photoErrorDetail: buildErrorDetail(syntheticErr) };
+    }
+    try {
+      const photo = camera.capturePhoto();
+      return { photo, photoStatus: 'ok', photoErrorDetail: null };
+    } catch (err: any) {
+      return { photo: null, photoStatus: 'camera_error', photoErrorDetail: buildErrorDetail(err) };
+    }
+  }, [camera, buildErrorDetail]);
+
+  // ─── Helper: GPS nunca trava ──────────────────────────────────────────────
+  const getLocationSafe = useCallback(async (): Promise<LocationResult> => {
+    try {
+      const loc = await gps.getFreshLocation();
+      return { loc, gpsStatus: 'ok', gpsErrorDetail: null, isBestEffort: false };
+    } catch (err: any) {
+      const errorDetail = buildErrorDetail(err);
+      // Fallback: última localização conhecida (até 10 min de tolerância)
+      const fallback = gps.lastKnownLocation;
+      if (fallback) {
+        const ageMs = Date.now() - fallback.timestamp;
+        if (ageMs <= 10 * 60 * 1000) {
+          return { loc: { ...fallback, source: 'cached' }, gpsStatus: 'best_effort', gpsErrorDetail: errorDetail, isBestEffort: true };
+        }
+      }
+      return { loc: null, gpsStatus: 'unavailable', gpsErrorDetail: errorDetail, isBestEffort: false };
+    }
+  }, [gps, buildErrorDetail]);
+
+  // ─── Helper: qualidade do registro ───────────────────────────────────────
+  const calcQuality = (ps: PhotoResult, ls: LocationResult): 'ok' | 'partial' | 'emergency' => {
+    const photoOk = ps.photoStatus === 'ok';
+    const locOk   = ls.gpsStatus === 'ok' || ls.gpsStatus === 'best_effort';
+    if (photoOk && locOk) return 'ok';
+    if (photoOk || locOk) return 'partial';
+    return 'emergency';
+  };
+
   // ─── Background: upload foto + biometria ─────────────────────────────────
   const processInBackground = useCallback(async (
     docId: string,
@@ -448,7 +520,7 @@ const Ponto: React.FC = () => {
     }
   }, [userProfile]);
 
-  // ─── REGISTRO PRINCIPAL ───────────────────────────────────────────────────
+  // ─── REGISTRO PRINCIPAL (Modo Emergencial — nunca trava) ─────────────────
   const handleRegister = async () => {
     if (processing) return;
     const nextAction = getNextAction();
@@ -460,111 +532,150 @@ const Ponto: React.FC = () => {
 
     const rateCheck = checkPontoRateLimit(currentUser!.uid);
     if (!rateCheck.allowed) {
-      setErrorMessage(
-        `Aguarde ${rateCheck.remainingSeconds}s antes de registrar novamente.`
-      );
+      setErrorMessage(`Aguarde ${rateCheck.remainingSeconds}s antes de registrar novamente.`);
       return;
     }
 
+    // ── Validação de almoço (regra de negócio, não hardware — mantida) ──────
+    if (nextAction.type === 'lunch_end') {
+      const check = validateLunchMinTime();
+      if (!check.valid) {
+        setErrorMessage(`Almoço mínimo de 1h não cumprido. Retorne em ${check.remaining}.`);
+        return;
+      }
+    }
+
     setProcessing(true);
-    setProcessMessage('Capturando foto...');
     setErrorMessage('');
+    setProcessMessage('Capturando foto...');
+
+    // ── [1] Foto — nunca lança exceção ────────────────────────────────────────
+    const photoResult = capturePhotoSafe();
+
+    // ── [2] GPS — nunca lança exceção ─────────────────────────────────────────
+    setProcessMessage('Verificando localização...');
+    const locationResult = await getLocationSafe();
+
+    // ── [3] Perímetro — só valida se GPS funcionou ────────────────────────────
+    let perimeterStatus: TimeEntry['perimeterStatus'] = 'skipped_gps_fail';
+    let resolvedLocation = detectedLocation;
+
+    if (userProfile?.role === 'admin' && !userProfile?.allowedLocationIds?.length) {
+      perimeterStatus = 'skipped_admin';
+      resolvedLocation = resolvedLocation ?? ({ name: 'Acesso Admin (Global)' } as WorkLocation);
+    } else if (locationResult.loc) {
+      const requiresLocation = nextAction.type === 'entry' || nextAction.type === 'exit';
+      const hasRestrictedPerimeter = userProfile?.allowedLocationIds && userProfile.allowedLocationIds.length > 0;
+
+      if (requiresLocation && hasRestrictedPerimeter) {
+        const found = allowedLocations.find(
+          l => getDistanceInMeters(locationResult.loc!.lat, locationResult.loc!.lng, l.latitude, l.longitude) <= l.radius
+        );
+        if (found) {
+          resolvedLocation = found;
+          perimeterStatus = 'verified';
+        } else if (resolvedLocation) {
+          perimeterStatus = 'verified';
+        } else {
+          // Fora do perímetro: modo emergencial → avisa mas não bloqueia
+          perimeterStatus = 'outside_warning';
+        }
+      } else {
+        perimeterStatus = resolvedLocation ? 'verified' : 'skipped_gps_fail';
+      }
+    }
+
+    // ── [4] Qualidade do registro ─────────────────────────────────────────────
+    const quality = calcQuality(photoResult, locationResult);
+
+    setProcessMessage('Gravando registro...');
+    if (!currentUser) { setProcessing(false); return; }
 
     try {
-      const photo = camera.capturePhoto();
-
-      if (nextAction.type === 'lunch_end') {
-        const check = validateLunchMinTime();
-        if (!check.valid) {
-          throw new Error(
-            `Almoço mínimo de 1h não cumprido. Retorne em ${check.remaining}.`
-          );
-        }
-      }
-
-      setProcessMessage('Verificando localização...');
-      const loc = await gps.getFreshLocation();
-
-      const requiresLocation =
-        nextAction.type === 'entry' || nextAction.type === 'exit';
-      const hasRestrictedPerimeter =
-        userProfile?.allowedLocationIds && userProfile.allowedLocationIds.length > 0;
-
-      if (
-        requiresLocation &&
-        hasRestrictedPerimeter &&
-        !detectedLocation &&
-        userProfile?.role !== 'admin'
-      ) {
-        const found = allowedLocations.find(
-          l => getDistanceInMeters(loc.lat, loc.lng, l.latitude, l.longitude) <= l.radius
-        );
-        if (!found) throw new Error('Você está fora do perímetro permitido.');
-        setDetectedLocation(found);
-      }
-
-      setProcessMessage('Gravando registro...');
-      if (!currentUser) throw new Error('Usuário não autenticado.');
-
       const docRef = await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
         userId: currentUser.uid,
         type: nextAction.type,
         timestamp: serverTimestamp(),
-        locationId: detectedLocation?.id ?? 'unknown',
-        locationName: detectedLocation?.name ?? 'Capturado via GPS',
-        locationVerified: !!detectedLocation,
+
+        // Localização
+        locationId: resolvedLocation?.id ?? 'unknown',
+        locationName: resolvedLocation?.name ?? (locationResult.loc ? 'Capturado via GPS' : 'GPS Indisponível'),
+        locationVerified: perimeterStatus === 'verified',
+        gpsCoords: locationResult.loc
+          ? { lat: locationResult.loc.lat, lng: locationResult.loc.lng, accuracy: locationResult.loc.accuracy }
+          : null,
+        gpsSource: locationResult.loc?.source ?? null,
+
+        // Diagnóstico estruturado
+        registrationQuality: quality,
+        photoStatus: photoResult.photoStatus,
+        photoErrorDetail: photoResult.photoErrorDetail,
+        gpsStatus: locationResult.gpsStatus,
+        gpsErrorDetail: locationResult.gpsErrorDetail,
+        gpsBestEffortCoords: locationResult.isBestEffort && locationResult.loc
+          ? {
+              lat: locationResult.loc.lat,
+              lng: locationResult.loc.lng,
+              accuracy: locationResult.loc.accuracy,
+              ageMs: Date.now() - (locationResult.loc.timestamp ?? Date.now()),
+            }
+          : null,
+        perimeterStatus,
+
+        // Biometria / controle
         isManual: false,
-        gpsCoords: { lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy },
-        gpsSource: loc.source,
         userAgent: sanitizeUserAgent(navigator.userAgent),
         biometricVerified: false,
         photoURL: null,
         aiValidation: null,
-        processingStatus: 'pending',
+        processingStatus: photoResult.photo ? 'pending' : 'skipped_no_photo',
       });
 
+      // Analytics
       if (nextAction.type === 'entry') {
-        Analytics.logEvent({
-          eventType: 'ponto_entrada', area: 'rh',
-          userId: currentUser.uid, entityId: docRef.id,
-          payload: { tipo: 'entry', locationId: detectedLocation?.id },
-        });
+        Analytics.logEvent({ eventType: 'ponto_entrada', area: 'rh', userId: currentUser.uid, entityId: docRef.id, payload: { tipo: 'entry', locationId: resolvedLocation?.id, quality } });
       } else if (nextAction.type === 'exit') {
-        Analytics.logEvent({
-          eventType: 'ponto_saida', area: 'rh',
-          userId: currentUser.uid, entityId: docRef.id,
-          payload: { tipo: 'exit', locationId: detectedLocation?.id },
-        });
+        Analytics.logEvent({ eventType: 'ponto_saida', area: 'rh', userId: currentUser.uid, entityId: docRef.id, payload: { tipo: 'exit', locationId: resolvedLocation?.id, quality } });
       }
 
-      logEvent(
-        currentUser.uid, userProfile?.displayName,
-        'ponto_register_success', 'success',
-        `Ponto gravado: ${nextAction.label}`,
-        { extra: { docId: docRef.id, gpsSource: loc.source } }
-      );
+      // Logs de auditoria por qualidade
+      if (quality === 'ok') {
+        logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_success', 'success',
+          `Ponto gravado: ${nextAction.label}`,
+          { extra: { docId: docRef.id, gpsSource: locationResult.loc?.source } }
+        );
+      } else if (quality === 'partial') {
+        logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_partial', 'warning',
+          `Ponto parcial: ${nextAction.label} — photo=${photoResult.photoStatus} gps=${locationResult.gpsStatus}`,
+          { extra: { docId: docRef.id, photoError: photoResult.photoErrorDetail, gpsError: locationResult.gpsErrorDetail } }
+        );
+      } else {
+        logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_emergency', 'error',
+          `Ponto EMERGENCIAL: ${nextAction.label} — sem foto e sem GPS`,
+          { extra: { docId: docRef.id, photoError: photoResult.photoErrorDetail, gpsError: locationResult.gpsErrorDetail } }
+        );
+      }
 
-      const timeStr = new Date().toLocaleTimeString('pt-BR', {
-        hour: '2-digit', minute: '2-digit',
-      });
+      const timeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       setSuccessMessage(`${actionLabels[nextAction.type]}\n${timeStr}`);
       setProcessing(false);
 
       if (autoRedirectRef.current) clearTimeout(autoRedirectRef.current);
-      autoRedirectRef.current = setTimeout(() => {
-        setSuccessMessage('');
-        setActiveTab('history');
-      }, 4000);
+      autoRedirectRef.current = setTimeout(() => { setSuccessMessage(''); setActiveTab('history'); }, 4000);
 
-      if (nextAction.type === 'entry') {
-        setTimeout(() => setShowVehiclePrompt(true), 2000);
+      if (nextAction.type === 'entry') setTimeout(() => setShowVehiclePrompt(true), 2000);
+
+      // Background: só processa foto se tiver foto capturada
+      if (photoResult.photo) {
+        processInBackground(docRef.id, photoResult.photo.base64, photoResult.photo.dataOnly, currentUser.uid);
       }
-
-      processInBackground(docRef.id, photo.base64, photo.dataOnly, currentUser.uid);
 
     } catch (err: any) {
       setProcessing(false);
-      setErrorMessage(err.message ?? 'Erro durante o registro. Tente novamente.');
+      setErrorMessage(err.message ?? 'Erro ao salvar no servidor. Tente novamente.');
+      logEvent(currentUser.uid, userProfile?.displayName, 'ponto_register_firestore_fail', 'error',
+        `Falha ao salvar ponto: ${err.message}`, { extra: { error: sanitizeErrorForLog(err) } }
+      );
     }
   };
 
@@ -808,7 +919,21 @@ const Ponto: React.FC = () => {
                         <div>
                           <p className={`font-bold text-sm ${style.color}`}>{style.text}</p>
                           <LocationBadge entry={entry} />
-                          {(entry as any).processingStatus === 'pending' && (
+                          {/* Qualidade do registro emergencial */}
+                          {(entry as any).registrationQuality === 'partial' && (
+                            <span className="text-[10px] text-yellow-600 flex items-center gap-1 font-bold">
+                              <AlertTriangle size={8} />
+                              Parcial
+                              {(entry as any).photoStatus !== 'ok' && ' · sem foto'}
+                              {(entry as any).gpsStatus === 'unavailable' && ' · sem GPS'}
+                            </span>
+                          )}
+                          {(entry as any).registrationQuality === 'emergency' && (
+                            <span className="text-[10px] text-red-600 flex items-center gap-1 font-bold">
+                              <AlertTriangle size={8} /> Emergencial — revisão necessária
+                            </span>
+                          )}
+                          {(entry as any).processingStatus === 'pending' && (entry as any).registrationQuality !== 'emergency' && (
                             <span className="text-[10px] text-gray-400 flex items-center gap-1">
                               <Loader2 size={8} className="animate-spin" /> Processando biometria...
                             </span>

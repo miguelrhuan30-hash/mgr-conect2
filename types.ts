@@ -280,6 +280,21 @@ export interface IntelNote {
   createdAt: Timestamp;
 }
 
+// ─── Sprint Emergencial: Diagnóstico de Erro Estruturado ─────────────────────
+// Equivalente ao que aparece no console/DevTools do navegador
+export interface ErrorDetail {
+  name: string;           // ex: 'NotAllowedError', 'GeolocationPositionError'
+  message: string;        // mensagem human-readable do erro
+  code?: number;          // GPS: 1=PERMISSION_DENIED 2=POSITION_UNAVAILABLE 3=TIMEOUT
+  stack?: string;         // primeiras 300 chars do stack trace
+  deviceContext?: {
+    connection?: string;  // 'wifi' | '4g' | '3g' | '2g' | 'slow-2g'
+    screenW?: number;     // resolução horizontal da tela
+    screenH?: number;     // resolução vertical da tela
+    platform?: string;    // 'iPhone', 'Linux armv8l', 'Win32', etc.
+  };
+}
+
 // --- HR & TIME TRACKING ---
 export interface TimeEntry {
   id: string;
@@ -320,6 +335,37 @@ export interface TimeEntry {
   excluidoPor?: string;      // UID do admin que excluiu
   excluidoPorNome?: string;  // Nome do admin que excluiu
   excluidoEm?: Timestamp;    // Quando foi excluído
+
+  // ─── Sprint Emergencial — Registro Resiliente ───────────────────────────────
+  // Qualidade geral do registro
+  registrationQuality?: 'ok' | 'partial' | 'emergency';
+  // 'ok'        → foto + GPS funcionaram normalmente
+  // 'partial'   → um dos dois falhou (mas o outro OK)
+  // 'emergency' → ambos falharam; só horário garantido (revisão manual necessária)
+
+  // Diagnóstico de câmera
+  photoStatus?: 'ok' | 'unavailable' | 'camera_error';
+  photoErrorDetail?: ErrorDetail | null; // objeto estruturado com name/code/stack/device
+
+  // Diagnóstico de GPS
+  gpsStatus?: 'ok' | 'best_effort' | 'unavailable';
+  gpsErrorDetail?: ErrorDetail | null;   // objeto estruturado com name/code/stack/device
+  gpsBestEffortCoords?: {                // coords do fallback (quando gpsStatus = 'best_effort')
+    lat: number;
+    lng: number;
+    accuracy: number;
+    ageMs: number;                       // ms desde quando foi capturada
+  } | null;
+
+  // Diagnóstico de perímetro
+  perimeterStatus?: 'verified' | 'skipped_gps_fail' | 'skipped_admin' | 'outside_warning';
+  // 'verified'        → dentro do perímetro autorizado
+  // 'skipped_gps_fail'→ GPS falhou, perímetro não verificado (não bloqueante)
+  // 'skipped_admin'   → admin global, sem restrição de perímetro
+  // 'outside_warning' → fora do perímetro mas registro liberado (modo emergencial)
+
+  // Status de pós-processamento biométrico
+  processingStatus?: 'pending' | 'done' | 'failed' | 'skipped_no_photo';
 }
 
 

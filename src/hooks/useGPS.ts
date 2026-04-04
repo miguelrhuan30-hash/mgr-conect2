@@ -10,6 +10,7 @@ export interface GPSLocation {
 
 export interface UseGPSReturn {
   location: GPSLocation | null;
+  lastKnownLocation: GPSLocation | null; // persiste mesmo após nova tentativa falhar
   isLoading: boolean;
   error: string | null;
   getFreshLocation: () => Promise<GPSLocation>;
@@ -21,6 +22,7 @@ const LOW_ACC_TIMEOUT  = 5000;
 
 export function useGPS(): UseGPSReturn {
   const [location, setLocation] = useState<GPSLocation | null>(null);
+  const [lastKnownLocation, setLastKnownLocation] = useState<GPSLocation | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cacheRef = useRef<GPSLocation | null>(null);
@@ -63,6 +65,7 @@ export function useGPS(): UseGPSReturn {
         const loc = toGPSLocation(pos, 'high_accuracy');
         cacheRef.current = loc;
         setLocation(loc);
+        setLastKnownLocation(loc); // mantém o último GPS conhecido
         return loc;
       } catch {
         // Tentativa 2: Network / Cell tower
@@ -71,6 +74,7 @@ export function useGPS(): UseGPSReturn {
           const loc = toGPSLocation(pos, 'network');
           cacheRef.current = loc;
           setLocation(loc);
+          setLastKnownLocation(loc); // mantém o último GPS conhecido
           return loc;
         } catch {
           // Tentativa 3: Cache local (≤ 5 min)
@@ -78,6 +82,7 @@ export function useGPS(): UseGPSReturn {
             const ageMs = Date.now() - cacheRef.current.timestamp;
             if (ageMs <= GPS_CACHE_TTL_MS) {
               setLocation(cacheRef.current);
+              // lastKnownLocation já está definido, não atualizar (cache não é "novo")
               return cacheRef.current;
             }
           }
@@ -91,5 +96,5 @@ export function useGPS(): UseGPSReturn {
     }
   }, []);
 
-  return { location, isLoading, error, getFreshLocation };
+  return { location, lastKnownLocation, isLoading, error, getFreshLocation };
 }
