@@ -88,6 +88,57 @@ service cloud.firestore {
       allow write: if isManager();
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // MÓDULO DE PROJETOS V2 — SECURITY RULES
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Leads: criação pública com validação (formulário anúncios) ──
+    match /project_leads/{leadId} {
+      allow create: if
+        request.resource.data.keys().hasAll([
+          'nomeContato', 'telefone', 'tipoProjetoSlug', 'criadoEm', 'status'
+        ])
+        && request.resource.data.status == 'novo'
+        && request.resource.data.nomeContato is string
+        && request.resource.data.nomeContato.size() > 2
+        && request.resource.data.nomeContato.size() < 200
+        && request.resource.data.telefone is string
+        && request.resource.data.telefone.size() > 7
+        && request.resource.data.telefone.size() < 20
+        && !request.resource.data.keys().hasAny(['projectId', 'contatadoPor'])
+        && request.resource.data.keys().size() <= 15;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    // ── Projetos V2 ──
+    match /projects_v2/{projectId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['createdAt', 'createdBy']);
+      allow delete: if isAdmin();
+    }
+
+    // ── Cotações de Projeto ──
+    match /project_cotacoes/{cotacaoId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── Contratos de Projeto (leitura pública para link do cliente) ──
+    match /project_contratos/{contratoId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // ── Faturamentos (escrita apenas gestores) ──
+    match /project_faturamentos/{fatId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isManager();
+      allow delete: if isAdmin();
+    }
+
     // ── Regra padrão: apenas autenticados ────────────────────────────────
     match /{document=**} {
       allow read, write: if isAuthenticated();

@@ -1,70 +1,70 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName, LandingPageContent } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { 
-  Phone, Mail, MapPin, Instagram, LogIn, Edit, 
+  Phone, Mail, MapPin, Instagram, LogIn, Edit, X,
   Snowflake, Wrench, Thermometer, Fan, CheckCircle2, ArrowRight, ShieldCheck, Send, MessageCircle, Factory, QrCode
 } from 'lucide-react';
 
 const MGR_REAL_DATA: LandingPageContent = {
   hero: {
-    title: "Solução do Frio. Eficiência e Economia.",
-    subtitle: "Na indústria, refrigeração parada é prejuízo na certa. Garantimos que sua operação funcione, protegendo seu produto e sua lucratividade.",
+    title: "SoluÃ§Ã£o do Frio. EficiÃªncia e Economia.",
+    subtitle: "Na indÃºstria, refrigeraÃ§Ã£o parada Ã© prejuÃ­zo na certa. Garantimos que sua operaÃ§Ã£o funcione, protegendo seu produto e sua lucratividade.",
     backgroundImageUrl: "",
-    ctaText: "Solicitar Vistoria Técnica",
+    ctaText: "Solicitar Vistoria TÃ©cnica",
     ctaLink: "#contact"
   },
   stats: [
-    { value: "+15", label: "Anos de Experiência" },
+    { value: "+15", label: "Anos de ExperiÃªncia" },
     { value: "+300", label: "Projetos Entregues" },
-    { value: "+50", label: "Contratos de Manutenção" },
-    { value: "+500", label: "Equipamentos sob Gestão" }
+    { value: "+50", label: "Contratos de ManutenÃ§Ã£o" },
+    { value: "+500", label: "Equipamentos sob GestÃ£o" }
   ],
   services: {
-    title: "Nossas Soluções de Engenharia",
+    title: "Nossas SoluÃ§Ãµes de Engenharia",
     items: [
       {
         title: "Projetos Especiais",
-        description: "Túneis de Congelamento, Câmaras Frias e Girofreezers feitos sob medida para sua demanda industrial.",
+        description: "TÃºneis de Congelamento, CÃ¢maras Frias e Girofreezers feitos sob medida para sua demanda industrial.",
         icon: "Factory"
       },
       {
-        title: "Manutenção Preventiva & Corretiva",
-        description: "Atendimento emergencial e contratos com análise de vibração e óleo para reduzir downtime.",
+        title: "ManutenÃ§Ã£o Preventiva & Corretiva",
+        description: "Atendimento emergencial e contratos com anÃ¡lise de vibraÃ§Ã£o e Ã³leo para reduzir downtime.",
         icon: "Wrench"
       },
       {
-        title: "Sistema de Gestão QR Code",
-        description: "Implementamos etiquetas QR Code em suas máquinas para abertura de chamados e histórico digital completo.",
+        title: "Sistema de GestÃ£o QR Code",
+        description: "Implementamos etiquetas QR Code em suas mÃ¡quinas para abertura de chamados e histÃ³rico digital completo.",
         icon: "QrCode"
       },
       {
-        title: "Instalação e Climatização (HVAC)",
-        description: "Instalação de sistemas centrais e projetos de climatização industrial seguindo normas NR-10 e NR-18.",
+        title: "InstalaÃ§Ã£o e ClimatizaÃ§Ã£o (HVAC)",
+        description: "InstalaÃ§Ã£o de sistemas centrais e projetos de climatizaÃ§Ã£o industrial seguindo normas NR-10 e NR-18.",
         icon: "Fan"
       }
     ]
   },
   clients: {
     title: "Quem Confia na MGR",
-    description: "Grandes indústrias e parceiros que não podem parar.",
+    description: "Grandes indÃºstrias e parceiros que nÃ£o podem parar.",
     partners: [
       { id: '1', name: "Halipar", logoUrl: "" },
-      { id: '2', name: "Sorvetão", logoUrl: "" },
+      { id: '2', name: "SorvetÃ£o", logoUrl: "" },
       { id: '3', name: "Dellys", logoUrl: "" },
-      { id: '4', name: "Indaiá Pescados", logoUrl: "" }
+      { id: '4', name: "IndaiÃ¡ Pescados", logoUrl: "" }
     ]
   },
   about: {
     title: "Engenharia que Gera Resultados",
-    description: "Nossa missão é entregar a solução completa: equipamentos robustos feitos sob medida e o serviço de manutenção mais transparente do mercado. Com uma frota própria e equipe técnica certificada, atendemos Indaiatuba e região com agilidade.",
+    description: "Nossa missÃ£o Ã© entregar a soluÃ§Ã£o completa: equipamentos robustos feitos sob medida e o serviÃ§o de manutenÃ§Ã£o mais transparente do mercado. Com uma frota prÃ³pria e equipe tÃ©cnica certificada, atendemos Indaiatuba e regiÃ£o com agilidade.",
     imageUrl: ""
   },
   contact: {
-    address: "Indaiatuba - SP e Região",
+    address: "Indaiatuba - SP e RegiÃ£o",
     phone: "(19) 3333-3333",
     email: "contato@mgrrefrigeracao.com.br",
     whatsapp: "5519999999999",
@@ -87,6 +87,14 @@ const LandingPage: React.FC = () => {
   const [formEmail, setFormEmail] = useState('');
   const [formMessage, setFormMessage] = useState('');
   const [formStatus, setFormStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+
+  // Modal Lead Rapido
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [leadNome, setLeadNome] = useState('');
+  const [leadTelefone, setLeadTelefone] = useState('');
+  const [leadTipo, setLeadTipo] = useState('');
+  const [leadSending, setLeadSending] = useState(false);
+  const [leadSent, setLeadSent] = useState(false);
 
   // Check permissions
   const canEdit = userProfile?.role === 'developer' || userProfile?.role === 'admin';
@@ -168,6 +176,32 @@ const LandingPage: React.FC = () => {
     }
   };
 
+  const handleLeadRapido = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leadNome.trim() || !leadTelefone.trim()) return;
+    setLeadSending(true);
+    try {
+      await addDoc(collection(db, 'project_leads'), {
+        nomeContato: leadNome.trim(),
+        telefone: leadTelefone.trim(),
+        tipoProjetoSlug: leadTipo || 'nao_definido',
+        tipoProjetoTexto: leadTipo || 'NÃ£o definido',
+        origem: 'formulario_site',
+        status: 'novo',
+        criadoEm: serverTimestamp(),
+        userAgent: window.navigator.userAgent,
+      });
+      setLeadSent(true);
+      setTimeout(() => {
+        setShowLeadModal(false);
+        setLeadSent(false);
+        setLeadNome('');
+        setLeadTelefone('');
+        setLeadTipo('');
+      }, 3000);
+    } finally { setLeadSending(false); }
+  };
+
   const getIcon = (iconName: string) => {
     switch(iconName) {
       case 'Wrench': return <Wrench className="w-8 h-8" />;
@@ -232,13 +266,13 @@ const LandingPage: React.FC = () => {
               <div className="w-10 h-10 bg-brand-600 rounded-lg flex items-center justify-center text-white">
                 <Snowflake size={24} />
               </div>
-              <span className="text-2xl font-bold text-brand-900 tracking-tight">MGR Refrigeração</span>
+              <span className="text-2xl font-bold text-brand-900 tracking-tight">MGR RefrigeraÃ§Ã£o</span>
             </div>
             
             <div className="flex items-center gap-6">
               <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
-                <a href="#home" className="hover:text-brand-600 transition-colors">Início</a>
-                <a href="#services" className="hover:text-brand-600 transition-colors">Soluções</a>
+                <a href="#home" className="hover:text-brand-600 transition-colors">InÃ­cio</a>
+                <a href="#services" className="hover:text-brand-600 transition-colors">SoluÃ§Ãµes</a>
                 <a href="#clients" className="hover:text-brand-600 transition-colors">Clientes</a>
                 <a href="#about" className="hover:text-brand-600 transition-colors">Sobre</a>
               </div>
@@ -281,18 +315,18 @@ const LandingPage: React.FC = () => {
               {content.hero.subtitle}
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <a 
-                href={content.hero.ctaLink} 
+              <button
+                onClick={() => setShowLeadModal(true)}
                 className="px-8 py-4 bg-brand-600 text-white rounded-lg font-bold text-lg hover:bg-brand-700 transition-all shadow-lg shadow-brand-200 flex items-center justify-center gap-2"
               >
                 <Phone size={20} />
                 {content.hero.ctaText}
-              </a>
+              </button>
               <a 
                 href="#services"
                 className="px-8 py-4 bg-white text-gray-700 border border-gray-200 rounded-lg font-bold text-lg hover:bg-gray-50 transition-all flex items-center justify-center"
               >
-                Conhecer Soluções
+                Conhecer SoluÃ§Ãµes
               </a>
             </div>
           </div>
@@ -454,19 +488,56 @@ const LandingPage: React.FC = () => {
               <ul className="mt-8 space-y-4">
                 <li className="flex items-center gap-3">
                    <div className="w-6 h-6 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center flex-shrink-0"><CheckCircle2 size={14}/></div>
-                   <span className="text-gray-700">Equipe técnica certificada e frota própria</span>
+                   <span className="text-gray-700">Equipe tÃ©cnica certificada e frota prÃ³pria</span>
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-6 h-6 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center flex-shrink-0"><CheckCircle2 size={14}/></div>
-                   <span className="text-gray-700">Atendimento ágil em Indaiatuba e região</span>
+                   <span className="text-gray-700">Atendimento Ã¡gil em Indaiatuba e regiÃ£o</span>
                 </li>
                 <li className="flex items-center gap-3">
                    <div className="w-6 h-6 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center flex-shrink-0"><CheckCircle2 size={14}/></div>
-                   <span className="text-gray-700">Gestão digital de manutenção via App</span>
+                   <span className="text-gray-700">GestÃ£o digital de manutenÃ§Ã£o via App</span>
                 </li>
               </ul>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* â”€â”€ CTA Projetos â€” Leads via AnÃºncios â”€â”€ */}
+      <section className="py-20 bg-gradient-to-r from-brand-700 to-brand-900 text-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white/90 text-sm font-bold mb-6 border border-white/20">
+            <Snowflake size={14} /> Novo Projeto?
+          </div>
+          <h2 className="text-3xl md:text-4xl font-extrabold mb-4 leading-tight">
+            Solicite uma consultoria gratuita
+          </h2>
+          <p className="text-lg text-white/80 mb-8 max-w-2xl mx-auto">
+            Preencha nosso formulÃ¡rio e nossa equipe tÃ©cnica entra em contato para entender
+            suas necessidades e montar o projeto ideal para o seu negÃ³cio.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <a
+              href="/solicitar-projeto"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white text-brand-700 rounded-xl font-extrabold text-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl"
+            >
+              <ArrowRight size={20} />
+              Solicitar Projeto Agora
+            </a>
+            <a
+              href={`https://wa.me/${content.contact.whatsapp}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-green-500 text-white rounded-xl font-extrabold text-lg hover:bg-green-600 transition-all shadow-lg"
+            >
+              <MessageCircle size={20} />
+              Falar no WhatsApp
+            </a>
+          </div>
+          <p className="text-sm text-white/50 mt-6">
+            Atendemos Indaiatuba e regiÃ£o Â· Resposta em atÃ© 24h
+          </p>
         </div>
       </section>
 
@@ -480,10 +551,10 @@ const LandingPage: React.FC = () => {
                   <div className="w-8 h-8 bg-brand-600 rounded flex items-center justify-center">
                     <Snowflake size={18} />
                   </div>
-                  <span className="text-xl font-bold">MGR Refrigeração</span>
+                  <span className="text-xl font-bold">MGR RefrigeraÃ§Ã£o</span>
                 </div>
                 <p className="text-gray-400 max-w-md">
-                  Soluções inteligentes em climatização e refrigeração para o seu negócio.
+                  SoluÃ§Ãµes inteligentes em climatizaÃ§Ã£o e refrigeraÃ§Ã£o para o seu negÃ³cio.
                 </p>
               </div>
 
@@ -569,10 +640,82 @@ const LandingPage: React.FC = () => {
           </div>
           
           <div className="border-t border-gray-800 pt-8 text-center text-gray-500 text-sm">
-            <p>&copy; {new Date().getFullYear()} MGR Refrigeração. Todos os direitos reservados.</p>
+            <p>&copy; {new Date().getFullYear()} MGR RefrigeraÃ§Ã£o. Todos os direitos reservados.</p>
           </div>
         </div>
       </footer>
+
+      {/* ── Modal: Solicitar Projeto Rápido ── */}
+      {showLeadModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowLeadModal(false)}>
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-brand-700 to-brand-900 p-6 text-white relative">
+              <button onClick={() => setShowLeadModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
+                <X size={18} />
+              </button>
+              <div className="flex items-center gap-2 mb-2">
+                <Snowflake size={20} />
+                <span className="text-sm font-bold uppercase tracking-wide opacity-80">MGR Refrigeracao</span>
+              </div>
+              <h3 className="text-2xl font-extrabold">Solicitar Consultoria Gratuita</h3>
+              <p className="text-brand-200 text-sm mt-1">Nossa equipe retorna em ate 2 horas uteis.</p>
+            </div>
+            <div className="p-6">
+              {leadSent ? (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="w-8 h-8 text-green-600" />
+                  </div>
+                  <h4 className="text-xl font-bold text-gray-900">Recebemos seu contato!</h4>
+                  <p className="text-gray-500 mt-2">Nossa equipe tecnica entrara em contato em breve.</p>
+                </div>
+              ) : (
+                <form onSubmit={handleLeadRapido} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Nome / Empresa *</label>
+                    <input type="text" required value={leadNome} onChange={e => setLeadNome(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-500"
+                      placeholder="Seu nome ou empresa" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">WhatsApp / Telefone *</label>
+                    <input type="tel" required value={leadTelefone} onChange={e => setLeadTelefone(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-500"
+                      placeholder="(19) 9 0000-0000" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">O que voce precisa?</label>
+                    <select value={leadTipo} onChange={e => setLeadTipo(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-500">
+                      <option value="">Selecione (opcional)</option>
+                      <option value="camara_fria">Camara Fria / Frigorifico</option>
+                      <option value="tunel_congelamento">Tunel de Congelamento</option>
+                      <option value="girofreezer">Girofreezer</option>
+                      <option value="climatizacao">Climatizacao Industrial</option>
+                      <option value="manutencao">Manutencao Preventiva/Corretiva</option>
+                      <option value="outros">Outros</option>
+                    </select>
+                  </div>
+                  <button type="submit" disabled={leadSending}
+                    className="w-full py-4 bg-brand-600 text-white rounded-xl font-extrabold text-base hover:bg-brand-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg">
+                    {leadSending
+                      ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> Enviando...</>
+                      : <><Send size={18} /> Quero ser Atendido</>}
+                  </button>
+                  <p className="text-xs text-center text-gray-400">
+                    Ou acesse{' '}
+                    <a href="/solicitar-projeto" className="text-brand-600 font-bold hover:underline">o formulario completo</a>
+                    {' '}com mais detalhes tecnicos.
+                  </p>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

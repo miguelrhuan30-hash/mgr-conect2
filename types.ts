@@ -977,6 +977,12 @@ export enum CollectionName {
   // Sprint 51 — Apresentações Interativas
   PRESENTATIONS = 'presentations',
   PRESENTATION_VIEWS = 'presentationViews', // ORC-08
+  // Sprint Projetos v2 — Ciclo de Vida Completo
+  PROJECTS_V2 = 'projects_v2',
+  PROJECT_LEADS = 'project_leads',
+  PROJECT_COTACOES = 'project_cotacoes',
+  PROJECT_CONTRATOS = 'project_contratos',
+  PROJECT_FATURAMENTOS = 'project_faturamentos',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -1076,6 +1082,7 @@ export interface EmployeeDocument {
   tamanhoBytes: number;
   uploadPor: string;
   uploadEm: Timestamp;
+  dataReferencia?: string;   // "YYYY-MM-DD" — dia ao qual o documento se refere na folha de ponto
 }
 
 export interface EmployeeOccurrence {
@@ -1371,4 +1378,399 @@ export interface PresentationView {
   viewedAt: any; // Timestamp
   userAgent: string;
   device: 'mobile' | 'tablet' | 'desktop';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sprint Projetos v2 — Módulo de Projetos: Ciclo de Vida Completo
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Fase do Projeto (máquina de estados — 16 estados) ──
+export type ProjectPhase =
+  | 'lead_capturado'
+  | 'em_levantamento'
+  | 'em_cotacao'
+  | 'cotacao_recebida'
+  | 'proposta_enviada'
+  | 'contrato_enviado'
+  | 'contrato_assinado'
+  | 'em_planejamento'
+  | 'cronograma_aprovado'
+  | 'os_distribuidas'
+  | 'em_execucao'
+  | 'relatorio_enviado'
+  | 'em_faturamento'
+  | 'aguardando_recebimento'
+  | 'concluido'
+  | 'nao_aprovado';
+
+export const PROJECT_PHASE_LABELS: Record<ProjectPhase, string> = {
+  lead_capturado: 'Lead Capturado',
+  em_levantamento: 'Em Levantamento',
+  em_cotacao: 'Em Cotação',
+  cotacao_recebida: 'Cotação Recebida',
+  proposta_enviada: 'Proposta Enviada',
+  contrato_enviado: 'Contrato Enviado',
+  contrato_assinado: 'Contrato Assinado',
+  em_planejamento: 'Em Planejamento',
+  cronograma_aprovado: 'Cronograma Aprovado',
+  os_distribuidas: 'O.S. Distribuídas',
+  em_execucao: 'Em Execução',
+  relatorio_enviado: 'Relatório Enviado',
+  em_faturamento: 'Em Faturamento',
+  aguardando_recebimento: 'Aguardando Recebimento',
+  concluido: 'Concluído',
+  nao_aprovado: 'Não Aprovado',
+};
+
+export const PROJECT_PHASE_COLORS: Record<ProjectPhase, string> = {
+  lead_capturado: 'bg-violet-100 text-violet-700 border-violet-200',
+  em_levantamento: 'bg-blue-100 text-blue-700 border-blue-200',
+  em_cotacao: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+  cotacao_recebida: 'bg-teal-100 text-teal-700 border-teal-200',
+  proposta_enviada: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  contrato_enviado: 'bg-amber-100 text-amber-700 border-amber-200',
+  contrato_assinado: 'bg-lime-100 text-lime-700 border-lime-200',
+  em_planejamento: 'bg-sky-100 text-sky-700 border-sky-200',
+  cronograma_aprovado: 'bg-blue-100 text-blue-700 border-blue-200',
+  os_distribuidas: 'bg-orange-100 text-orange-700 border-orange-200',
+  em_execucao: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  relatorio_enviado: 'bg-pink-100 text-pink-700 border-pink-200',
+  em_faturamento: 'bg-rose-100 text-rose-700 border-rose-200',
+  aguardando_recebimento: 'bg-red-100 text-red-700 border-red-200',
+  concluido: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  nao_aprovado: 'bg-gray-100 text-gray-500 border-gray-200',
+};
+
+export const PROJECT_PHASE_ORDER: ProjectPhase[] = [
+  'lead_capturado',
+  'em_levantamento',
+  'em_cotacao',
+  'cotacao_recebida',
+  'proposta_enviada',
+  'contrato_enviado',
+  'contrato_assinado',
+  'em_planejamento',
+  'cronograma_aprovado',
+  'os_distribuidas',
+  'em_execucao',
+  'relatorio_enviado',
+  'em_faturamento',
+  'aguardando_recebimento',
+  'concluido',
+];
+
+// ── Tipos de projeto predefinidos ──
+export const PROJECT_TYPES = [
+  { slug: 'camara_fria', label: 'Câmara Fria' },
+  { slug: 'split_industrial', label: 'Split Industrial' },
+  { slug: 'chiller', label: 'Chiller' },
+  { slug: 'refrigeracao_comercial', label: 'Refrigeração Comercial' },
+  { slug: 'manutencao_preventiva', label: 'Manutenção Preventiva' },
+  { slug: 'retrofit', label: 'Retrofit' },
+  { slug: 'instalacao_nova', label: 'Instalação Nova' },
+  { slug: 'outro', label: 'Outro' },
+] as const;
+
+// ── Motivos de não fechamento ──
+export const NAO_APROVADO_MOTIVOS = [
+  { id: 'preco_alto', label: 'Preço alto' },
+  { id: 'sem_orcamento', label: 'Cliente sem orçamento' },
+  { id: 'projeto_adiado', label: 'Projeto adiado' },
+  { id: 'escolheu_concorrente', label: 'Escolheu concorrente' },
+  { id: 'mudou_ideia', label: 'Mudou de ideia' },
+  { id: 'sem_retorno', label: 'Sem retorno do cliente' },
+  { id: 'outro', label: 'Outro' },
+] as const;
+
+// ── Transições permitidas (máquina de estados) ──
+export const PROJECT_TRANSITIONS: Record<ProjectPhase, ProjectPhase[]> = {
+  lead_capturado:         ['em_levantamento', 'nao_aprovado'],
+  em_levantamento:        ['em_cotacao', 'nao_aprovado'],
+  em_cotacao:             ['cotacao_recebida', 'nao_aprovado'],
+  cotacao_recebida:       ['proposta_enviada', 'em_cotacao', 'nao_aprovado'],
+  proposta_enviada:       ['contrato_enviado', 'nao_aprovado'],
+  contrato_enviado:       ['contrato_assinado', 'nao_aprovado'],
+  contrato_assinado:      ['em_planejamento'],
+  em_planejamento:        ['cronograma_aprovado'],
+  cronograma_aprovado:    ['os_distribuidas'],
+  os_distribuidas:        ['em_execucao'],
+  em_execucao:            ['relatorio_enviado'],
+  relatorio_enviado:      ['em_faturamento'],
+  em_faturamento:         ['aguardando_recebimento'],
+  aguardando_recebimento: ['concluido'],
+  concluido:              [],
+  nao_aprovado:           ['lead_capturado', 'em_levantamento'],
+};
+
+// ── Sub-interfaces do ProjectV2 ──
+
+export interface ProjectV2PhaseEntry {
+  fase: ProjectPhase;
+  alteradoEm: Timestamp;
+  alteradoPor: string;
+  alteradoPorNome?: string;
+  observacao?: string;
+}
+
+export interface ProjectV2LeadData {
+  origem: 'formulario_site' | 'indicacao' | 'anuncio' | 'manual';
+  nomeContato: string;
+  telefone: string;
+  email?: string;
+  empresa?: string;
+  tipoProjetoPedido: string;
+  medidasAproximadas?: string;
+  finalidade?: string;
+  localizacao?: string;
+  observacoes?: string;
+  recebidoEm: Timestamp;
+  contatoRealizadoEm?: Timestamp;
+  contatoRealizadoPor?: string;
+  contatoRealizadoPorNome?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+}
+
+export interface ProjectV2Prancheta {
+  dimensoes?: string;
+  tipoEquipamento?: string;
+  capacidadeBTU?: number;
+  voltagem?: string;
+  tipoGas?: string;
+  isolamento?: string;
+  estruturaExistente?: string;
+  temperaturaAlvo?: string;
+  finalidade?: string;
+  localizacao?: string;
+  metragem?: string;
+  observacoesTecnicas?: string;
+  fotosLevantamento?: string[];
+  croquis?: string[];
+  preenchidoPor?: string;
+  preenchidoPorNome?: string;
+  preenchidoEm?: Timestamp;
+  camposCustom?: Record<string, string>;
+}
+
+export interface ProjectV2NaoAprovado {
+  motivoId: string;
+  motivoTexto: string;
+  detalhes?: string;
+  faseParou: ProjectPhase;
+  arquivadoEm: Timestamp;
+  arquivadoPor: string;
+  arquivadoPorNome?: string;
+  tentativasReabertura?: {
+    data: Timestamp;
+    por: string;
+    porNome: string;
+    novaAbordagem: string;
+    resultado?: 'convertido' | 'mantido_nao_aprovado';
+    descontoOferecido?: string;
+    novoValor?: number;
+  }[];
+}
+
+export interface ProjectV2PropostaVersao {
+  versao: number;
+  apresentacaoId: string;
+  slug?: string;
+  criadaEm: Timestamp;
+}
+
+// ── Interface principal: Projeto V2 ──
+export interface ProjectV2 {
+  id: string;
+  nome: string;
+  descricao?: string;
+  clientId: string;
+  clientName: string;
+  tipoProjetoSlug: string;
+  fase: ProjectPhase;
+  faseHistorico: ProjectV2PhaseEntry[];
+
+  // F0 — Lead
+  leadData?: ProjectV2LeadData;
+  leadId?: string;
+
+  // F1 — Prancheta
+  prancheta?: ProjectV2Prancheta;
+
+  // F2 — Cotação
+  cotacaoIds?: string[];
+  cotacaoVencedoraId?: string;
+  relatorioNecessidadesUrl?: string;
+
+  // F3 — Apresentação
+  apresentacaoId?: string;
+  propostaVersoes?: ProjectV2PropostaVersao[];
+
+  // F4 — Contrato
+  contratoId?: string;
+
+  // F5+F6 — Gantt + O.S.
+  osIds: string[];
+  totalOSPrevistas?: number;
+  totalOSConcluidas?: number;
+
+  // F8 — Relatório
+  relatorioFinalUrl?: string;
+  relatorioEnviadoEm?: Timestamp;
+
+  // F9 — Faturamento
+  faturamentoId?: string;
+  valorContrato?: number;
+  valorRecebido?: number;
+
+  // F11 — Não Aprovado
+  naoAprovadoData?: ProjectV2NaoAprovado;
+
+  // Metadados
+  createdBy: string;
+  createdByNome?: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+// ── Lead de Projeto (captação via site/anúncios) ──
+export type LeadStatus = 'novo' | 'contatado' | 'convertido' | 'descartado';
+
+export interface ProjectLead {
+  id: string;
+  nomeContato: string;
+  empresa?: string;
+  telefone: string;
+  email?: string;
+  tipoProjetoSlug: string;
+  tipoProjetoTexto?: string;
+  medidasAproximadas?: string;
+  finalidade?: string;
+  localizacao?: string;
+  observacoes?: string;
+  origem: 'formulario_site' | 'anuncio_google' | 'anuncio_meta' | 'indicacao';
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  status: LeadStatus;
+  projectId?: string;
+  contatadoEm?: Timestamp;
+  contatadoPor?: string;
+  contatadoPorNome?: string;
+  motivoDescarte?: string;
+  criadoEm: Timestamp;
+  userAgent?: string;
+}
+
+export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
+  novo: 'Novo',
+  contatado: 'Contatado',
+  convertido: 'Convertido',
+  descartado: 'Descartado',
+};
+
+export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
+  novo: 'bg-violet-100 text-violet-700 border-violet-200',
+  contatado: 'bg-blue-100 text-blue-700 border-blue-200',
+  convertido: 'bg-green-100 text-green-700 border-green-200',
+  descartado: 'bg-gray-100 text-gray-500 border-gray-200',
+};
+
+// ── Cotação de Projeto ──
+export interface CotacaoItem {
+  id: string;
+  descricao: string;
+  quantidade: number;
+  unidade?: string;
+  valorUnitario: number;
+  valorTotal: number;
+  prazoEntrega?: string;
+}
+
+export interface ProjectCotacao {
+  id: string;
+  projectId: string;
+  fornecedor: string;
+  fornecedorContato?: string;
+  fornecedorEmail?: string;
+  fornecedorTelefone?: string;
+  itens: CotacaoItem[];
+  valorTotal: number;
+  condicoesPagamento?: string;
+  prazoEntregaGeral?: string;
+  validadeAte?: Timestamp;
+  documentoUrl?: string;
+  documentoNome?: string;
+  selecionada: boolean;
+  observacoes?: string;
+  criadoEm: Timestamp;
+  criadoPor: string;
+  criadoPorNome: string;
+}
+
+// ── Contrato de Projeto ──
+export type ContratoStatus = 'rascunho' | 'enviado' | 'visualizado' | 'assinado' | 'recusado';
+
+export const CONTRATO_STATUS_LABELS: Record<ContratoStatus, string> = {
+  rascunho: 'Rascunho',
+  enviado: 'Enviado',
+  visualizado: 'Visualizado',
+  assinado: 'Assinado',
+  recusado: 'Recusado',
+};
+
+export interface ProjectContrato {
+  id: string;
+  projectId: string;
+  clientId: string;
+  clientName: string;
+  titulo: string;
+  conteudoHtml?: string;
+  variaveis?: Record<string, string>;
+  status: ContratoStatus;
+  assinaturaServico?: 'autentique' | 'clicksign' | 'manual';
+  assinaturaExternaId?: string;
+  assinaturaUrl?: string;
+  assinadoEm?: Timestamp;
+  documentoPdfUrl?: string;
+  documentoAssinadoUrl?: string;
+  enviadoEm?: Timestamp;
+  visualizadoEm?: Timestamp;
+  recusadoMotivo?: string;
+  criadoEm: Timestamp;
+  criadoPor: string;
+  criadoPorNome: string;
+  atualizadoEm?: Timestamp;
+}
+
+// ── Faturamento de Projeto ──
+export type ParcelaStatus = 'pendente' | 'pago' | 'atrasado';
+
+export interface FaturamentoParcela {
+  id: string;
+  numero: number;
+  descricao?: string;
+  valor: number;
+  dataVencimento: Timestamp;
+  dataPagamento?: Timestamp;
+  status: ParcelaStatus;
+  comprovanteUrl?: string;
+  observacoes?: string;
+}
+
+export interface ProjectFaturamento {
+  id: string;
+  projectId: string;
+  projectNome: string;
+  clientId: string;
+  clientName: string;
+  valorTotal: number;
+  parcelas: FaturamentoParcela[];
+  totalPago: number;
+  totalPendente: number;
+  totalAtrasado: number;
+  criadoEm: Timestamp;
+  criadoPor: string;
+  criadoPorNome: string;
+  atualizadoEm?: Timestamp;
 }

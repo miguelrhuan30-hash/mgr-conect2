@@ -23,4 +23,21 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
-.env
+
+# Antigravity / Gemini AI — dados locais da ferramenta (screenshots, gravações, conversas)
+# Manter apenas GEMINI.md que é configuração do projeto
+.gemini/antigravity/
+.gemini/antigravity/**
+
+# Arquivos temporários gerados por scripts/diagnóstico
+git_diff_temp.txt
+git_log_temp.txt
+_gitlog.txt
+_gitlog.utf8.txt
+*.tmp
+
+# Vite cache timestamp
+vite.config.ts.timestamp-*
+
+# Scope docs locais (não fazem parte do repositório)
+scopoprojetos.md
