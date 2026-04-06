@@ -29,6 +29,9 @@ Thumbs.db
 .gemini/antigravity/
 .gemini/antigravity/**
 
+# Regras de AI (contém referências internas de projetos e workflow)
+.clauderules
+
 # Arquivos temporários gerados por scripts/diagnóstico
 git_diff_temp.txt
 git_log_temp.txt
