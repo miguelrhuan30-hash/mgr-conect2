@@ -49,6 +49,7 @@ import {
   UserPlus,
   Calendar,
 } from 'lucide-react';
+import AlertasCentral from './AlertasCentral';
 
 const Layout: React.FC = () => {
   const { userProfile, currentUser } = useAuth();
@@ -412,6 +413,9 @@ const Layout: React.FC = () => {
                </div>
              )}
         </button>
+
+        {/* 🔔 AlertasCentral — Sprint 17 */}
+        {isGestorLayout && <AlertasCentral />}
 
         {/* Sprint 46A — Suporte Primário badge para gestores */}
         {isGestorLayout && suporteNaoLidos > 0 && (

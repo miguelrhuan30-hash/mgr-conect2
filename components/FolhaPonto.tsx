@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  collection, query, where, getDocs, Timestamp
+  collection, query, where, getDocs, Timestamp, orderBy, limit, addDoc, serverTimestamp
 } from 'firebase/firestore';
-import { db } from '../firebase';
-import { CollectionName, TimeEntry, UserProfile } from '../types';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import {
+  CollectionName, TimeEntry, UserProfile,
+  EmployeeOccurrence, EmployeeDocument, OccurrenceType,
+  OCCURRENCE_LABELS, OCCURRENCE_COLORS
+} from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { calcularTurnos, Turno, toDateStr, minutesToHHMM } from '../utils/shift-calculator';
 import {
@@ -12,7 +17,8 @@ import {
 import {
   Search, Loader2, Clock, AlertTriangle, CheckCircle,
   ChevronDown, ChevronUp, Plus, Trash2, Save, X,
-  Filter, Calendar, User, History, AlertCircle, Edit2
+  Filter, Calendar, User, History, AlertCircle, Edit2,
+  Paperclip, Upload, FileText, Activity, Download, Info, ExternalLink
 } from 'lucide-react';
 
 // ─── Status badge config ───────────────────────────────────────────────────────
@@ -72,6 +78,31 @@ const FolhaPonto: React.FC = () => {
 
   // ── Histórico expandido ─────────────────────────────────────────────────────
   const [historicoAberto, setHistoricoAberto] = useState<string | null>(null);
+
+  // ── Tab principal: Folha vs Logs ────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<'folha' | 'logs'>('folha');
+
+  // ── Ocorrências e Documentos por dia ────────────────────────────────────────
+  const [ocorrenciasPorDia, setOcorrenciasPorDia] = useState<Map<string, EmployeeOccurrence[]>>(new Map());
+  const [documentosPorDia, setDocumentosPorDia] = useState<Map<string, EmployeeDocument[]>>(new Map());
+
+  // ── Formulário de ocorrência ────────────────────────────────────────────────
+  const [showOcForm, setShowOcForm] = useState(false);
+  const [ocTipo, setOcTipo] = useState<OccurrenceType>('falta_justificada');
+  const [ocDescricao, setOcDescricao] = useState('');
+  const [ocDiaCompleto, setOcDiaCompleto] = useState(true);
+  const [ocHoraInicio, setOcHoraInicio] = useState('08:00');
+  const [ocHoraFim, setOcHoraFim] = useState('12:00');
+  const [savingOc, setSavingOc] = useState(false);
+
+  // ── Upload de documento ─────────────────────────────────────────────────────
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Logs de ponto ───────────────────────────────────────────────────────────
+  const [pontoLogs, setPontoLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logExpandido, setLogExpandido] = useState<string | null>(null);
 
   // ── Carregar lista de colaboradores ─────────────────────────────────────────
   useEffect(() => {
@@ -163,6 +194,41 @@ const FolhaPonto: React.FC = () => {
 
       setTurnos(turnosCompletos);
       setTurnoEmEdicao(null);
+
+      // 4. Carregar ocorrências e documentos do período em paralelo
+      const [ocSnap, docSnap] = await Promise.all([
+        getDocs(query(
+          collection(db, CollectionName.EMPLOYEE_OCCURRENCES),
+          where('userId', '==', uid),
+          where('data', '>=', dataInicio),
+          where('data', '<=', dataFim)
+        )).catch(() => ({ docs: [] as any[] })),
+        getDocs(query(
+          collection(db, CollectionName.EMPLOYEE_DOCS),
+          where('userId', '==', uid),
+          where('dataReferencia', '>=', dataInicio),
+          where('dataReferencia', '<=', dataFim)
+        )).catch(() => ({ docs: [] as any[] })),
+      ]);
+
+      const ocMap = new Map<string, EmployeeOccurrence[]>();
+      ocSnap.docs.forEach((d: any) => {
+        const oc = { id: d.id, ...d.data() } as EmployeeOccurrence;
+        const list = ocMap.get(oc.data) || [];
+        list.push(oc);
+        ocMap.set(oc.data, list);
+      });
+      setOcorrenciasPorDia(ocMap);
+
+      const docMap = new Map<string, EmployeeDocument[]>();
+      docSnap.docs.forEach((d: any) => {
+        const doc_ = { id: d.id, ...d.data() } as EmployeeDocument;
+        const ref_ = doc_.dataReferencia || '';
+        const list = docMap.get(ref_) || [];
+        list.push(doc_);
+        docMap.set(ref_, list);
+      });
+      setDocumentosPorDia(docMap);
     } catch (err) {
       console.error('Erro ao buscar registros:', err);
     } finally {
@@ -292,6 +358,158 @@ const FolhaPonto: React.FC = () => {
     return faltando;
   };
 
+  // ── Salvar ocorrência (ausência, atestado, etc.) ────────────────────────────
+  const salvarOcorrencia = async (dia: string) => {
+    const uid = colaboradorId || currentUser?.uid;
+    if (!uid || !currentUser) return;
+    if (!ocDescricao.trim() && ocTipo !== 'falta_injustificada' && ocTipo !== 'folga') {
+      alert('Informe uma descrição para a ocorrência.');
+      return;
+    }
+    setSavingOc(true);
+    try {
+      let minutosAbonados: number | undefined;
+      if (ocTipo === 'atestado') {
+        if (ocDiaCompleto) {
+          const user = users.find(u => u.uid === uid);
+          const schedule = user?.workSchedule;
+          if (schedule?.dailyWorkMinutes && schedule.dailyWorkMinutes > 0) {
+            minutosAbonados = schedule.dailyWorkMinutes;
+          } else if (schedule?.startTime && schedule?.endTime) {
+            const [sh, sm] = schedule.startTime.split(':').map(Number);
+            const [eh, em] = schedule.endTime.split(':').map(Number);
+            minutosAbonados = ((eh * 60) + em) - ((sh * 60) + sm) - (schedule.lunchDuration || 60);
+          } else {
+            minutosAbonados = 480;
+          }
+        } else {
+          const [shi, smi] = ocHoraInicio.split(':').map(Number);
+          const [ehi, emi] = ocHoraFim.split(':').map(Number);
+          minutosAbonados = ((ehi * 60) + emi) - ((shi * 60) + smi);
+          if (minutosAbonados <= 0) { alert('O período do atestado é inválido.'); setSavingOc(false); return; }
+        }
+      }
+      await addDoc(collection(db, CollectionName.EMPLOYEE_OCCURRENCES), {
+        userId: uid,
+        data: dia,
+        tipo: ocTipo,
+        descricao: ocDescricao,
+        diaCompleto: ocDiaCompleto,
+        ...(ocTipo === 'atestado' && !ocDiaCompleto ? { horaInicio: ocHoraInicio, horaFim: ocHoraFim } : {}),
+        ...(minutosAbonados ? { minutosAbonados } : {}),
+        criadoPor: currentUser.uid,
+        criadoEm: serverTimestamp(),
+      });
+      setShowOcForm(false);
+      setOcDescricao('');
+      await buscarRegistros();
+      alert('Ocorrência registrada com sucesso.');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao registrar ocorrência.');
+    } finally {
+      setSavingOc(false);
+    }
+  };
+
+  // ── Upload de documento para o dia ──────────────────────────────────────────
+  const handleUploadDocumento = async (dia: string, file: File) => {
+    const uid = colaboradorId || currentUser?.uid;
+    if (!uid || !currentUser) return;
+    if (file.size > 10 * 1024 * 1024) { alert('Arquivo muito grande (máx 10MB).'); return; }
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) { alert('Tipo de arquivo não aceito. Use PDF, JPG ou PNG.'); return; }
+    setUploading(true);
+    try {
+      const storageRef = ref(storage, `employee_docs/${uid}/${dia}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      await addDoc(collection(db, CollectionName.EMPLOYEE_DOCS), {
+        userId: uid,
+        nome: file.name,
+        tipo: file.type.includes('pdf') ? 'documento' : 'atestado',
+        pasta: 'Folha de Ponto',
+        url,
+        tamanhoBytes: file.size,
+        uploadPor: currentUser.uid,
+        uploadEm: serverTimestamp(),
+        dataReferencia: dia,
+      });
+      await buscarRegistros();
+      alert('Documento anexado com sucesso.');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao fazer upload.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // ── Batch save: salva todos os 4 horários de uma vez ────────────────────────
+  const salvarEdicaoLote = async (turno: Turno) => {
+    const uid = colaboradorId || currentUser?.uid;
+    if (!uid || !currentUser || !editMotivo.trim()) {
+      alert('Informe o motivo da correção antes de salvar.');
+      return;
+    }
+    const adminNome = userProfile?.displayName || currentUser.email || currentUser.uid;
+    setSaving(true);
+    try {
+      const slots: { type: 'entry' | 'lunch_start' | 'lunch_end' | 'exit'; existing: TimeEntry | null; newTime: string }[] = [
+        { type: 'entry', existing: turno.entry, newTime: editTimes['entry'] || '' },
+        { type: 'lunch_start', existing: turno.lunchStart, newTime: editTimes['lunch_start'] || '' },
+        { type: 'lunch_end', existing: turno.lunchEnd, newTime: editTimes['lunch_end'] || '' },
+        { type: 'exit', existing: turno.exit, newTime: editTimes['exit'] || '' },
+      ];
+      for (const s of slots) {
+        if (s.existing && s.newTime) {
+          const newTs = new Date(s.newTime);
+          const oldTs = s.existing.timestamp.toDate();
+          if (Math.abs(newTs.getTime() - oldTs.getTime()) > 60000) {
+            await editarHorarioRegistro(s.existing.id, newTs, currentUser.uid, adminNome, editMotivo);
+          }
+        } else if (!s.existing && s.newTime) {
+          await adicionarRegistro(uid, s.type, new Date(s.newTime), currentUser.uid, adminNome, editMotivo);
+        }
+      }
+      await buscarRegistros();
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao salvar edição em lote.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Buscar logs de ponto ────────────────────────────────────────────────────
+  const buscarLogs = async () => {
+    const uid = colaboradorId || currentUser?.uid;
+    if (!uid) return;
+    setLoadingLogs(true);
+    try {
+      const startTs = Timestamp.fromDate(new Date(dataInicio + 'T00:00:00'));
+      const endTs = Timestamp.fromDate(new Date(dataFim + 'T23:59:59'));
+      const q = query(
+        collection(db, CollectionName.SYSTEM_LOGS),
+        where('timestamp', '>=', startTs),
+        where('timestamp', '<=', endTs),
+        orderBy('timestamp', 'desc'),
+        limit(200)
+      );
+      const snap = await getDocs(q);
+      const allLogs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as any))
+        .filter((log: any) => {
+          if (log.userId !== uid) return false;
+          const action = log.action || '';
+          return action.startsWith('ponto_');
+        });
+      setPontoLogs(allLogs);
+    } catch (err) {
+      console.error('Erro ao buscar logs:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════════════════
@@ -306,7 +524,28 @@ const FolhaPonto: React.FC = () => {
         </p>
       </div>
 
+      {/* ── TABS: Folha vs Logs ── */}
+      {isGestor && (
+        <div className="flex p-1 bg-gray-200 rounded-lg">
+          {([
+            { key: 'folha' as const, label: 'Folha de Ponto', icon: Calendar },
+            { key: 'logs' as const, label: 'Logs de Ponto', icon: Activity },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => { setActiveTab(tab.key); if (tab.key === 'logs') buscarLogs(); }}
+              className={`flex-1 py-2 text-sm font-bold rounded-md transition-all flex items-center justify-center gap-2 ${
+                activeTab === tab.key ? 'bg-white text-brand-600 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              <tab.icon size={16} /> {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── FILTROS ── */}
+      {activeTab === 'folha' && (
       <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Filter size={18} className="text-brand-600" />
@@ -402,8 +641,11 @@ const FolhaPonto: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* ── LISTA DE TURNOS ── */}
+      {activeTab === 'folha' && (loading || turnosFiltrados.length > 0 || (turnos.length === 0 && rawEntries.length >= 0)) && (<>
+      {/* Lista de turnos */}
       {loading ? (
         <div className="flex justify-center py-16">
           <Loader2 className="animate-spin text-brand-600" size={32} />
@@ -477,14 +719,24 @@ const FolhaPonto: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Badge de status */}
-                  <div className="w-32 flex-shrink-0 flex items-center gap-1.5">
+                  {/* Badge de status + ocorrência + documento */}
+                  <div className="w-44 flex-shrink-0 flex items-center gap-1.5 flex-wrap">
                     <span className={`text-[10px] font-extrabold px-2 py-1 rounded-full border whitespace-nowrap flex items-center gap-1 ${cfg.color}`}>
                       <StatusIcon size={10} />
                       {cfg.label}
                     </span>
                     {hasEdited && (
                       <span className="text-[9px] font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full border border-yellow-200">✏</span>
+                    )}
+                    {ocorrenciasPorDia.get(turno.data)?.map(oc => (
+                      <span key={oc.id} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${OCCURRENCE_COLORS[oc.tipo]}`}>
+                        {OCCURRENCE_LABELS[oc.tipo]}
+                      </span>
+                    ))}
+                    {(documentosPorDia.get(turno.data)?.length || 0) > 0 && (
+                      <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full border border-blue-200 flex items-center gap-0.5">
+                        <Paperclip size={8} /> {documentosPorDia.get(turno.data)!.length}
+                      </span>
                     )}
                   </div>
 
@@ -575,6 +827,18 @@ const FolhaPonto: React.FC = () => {
                       })}
                     </div>
 
+                    {/* Botão Salvar Todos */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => salvarEdicaoLote(turno)}
+                        disabled={saving || !editMotivo.trim()}
+                        className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                      >
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar Todos os Horários
+                      </button>
+                    </div>
+
                     {/* Adicionar registro extra (para casos onde entry não existe) */}
                     {slotsFaltantes.length > 0 && slotsFaltantes.includes('entry') && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
@@ -584,6 +848,105 @@ const FolhaPonto: React.FC = () => {
                         </div>
                       </div>
                     )}
+
+                    {/* ── Seção de Ocorrências ── */}
+                    <div className="border-t border-gray-100 pt-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-600 uppercase flex items-center gap-1"><AlertCircle size={12} /> Ocorrências do Dia</span>
+                        <button onClick={() => { setShowOcForm(!showOcForm); setOcDescricao(''); setOcTipo('falta_justificada'); setOcDiaCompleto(true); }} className="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1"><Plus size={12} /> Registrar</button>
+                      </div>
+                      {/* Ocorrências existentes */}
+                      {(ocorrenciasPorDia.get(turno.data) || []).map(oc => (
+                        <div key={oc.id} className={`mb-2 p-2 rounded-lg border text-xs ${OCCURRENCE_COLORS[oc.tipo]}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold">{OCCURRENCE_LABELS[oc.tipo]}</span>
+                            {oc.horaInicio && oc.horaFim && <span>{oc.horaInicio} - {oc.horaFim}</span>}
+                            {oc.diaCompleto && <span>Dia completo</span>}
+                          </div>
+                          {oc.descricao && <p className="mt-1 text-gray-600">{oc.descricao}</p>}
+                          {oc.minutosAbonados && <p className="mt-0.5 text-gray-500">{minutesToHHMM(oc.minutosAbonados)} abonadas</p>}
+                        </div>
+                      ))}
+                      {/* Formulário de nova ocorrência */}
+                      {showOcForm && turnoEmEdicao === turno.data && (
+                        <div className="bg-white rounded-lg border border-gray-200 p-3 space-y-3 mt-2">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-gray-600 mb-1">Tipo</label>
+                              <select value={ocTipo} onChange={e => setOcTipo(e.target.value as OccurrenceType)} className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900">
+                                {(Object.entries(OCCURRENCE_LABELS) as [OccurrenceType, string][]).map(([k, v]) => (
+                                  <option key={k} value={k}>{v}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {ocTipo === 'atestado' && (
+                              <div className="flex items-center gap-2">
+                                <label className="flex items-center gap-1 text-xs">
+                                  <input type="checkbox" checked={ocDiaCompleto} onChange={e => setOcDiaCompleto(e.target.checked)} className="rounded" /> Dia completo
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                          {ocTipo === 'atestado' && !ocDiaCompleto && (
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-bold text-gray-600 mb-1">Hora Início</label>
+                                <input type="time" value={ocHoraInicio} onChange={e => setOcHoraInicio(e.target.value)} className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-gray-600 mb-1">Hora Fim</label>
+                                <input type="time" value={ocHoraFim} onChange={e => setOcHoraFim(e.target.value)} className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Descrição</label>
+                            <input type="text" value={ocDescricao} onChange={e => setOcDescricao(e.target.value)} placeholder="Descrição da ocorrência..." className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => salvarOcorrencia(turno.data)} disabled={savingOc} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1">
+                              {savingOc ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Ocorrência
+                            </button>
+                            <button onClick={() => setShowOcForm(false)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-300">Cancelar</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Seção de Documentos ── */}
+                    <div className="border-t border-gray-100 pt-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-600 uppercase flex items-center gap-1"><FileText size={12} /> Documentos Anexados</span>
+                        <label className={`text-xs text-brand-600 font-bold hover:underline flex items-center gap-1 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                          {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadDocumento(turno.data, f); }}
+                          />
+                        </label>
+                      </div>
+                      {(documentosPorDia.get(turno.data) || []).length === 0 ? (
+                        <p className="text-xs text-gray-400 italic">Nenhum documento anexado a este dia.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {(documentosPorDia.get(turno.data) || []).map(doc_ => (
+                            <div key={doc_.id} className="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-3 py-2">
+                              <div className="flex items-center gap-2 text-xs">
+                                <Paperclip size={12} className="text-gray-400" />
+                                <span className="font-medium text-gray-700 truncate max-w-[200px]">{doc_.nome}</span>
+                                <span className="text-gray-400">({(doc_.tamanhoBytes / 1024).toFixed(0)} KB)</span>
+                              </div>
+                              <a href={doc_.url} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1">
+                                <ExternalLink size={12} /> Ver
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     {/* ── Accordion de Histórico ── */}
                     {historico.length > 0 && (
@@ -683,6 +1046,108 @@ const FolhaPonto: React.FC = () => {
               </div>
               <div className="text-xs text-gray-500 font-bold">Inconsistentes</div>
             </div>
+          </div>
+        </div>
+      )}
+
+      </>)}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── TAB: LOGS DE PONTO ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'logs' && (
+        <div className="space-y-4">
+          {/* Filtros de logs */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <Activity size={18} className="text-brand-600" />
+              <h3 className="font-bold text-gray-900">Logs de Ponto</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Colaborador</label>
+                {isGestor ? (
+                  <select value={colaboradorId} onChange={e => setColaboradorId(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900 text-sm">
+                    <option value="">Selecionar...</option>
+                    {users.map(u => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+                  </select>
+                ) : (
+                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">{userProfile?.displayName || 'Eu'}</div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Início</label>
+                <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Data Fim</label>
+                <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="w-full rounded-lg border-gray-300 bg-white text-gray-900 text-sm" />
+              </div>
+              <div className="flex items-end">
+                <button onClick={buscarLogs} disabled={loadingLogs || (!colaboradorId && isGestor)} className="w-full px-4 py-2 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {loadingLogs ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                  Buscar Logs
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Lista de logs */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {loadingLogs ? (
+              <div className="flex justify-center py-16"><Loader2 className="animate-spin text-brand-600" size={32} /></div>
+            ) : pontoLogs.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {pontoLogs.map((log: any) => {
+                  const isOpen = logExpandido === log.id;
+                  const hasMetadata = log.metadata && Object.keys(log.metadata).length > 0;
+                  const levelColors: Record<string, string> = {
+                    info: 'bg-blue-50 text-blue-600 border-blue-200',
+                    success: 'bg-green-50 text-green-600 border-green-200',
+                    warning: 'bg-yellow-50 text-yellow-600 border-yellow-200',
+                    error: 'bg-red-50 text-red-600 border-red-200',
+                  };
+                  const lc = levelColors[log.level] || levelColors.info;
+                  return (
+                    <div key={log.id} className="hover:bg-gray-50/70 transition-colors">
+                      <div className={`px-4 py-3 flex items-start gap-3 ${hasMetadata ? 'cursor-pointer' : ''}`} onClick={() => hasMetadata && setLogExpandido(isOpen ? null : log.id)}>
+                        <div className={`mt-0.5 flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${lc}`}>
+                          {log.level || 'info'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900 leading-snug">{log.message}</p>
+                          <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 mt-1 inline-block">{log.action}</span>
+                        </div>
+                        <div className="flex-shrink-0 text-right">
+                          <div className="text-xs text-gray-400 font-mono">
+                            {log.timestamp?.toDate?.()?.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) ?? '—'}
+                          </div>
+                          {hasMetadata && <span className="text-[10px] text-brand-500 flex items-center gap-0.5 justify-end mt-1">{isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />} detalhes</span>}
+                        </div>
+                      </div>
+                      {isOpen && hasMetadata && (
+                        <div className="px-4 pb-3 ml-10">
+                          <pre className="text-[11px] bg-gray-900 text-green-400 rounded-lg p-3 overflow-x-auto font-mono leading-relaxed">
+                            {JSON.stringify(log.metadata, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-16 text-gray-400">
+                <Activity className="mx-auto w-12 h-12 mb-3 opacity-30" />
+                <p className="font-medium">Nenhum log de ponto encontrado.</p>
+                <p className="text-xs mt-1">Selecione um colaborador e período, depois clique "Buscar Logs".</p>
+              </div>
+            )}
+            {!loadingLogs && pontoLogs.length > 0 && (
+              <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
+                Exibindo <strong>{pontoLogs.length}</strong> registros de ações de ponto
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -10,9 +10,10 @@ import { Analytics } from '../utils/mgr-analytics';
 import {
   Building, Plus, Trash2, Search, Phone, MapPin, User,
   Loader2, Save, X, Pencil, ChevronDown, ChevronUp,
-  Globe, Mail, Tag, Users, Thermometer, Map as MapIcon
+  Globe, Mail, Tag, Users, Thermometer, Map as MapIcon, Briefcase,
 } from 'lucide-react';
 import ClientAssets from './ClientAssets';
+import ClientProjectHistory from './ClientProjectHistory';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -512,7 +513,12 @@ const Clients: React.FC = () => {
   const [modal, setModal] = useState<{ open: boolean; client: Client | null }>({ open: false, client: null });
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos'>>({});
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'todos'>('todos');
+
+  const getTab = (id: string) => expandedTab[id] || 'ativos';
+  const setTab = (id: string, tab: 'ativos' | 'projetos') =>
+    setExpandedTab(prev => ({ ...prev, [id]: tab }));
 
   useEffect(() => {
     const q = query(collection(db, CollectionName.CLIENTS), orderBy('name', 'asc'));
@@ -645,17 +651,39 @@ const Clients: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Expand toggle (ativos) */}
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : client.id)}
-                  className="w-full px-5 py-2.5 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-500 hover:bg-gray-50 transition-colors">
-                  <span className="flex items-center gap-1.5"><Thermometer className="w-3.5 h-3.5 text-brand-500" /> Ativos e Equipamentos</span>
-                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
+                {/* Expand tabs */}
+                <div className="border-t border-gray-100 flex">
+                  {([
+                    { key: 'ativos',   label: '🌡 Ativos',   icon: Thermometer },
+                    { key: 'projetos', label: '📂 Projetos', icon: Briefcase },
+                  ] as const).map(tab => (
+                    <button key={tab.key}
+                      onClick={() => {
+                        if (expandedId === client.id && getTab(client.id) === tab.key) {
+                          setExpandedId(null);
+                        } else {
+                          setExpandedId(client.id);
+                          setTab(client.id, tab.key);
+                        }
+                      }}
+                      className={`flex-1 px-4 py-2.5 flex items-center justify-center gap-1.5 text-xs font-bold transition-colors ${
+                        expandedId === client.id && getTab(client.id) === tab.key
+                          ? 'bg-brand-50 text-brand-700 border-b-2 border-brand-500'
+                          : 'text-gray-500 hover:bg-gray-50'
+                      }`}>
+                      {tab.label}
+                      {(expandedId === client.id && getTab(client.id) === tab.key)
+                        ? <ChevronUp className="w-3.5 h-3.5" />
+                        : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+                </div>
 
-                {isExpanded && (
+                {expandedId === client.id && (
                   <div className="border-t border-gray-100 p-5 bg-gray-50/50">
-                    <ClientAssets clientId={client.id} clientName={client.name} />
+                    {getTab(client.id) === 'ativos'
+                      ? <ClientAssets clientId={client.id} clientName={client.name} />
+                      : <ClientProjectHistory clientId={client.id} clientName={client.name} />}
                   </div>
                 )}
               </div>
