@@ -476,7 +476,69 @@ const EspelhoMensal: React.FC = () => {
   };
 
   // ── Imprimir ──────────────────────────────────────────────────────────────
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    const printArea = document.getElementById('espelho-print-area');
+    if (!printArea) { window.print(); return; }
+
+    // Coletar todos os estilos (Tailwind + custom) da página atual
+    const styleSheets = Array.from(document.styleSheets);
+    let cssText = '';
+    styleSheets.forEach(sheet => {
+      try {
+        Array.from(sheet.cssRules || []).forEach(rule => {
+          cssText += rule.cssText + '\n';
+        });
+      } catch (_) { /* stylesheet cross-origin, ignora */ }
+    });
+
+    // Coletar também <link> tags de stylesheet externas
+    const linkTags = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
+    const popup = window.open('', '_blank', 'width=1024,height=800,scrollbars=yes');
+    if (!popup) { window.print(); return; }
+
+    popup.document.write(`
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Espelho de Ponto</title>
+          ${linkTags}
+          <style>${cssText}</style>
+          <style>
+            /* Reset de print para o popup */
+            body { margin: 16px; background: white; font-family: sans-serif; }
+            /* Ocultar botões de ação que foram copiados */
+            .print-hidden,
+            button { display: none !important; }
+            /* Garantir que thead repita em quebra de página */
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+            tr { break-inside: avoid; }
+            /* Remover backgrounds que o browser pode suprimir */
+            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          </style>
+        </head>
+        <body>
+          ${printArea.innerHTML}
+        </body>
+      </html>
+    `);
+    popup.document.close();
+
+    // Aguarda o carregamento dos estilos antes de imprimir
+    popup.onload = () => {
+      popup.focus();
+      popup.print();
+    };
+    // Fallback: se onload não disparar (já carregado), usa timeout
+    setTimeout(() => {
+      try { popup.focus(); popup.print(); } catch (_) {}
+    }, 800);
+  };
 
   // ── Nome do mês formatado ─────────────────────────────────────────────────
   const mesFormatado = useMemo(() => {
@@ -793,24 +855,7 @@ const EspelhoMensal: React.FC = () => {
         </div>
       )}
 
-      {/* ── Print CSS ── */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          #espelho-print-area,
-          #espelho-print-area * { visibility: visible !important; }
-          #espelho-print-area {
-            position: fixed !important;
-            inset: 0 !important;
-            width: 100% !important;
-            z-index: 9999 !important;
-            background: white !important;
-            padding: 16px !important;
-            overflow: visible !important;
-          }
-          .print-hidden { display: none !important; }
-        }
-      `}</style>
+      {/* Print CSS não é mais necessário — usamos popup window no handlePrint */}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* MODAL DE EDIÇÃO DO DIA                                               */}

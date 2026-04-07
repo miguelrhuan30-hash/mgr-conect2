@@ -4,7 +4,6 @@ import {
   updateDoc,
   doc,
   Timestamp,
-  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CollectionName } from '../types';
@@ -31,10 +30,42 @@ export function getDayBounds(dateOrStr: Date | string): { inicio: Date; fim: Dat
   };
 }
 
+/**
+ * Wrapper de retry com backoff exponencial para contornar o bug
+ * "FIRESTORE INTERNAL ASSERTION FAILED: Unexpected state" do SDK v10
+ * que ocorre em escritas sequenciais rápidas.
+ *
+ * Causa raiz: serverTimestamp() em múltiplas escritas seguidas coloca o SDK
+ * em estado interno inválido. A solução é:
+ *  1. Usar Timestamp.now() em vez de serverTimestamp()
+ *  2. Tentar novamente com backoff se o erro persistir
+ */
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 250): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const isAssertionError =
+        typeof err?.message === 'string' && (
+          err.message.includes('INTERNAL ASSERTION FAILED') ||
+          err.message.includes('Unexpected state')
+        );
+
+      if (isAssertionError && attempt < retries) {
+        // Backoff exponencial: 250ms → 500ms → 1000ms
+        await new Promise(resolve => setTimeout(resolve, delayMs * Math.pow(2, attempt)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  // Nunca chega aqui, mas satisfaz o tipo
+  throw new Error('Falha após múltiplas tentativas no Firestore.');
+}
+
 // ─── Adicionar registro faltante ──────────────────────────────────────────────
 /**
  * Adiciona um TIME_ENTRY manual para um dia passado.
- * Lança erro se já existir um registro do mesmo tipo no mesmo dia (evita duplicata).
  */
 export const adicionarRegistro = async (
   userId: string,
@@ -44,22 +75,25 @@ export const adicionarRegistro = async (
   adminNome: string,
   motivo: string,
 ): Promise<void> => {
-  await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
-    userId,
-    type: tipo,
-    timestamp: Timestamp.fromDate(timestampManual),
-    locationId: 'manual_admin',
-    locationName: 'Correção manual pelo gestor',
-    isManual: true,
-    editedBy: adminId,
-    editedByNome: adminNome,
-    editReason: motivo,
-    editTimestamp: serverTimestamp(),
-    biometricVerified: false,
-    processingStatus: 'skipped_manual',
-    photoURL: null,
-    aiValidation: null,
-  });
+  await withRetry(() =>
+    addDoc(collection(db, CollectionName.TIME_ENTRIES), {
+      userId,
+      type: tipo,
+      timestamp: Timestamp.fromDate(timestampManual),
+      locationId: 'manual_admin',
+      locationName: 'Correção manual pelo gestor',
+      isManual: true,
+      editedBy: adminId,
+      editedByNome: adminNome,
+      editReason: motivo,
+      // Timestamp.now() usada para evitar conflito de estado do SDK (bug Firestore v10)
+      editTimestamp: Timestamp.now(),
+      biometricVerified: false,
+      processingStatus: 'skipped_manual',
+      photoURL: null,
+      aiValidation: null,
+    })
+  );
 };
 
 // ─── Editar horário de registro existente ─────────────────────────────────────
@@ -74,14 +108,17 @@ export const editarHorarioRegistro = async (
   adminNome: string,
   motivo: string,
 ): Promise<void> => {
-  await updateDoc(doc(db, CollectionName.TIME_ENTRIES, docId), {
-    timestamp: Timestamp.fromDate(novoTimestamp),
-    isManual: true,
-    editedBy: adminId,
-    editedByNome: adminNome,
-    editReason: motivo,
-    editTimestamp: serverTimestamp(),
-  });
+  await withRetry(() =>
+    updateDoc(doc(db, CollectionName.TIME_ENTRIES, docId), {
+      timestamp: Timestamp.fromDate(novoTimestamp),
+      isManual: true,
+      editedBy: adminId,
+      editedByNome: adminNome,
+      editReason: motivo,
+      // Timestamp.now() usada para evitar conflito de estado do SDK (bug Firestore v10)
+      editTimestamp: Timestamp.now(),
+    })
+  );
 };
 
 // ─── Soft delete ──────────────────────────────────────────────────────────────
@@ -94,10 +131,12 @@ export const excluirRegistro = async (
   adminId: string,
   adminNome: string,
 ): Promise<void> => {
-  await updateDoc(doc(db, CollectionName.TIME_ENTRIES, docId), {
-    excluido: true,
-    excluidoPor: adminId,
-    excluidoPorNome: adminNome,
-    excluidoEm: serverTimestamp(),
-  });
+  await withRetry(() =>
+    updateDoc(doc(db, CollectionName.TIME_ENTRIES, docId), {
+      excluido: true,
+      excluidoPor: adminId,
+      excluidoPorNome: adminNome,
+      excluidoEm: Timestamp.now(),
+    })
+  );
 };
