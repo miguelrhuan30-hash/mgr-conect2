@@ -1010,7 +1010,62 @@ const _BASE_COLLECTIONS = {
   PROJECT_ACTIVITIES: 'project_activities',
   // Sprint Projetos v2 — Adendos (subcoleção simulada via coleção raiz)
   PROJECT_ADENDOS: 'project_adendos',
+  // Sprint RACI — Matriz de Responsabilidades do Flow de Atendimento
+  RACI_CONFIG: 'raci_config',
 } as const;
+
+// ── Matriz RACI — Flow de Atendimento ────────────────────────────────────────
+// Um documento por fase do Flow, salvo em raci_config/flow_phases
+export type RaciRole = 'responsible' | 'accountable' | 'consulted' | 'informed';
+
+/** Atividade de execução obrigatória antes de avançar para a próxima fase */
+export interface RaciAtividade {
+  id: string;           // uuid local
+  titulo: string;       // ex: "Enviar relatório de necessidades ao cliente"
+  descricao?: string;
+  obrigatoria: boolean; // se true, bloqueia avanço de fase sem conclusão
+  responsavelSetorId?: string;
+  responsavelSetorNome?: string;
+}
+
+/** Entrada completa de uma fase na Matriz RACI + Enterprise Architecture */
+export interface RaciFlowEntry {
+  // ── RACI básico (usado no FlowAtendimento) ─────────────────────────────
+  faseId: string;         // ex: 'cotacao'
+  faseLabel: string;      // ex: 'Cotação'
+  setorId: string;        // Sector responsável (R = Responsible)
+  setorNome: string;      // desnormalizado para leitura rápida
+  role: RaciRole;         // padrão: 'responsible'
+
+  // ── Enterprise Architecture (usado no IntelModule / BI) ────────────────
+  objetivo?: string;              // objetivo do processo nesta fase
+  entradas?: string[];            // inputs que chegam para iniciar a fase
+  saidas?: string[];              // outputs/entregáveis ao concluir a fase
+  slaHoras?: number;              // SLA esperado em horas
+  criteriosEntrada?: string[];    // condições para iniciar esta fase
+  criteriosSaida?: string[];      // condições para concluir e avançar
+  atividades?: RaciAtividade[];   // checklist de atividades de execução
+  ferramentas?: string[];         // sistemas/ferramentas utilizados
+  indicadores?: string[];         // KPIs da fase
+  riscosConhecidos?: string[];    // riscos mapeados
+
+  // ── Outros papéis RACI por setor ───────────────────────────────────────
+  accountable?: { setorId: string; setorNome: string };    // A
+  consulted?: { setorId: string; setorNome: string }[];    // C
+  informed?: { setorId: string; setorNome: string }[];     // I
+
+  // ── Metadados ──────────────────────────────────────────────────────────
+  atualizadoPor?: string;
+  atualizadoEm?: Timestamp;
+  versao?: number;        // controle de versão do processo
+}
+
+/** Documento único no Firestore: raci_config/flow_phases */
+export interface RaciFlowConfig {
+  fases: Record<string, RaciFlowEntry>; // chave = faseId
+  atualizadoEm?: Timestamp;
+  versao?: number;
+}
 
 // Tipo que preserva as chaves do enum original
 type CollectionNameType = { readonly [K in keyof typeof _BASE_COLLECTIONS]: string };

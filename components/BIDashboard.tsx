@@ -7,8 +7,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, orderBy, getDocs, updateDoc, doc, addDoc, serverTimestamp, Timestamp, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LABELS, CollectionName, OSKpiEntry } from '../types';
-import { BarChart3, Loader2, TrendingUp, Clock, CheckCircle2, AlertTriangle, Zap, RefreshCcw, Lightbulb, ChevronRight, Wrench, Tag } from 'lucide-react';
+import { Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LABELS, CollectionName, OSKpiEntry, RaciFlowEntry, RaciFlowConfig } from '../types';
+import { BarChart3, Loader2, TrendingUp, Clock, CheckCircle2, AlertTriangle, Zap, RefreshCcw, Lightbulb, ChevronRight, Wrench, Tag, Users, Shield, ChevronDown } from 'lucide-react';
 import { format, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -322,6 +322,181 @@ const OSKpiSection: React.FC = () => {
     );
 };
 
+// ── Sprint RACI — Matriz de Responsabilidades do Flow de Atendimento ─────────
+const RACI_ROLE_COLORS: Record<string, string> = {
+  responsible: 'bg-brand-100 text-brand-700 border-brand-200',
+  accountable:  'bg-amber-100 text-amber-700 border-amber-200',
+  consulted:    'bg-purple-100 text-purple-700 border-purple-200',
+  informed:     'bg-gray-100 text-gray-600 border-gray-200',
+};
+const RACI_ROLE_LABELS: Record<string, string> = {
+  responsible: 'R — Responsável',
+  accountable: 'A — Aprovador',
+  consulted:   'C — Consultado',
+  informed:    'I — Informado',
+};
+
+const RaciMatrizWidget: React.FC = () => {
+  const [config, setConfig] = useState<Record<string, RaciFlowEntry>>({});
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, CollectionName.RACI_CONFIG, 'flow_phases'), snap => {
+      if (snap.exists()) setConfig((snap.data() as RaciFlowConfig).fases || {});
+      setLoading(false);
+    }, () => setLoading(false));
+    return () => unsub();
+  }, []);
+
+  const fases = Object.values(config).sort((a, b) => {
+    const ORDER = ['leads','prancheta','cotacao','proposta','contrato','gantt','os','execucao','relatorio','faturamento','historico','nao_aprovados'];
+    return ORDER.indexOf(a.faseId) - ORDER.indexOf(b.faseId);
+  });
+
+  return (
+    <div className="lg:col-span-2">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2 text-brand-600">
+            <Shield className="w-5 h-5" />
+            <h2 className="font-bold text-gray-900">Matriz RACI — Flow de Atendimento</h2>
+          </div>
+          <a href="#/app/flow-atendimento"
+            className="text-xs font-bold text-brand-600 hover:underline flex items-center gap-1">
+            Configurar no Flow <ChevronRight className="w-3.5 h-3.5" />
+          </a>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="animate-spin text-brand-600 w-6 h-6" /></div>
+        ) : fases.length === 0 ? (
+          <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+            <p className="text-sm font-bold text-gray-400">Nenhuma fase configurada</p>
+            <p className="text-xs text-gray-300 mt-1">Acesse o Flow de Atendimento e defina o setor responsável de cada fase.</p>
+            <a href="#/app/flow-atendimento"
+              className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:underline">
+              Ir para o Flow de Atendimento <ChevronRight className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* Header */}
+            <div className="grid grid-cols-12 gap-2 px-3 py-1.5 text-[9px] font-extrabold text-gray-400 uppercase tracking-wide">
+              <div className="col-span-1">#</div>
+              <div className="col-span-3">Fase</div>
+              <div className="col-span-3">Setor Responsável (R)</div>
+              <div className="col-span-2">SLA</div>
+              <div className="col-span-2">Atividades</div>
+              <div className="col-span-1"></div>
+            </div>
+
+            {fases.map((entry, idx) => {
+              const isExp = expanded === entry.faseId;
+              const actCount = entry.atividades?.length || 0;
+              const hasDetails = !!entry.objetivo || actCount > 0 || (entry.criteriosSaida && entry.criteriosSaida.length > 0);
+
+              return (
+                <div key={entry.faseId} className={`rounded-xl border transition-all ${isExp ? 'border-brand-200 bg-brand-50/30' : 'border-gray-100 bg-gray-50/50 hover:border-gray-200'}`}>
+                  <div className="grid grid-cols-12 gap-2 items-center px-3 py-3">
+                    <div className="col-span-1">
+                      <span className="text-[9px] font-extrabold text-gray-400">{idx + 1}</span>
+                    </div>
+                    <div className="col-span-3">
+                      <p className="text-xs font-bold text-gray-900">{entry.faseLabel}</p>
+                    </div>
+                    <div className="col-span-3">
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${RACI_ROLE_COLORS[entry.role] || RACI_ROLE_COLORS.responsible} flex items-center gap-1 w-fit`}>
+                        <Users className="w-2.5 h-2.5 flex-shrink-0" />
+                        <span className="truncate max-w-[100px]">{entry.setorNome}</span>
+                      </span>
+                    </div>
+                    <div className="col-span-2">
+                      {entry.slaHoras ? (
+                        <span className="text-[9px] font-bold text-gray-600 flex items-center gap-0.5">
+                          <Clock className="w-2.5 h-2.5 text-amber-500" />{entry.slaHoras}h
+                        </span>
+                      ) : <span className="text-[9px] text-gray-300">—</span>}
+                    </div>
+                    <div className="col-span-2">
+                      {actCount > 0 ? (
+                        <span className="text-[9px] font-bold text-gray-600">{actCount} atividade{actCount !== 1 ? 's' : ''}</span>
+                      ) : (
+                        <span className="text-[9px] text-gray-300">—</span>
+                      )}
+                    </div>
+                    <div className="col-span-1 flex justify-end">
+                      {hasDetails && (
+                        <button onClick={() => setExpanded(isExp ? null : entry.faseId)}
+                          className="p-1 rounded-lg hover:bg-gray-200 text-gray-400 transition-colors">
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExp ? 'rotate-180' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Detalhes expandidos (Enterprise Architecture) */}
+                  {isExp && (
+                    <div className="px-4 pb-4 space-y-3 border-t border-brand-100 pt-3">
+                      {entry.objetivo && (
+                        <div>
+                          <p className="text-[9px] font-extrabold text-gray-400 uppercase tracking-wide mb-1">Objetivo</p>
+                          <p className="text-xs text-gray-700">{entry.objetivo}</p>
+                        </div>
+                      )}
+                      {entry.criteriosSaida && entry.criteriosSaida.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-extrabold text-gray-400 uppercase tracking-wide mb-1">Critérios de Saída</p>
+                          <ul className="space-y-0.5">
+                            {entry.criteriosSaida.map((c, i) => (
+                              <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 flex-shrink-0 mt-0.5" />{c}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {entry.atividades && entry.atividades.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-extrabold text-gray-400 uppercase tracking-wide mb-1">Atividades de Execução</p>
+                          <div className="space-y-1">
+                            {entry.atividades.map(at => (
+                              <div key={at.id} className="flex items-start gap-1.5 text-xs text-gray-700">
+                                <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full mt-1.5 ${at.obrigatoria ? 'bg-red-400' : 'bg-gray-300'}`} />
+                                {at.titulo}
+                                {at.obrigatoria && <span className="text-[8px] font-bold text-red-500 ml-auto flex-shrink-0">obrigatória</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {entry.indicadores && entry.indicadores.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-extrabold text-gray-400 uppercase tracking-wide mb-1">KPIs</p>
+                          <div className="flex flex-wrap gap-1">
+                            {entry.indicadores.map((ind, i) => (
+                              <span key={i} className="text-[8px] font-bold px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full">{ind}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <p className="text-[9px] text-gray-400 text-center pt-2">
+              🏛️ Configure características completas de cada processo no módulo <strong>Inteligência MGR → Enterprise Architect</strong>
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Main BIDashboard ──────────────────────────────────────────────────────────
 const BIDashboard: React.FC = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -347,6 +522,7 @@ const BIDashboard: React.FC = () => {
                 <div className="flex justify-center py-20"><Loader2 className="animate-spin text-brand-600 w-10 h-10" /></div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <RaciMatrizWidget />
                     <SLAWidget tasks={tasks} />
                     <EfficiencyWidget tasks={tasks} />
                     <VolumeWidget tasks={tasks} />
