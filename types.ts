@@ -918,75 +918,109 @@ export interface OSKpiEntry {
 }
 
 // --- COLLECTIONS ---
-export enum CollectionName {
-  TASKS = 'tasks',
-  USERS = 'users',
-  SECTORS = 'sectors',
-  TIME_ENTRIES = 'time_entries',
-  PROJECTS = 'projects',
-  WORK_LOCATIONS = 'work_locations',
-  CLIENTS = 'clients',
-  TASK_TEMPLATES = 'task_templates',
-  SYSTEM_SETTINGS = 'system_settings',
-  CONTACT_MESSAGES = 'contact_messages',
-  SYSTEM_LOGS = 'system_logs',
-  TIME_BANK = 'time_bank',
-  NOTAS_INTEL = 'notas_intel',
-  INTEL_CONFIG = 'intel_config',
-  EISENHOWER = 'hub_eisenhower',
-  ISHIKAWA = 'hub_ishikawa',
-  CANVAS = 'hub_canvas',
-  ROADMAP = 'hub_roadmap',
-  PROCESSOS = 'hub_processos',
-  MANUAL_STEPS = 'hub_manual_steps',
-  REQUIREMENTS = 'hub_requirements',
-  // Sprint 30-34
-  ASSETS = 'client_assets',
-  RECEIVABLES = 'receivables',
-  // Sprint Veículos
-  VEHICLE_CHECKS = 'vehicle_checks',
-  // Sprint Analytics
-  MGR_EVENTS = 'mgr_events',
-  // Sprint 38-45 — Módulo O.S. Completo
-  OS_TASK_PHOTO_CONFIG = 'os_task_photo_config',
-  SERVICE_TYPES = 'service_types',
-  TOOLS_CATALOG = 'tools_catalog',
-  TASK_KPIS = 'task_kpis',
-  ORDENS_SERVICO = 'tasks',     // alias (O.S. usa a mesma coleção 'tasks')
-  // Sprint 46A — Suporte Primário
-  OS_SUPORTE_MSGS = 'os_suporte_msgs',
-  // Sprint 46 — Fotos anotadas
-  OS_FOTO_SLOTS = 'os_foto_slots',
-  // Sprint 47 — Projetos & Orçamentos
-  OS_PROJECTS = 'os_projects',
-  PROJECT_DOCS = 'project_documents',
-  OS_ORCAMENTOS = 'os_orcamentos',
-  // Sprint 48 — RH: Documentos & Ocorrências
-  EMPLOYEE_DOCS = 'employee_docs',
-  EMPLOYEE_OCCURRENCES = 'employee_occurrences',
-  // Sprint 49 — Módulo Meu Almoço
-  LUNCH_MENUS = 'lunch_menus',
-  LUNCH_CHOICES = 'lunch_choices',
-  LUNCH_LOCATIONS = 'lunch_locations',
-  LUNCH_CONFIG = 'lunch_config',
-  // Sprint 50 — Módulo People Analytics
-  SURVEYS = 'surveys',
-  SURVEY_RESPONSES = 'survey_responses',
-  SURVEY_PARTICIPATION = 'survey_participation',
-  SURVEY_TEMPLATES = 'survey_templates',
-  // Sprint 51 — Apresentações Interativas
-  PRESENTATIONS = 'presentations',
-  PRESENTATION_VIEWS = 'presentationViews', // ORC-08
-  // Sprint Projetos v2 — Ciclo de Vida Completo
-  PROJECTS_V2 = 'projects_v2',
-  PROJECT_LEADS = 'project_leads',
-  PROJECT_COTACOES = 'project_cotacoes',
-  PROJECT_CONTRATOS = 'project_contratos',
-  PROJECT_FATURAMENTOS = 'project_faturamentos',
-  // Sprint Gantt Completo — WBS, Baselines, Adversidades
-  GANTT_TASKS = 'gantt_tasks',
-  GANTT_BASELINES = 'gantt_baselines',
+// ═══════════════════════════════════════════════════
+// SISTEMA DINÂMICO DE COLEÇÕES — Staging / Produção
+// ═══════════════════════════════════════════════════
+// Em produção (VITE_APP_ENV=production ou vazio): nomes normais (ex: "users")
+// Em staging  (VITE_APP_ENV=staging): prefixo automático (ex: "dev_users")
+// NENHUM componente precisa ser alterado — o prefixo é injetado aqui!
+
+const _ENV_PREFIX = (import.meta.env.VITE_APP_ENV === 'staging') ? 'dev_' : '';
+
+function _col(name: string): string {
+  return `${_ENV_PREFIX}${name}`;
 }
+
+// Nomes-base das coleções (sem prefixo)
+const _BASE_COLLECTIONS = {
+  TASKS: 'tasks',
+  USERS: 'users',
+  SECTORS: 'sectors',
+  TIME_ENTRIES: 'time_entries',
+  PROJECTS: 'projects',
+  WORK_LOCATIONS: 'work_locations',
+  CLIENTS: 'clients',
+  TASK_TEMPLATES: 'task_templates',
+  SYSTEM_SETTINGS: 'system_settings',
+  CONTACT_MESSAGES: 'contact_messages',
+  SYSTEM_LOGS: 'system_logs',
+  TIME_BANK: 'time_bank',
+  NOTAS_INTEL: 'notas_intel',
+  INTEL_CONFIG: 'intel_config',
+  EISENHOWER: 'hub_eisenhower',
+  ISHIKAWA: 'hub_ishikawa',
+  CANVAS: 'hub_canvas',
+  ROADMAP: 'hub_roadmap',
+  PROCESSOS: 'hub_processos',
+  MANUAL_STEPS: 'hub_manual_steps',
+  REQUIREMENTS: 'hub_requirements',
+  // Sprint 30-34
+  ASSETS: 'client_assets',
+  RECEIVABLES: 'receivables',
+  // Sprint Veículos
+  VEHICLE_CHECKS: 'vehicle_checks',
+  // Sprint Analytics
+  MGR_EVENTS: 'mgr_events',
+  // Sprint 38-45 — Módulo O.S. Completo
+  OS_TASK_PHOTO_CONFIG: 'os_task_photo_config',
+  SERVICE_TYPES: 'service_types',
+  TOOLS_CATALOG: 'tools_catalog',
+  TASK_KPIS: 'task_kpis',
+  ORDENS_SERVICO: 'tasks',     // alias (O.S. usa a mesma coleção 'tasks')
+  // Sprint 46A — Suporte Primário
+  OS_SUPORTE_MSGS: 'os_suporte_msgs',
+  // Sprint 46 — Fotos anotadas
+  OS_FOTO_SLOTS: 'os_foto_slots',
+  // Sprint 47 — Projetos & Orçamentos
+  OS_PROJECTS: 'os_projects',
+  PROJECT_DOCS: 'project_documents',
+  OS_ORCAMENTOS: 'os_orcamentos',
+  // Sprint 48 — RH: Documentos & Ocorrências
+  EMPLOYEE_DOCS: 'employee_docs',
+  EMPLOYEE_OCCURRENCES: 'employee_occurrences',
+  // Sprint 49 — Módulo Meu Almoço
+  LUNCH_MENUS: 'lunch_menus',
+  LUNCH_CHOICES: 'lunch_choices',
+  LUNCH_LOCATIONS: 'lunch_locations',
+  LUNCH_CONFIG: 'lunch_config',
+  // Sprint 50 — Módulo People Analytics
+  SURVEYS: 'surveys',
+  SURVEY_RESPONSES: 'survey_responses',
+  SURVEY_PARTICIPATION: 'survey_participation',
+  SURVEY_TEMPLATES: 'survey_templates',
+  // Sprint 51 — Apresentações Interativas
+  PRESENTATIONS: 'presentations',
+  PRESENTATION_VIEWS: 'presentationViews', // ORC-08
+  // Sprint Projetos v2 — Ciclo de Vida Completo
+  PROJECTS_V2: 'projects_v2',
+  PROJECT_LEADS: 'project_leads',
+  PROJECT_COTACOES: 'project_cotacoes',
+  PROJECT_CONTRATOS: 'project_contratos',
+  PROJECT_FATURAMENTOS: 'project_faturamentos',
+  // Sprint Gantt Completo — WBS, Baselines, Adversidades
+  GANTT_TASKS: 'gantt_tasks',
+  GANTT_BASELINES: 'gantt_baselines',
+  // Sprint Propostas PDF
+  PROPOSTAS_PDF: 'propostas_pdf',
+  // Sprint OpsBI — Hub Melhorias
+  HUB_IMPROVEMENTS: 'hub_improvements',
+  // Sprint Veículos — Config
+  VEHICLE_CHECK_CONFIG: 'vehicle_check_config',
+  // Sprint Projetos v2 — Atividades
+  PROJECT_ACTIVITIES: 'project_activities',
+  // Sprint Projetos v2 — Adendos (subcoleção simulada via coleção raiz)
+  PROJECT_ADENDOS: 'project_adendos',
+} as const;
+
+// Tipo que preserva as chaves do enum original
+type CollectionNameType = { readonly [K in keyof typeof _BASE_COLLECTIONS]: string };
+
+// Objeto final com prefixo aplicado dinamicamente
+const _prefixedCollections = Object.fromEntries(
+  Object.entries(_BASE_COLLECTIONS).map(([key, value]) => [key, _col(value)])
+) as CollectionNameType;
+
+export const CollectionName: CollectionNameType = Object.freeze(_prefixedCollections);
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
 export interface OSSuporteMsg {

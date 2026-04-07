@@ -48,6 +48,7 @@ import {
   MonitorPlay,
   UserPlus,
   Calendar,
+  ArrowRight,
 } from 'lucide-react';
 import AlertasCentral from './AlertasCentral';
 
@@ -143,6 +144,7 @@ const Layout: React.FC = () => {
       '/app/projetos-v2':         'Projetos V2',
       '/app/leads':               'Leads',
       '/app/nao-aprovados':       'Não Aprovados',
+      '/app/flow-atendimento':    'Flow de Atendimento',
     };
 
     const pageTitle = PAGE_TITLES[location.pathname] ?? location.pathname;
@@ -221,7 +223,7 @@ const Layout: React.FC = () => {
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
   const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
   const PEOPLE_ROUTES  = ['/app/usuarios', '/app/setores', '/app/locais', '/app/relatorios-ponto', '/app/espelho-mensal', '/app/pesquisas'];
-  const PROJECTS_V2_ROUTES = ['/app/projetos-v2', '/app/leads', '/app/nao-aprovados'];
+  const PROJECTS_V2_ROUTES = ['/app/projetos-v2', '/app/leads', '/app/nao-aprovados', '/app/flow-atendimento'];
 
   const isInOSGroup      = OS_ROUTES.some(r => location.pathname.startsWith(r));
   const isInClientGroup  = CLIENT_ROUTES.some(r => location.pathname.startsWith(r));
@@ -258,13 +260,14 @@ const Layout: React.FC = () => {
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
 
-    // ── Projetos V2 — Ciclo de Vida (grupo com submenu) ──
+    // ── Flow de Atendimento — Ciclo de Vida (grupo com submenu) ──
     {
-      to: '/app/projetos-v2',
+      to: '/app/flow-atendimento',
       icon: Briefcase,
-      label: 'Projetos',
+      label: 'Flow de Atendimento',
       visible: can('canManageProjects'),
       children: [
+        { to: '/app/flow-atendimento', icon: ArrowRight,   label: 'Flow de Atendimento️', visible: can('canManageProjects') },
         { to: '/app/projetos-v2',   icon: Briefcase,  label: 'Todos os Projetos', visible: can('canManageProjects') },
         { to: '/app/leads',         icon: UserPlus,   label: 'Leads',             visible: can('canManageProjects'), badge: leadsNovos > 0 ? leadsNovos : undefined },
         { to: '/app/nao-aprovados', icon: Target,     label: 'Não Aprovados',     visible: can('canManageProjects') },
@@ -476,7 +479,7 @@ const Layout: React.FC = () => {
                                  : item.label === 'Inteligência de Negócios' ? 'intel'
                                  : item.label === 'Almoço MGR'           ? 'lunch'
                                  : item.label === 'Gestão de Pessoas'  ? 'people'
-                                 : item.label === 'Projetos'           ? 'projectsV2'
+                                 : item.label === 'Flow de Atendimento' ? 'projectsV2'
                                  : item.label;
                 const isOpen = item.label === 'Ordens de Serviço'         ? osGroupOpen
                              : item.label === 'Gestão de Clientes'        ? clientGroupOpen
@@ -484,7 +487,7 @@ const Layout: React.FC = () => {
                              : item.label === 'Inteligência de Negócios'  ? intelGroupOpen
                              : item.label === 'Almoço MGR'                ? lunchGroupOpen
                              : item.label === 'Gestão de Pessoas'         ? peopleGroupOpen
-                             : item.label === 'Projetos'                  ? projectsV2GroupOpen
+                             : item.label === 'Flow de Atendimento'       ? projectsV2GroupOpen
                              : expandedGroup === isGroupKey;
                 const visibleChildren = item.children.filter(c => c.visible);
                 if (visibleChildren.length === 0) return null;
@@ -500,7 +503,7 @@ const Layout: React.FC = () => {
                     >
                       <item.icon size={20} className="mr-3 flex-shrink-0" />
                       <span className="flex-1 text-left">{item.label}</span>
-                      {item.label === 'Projetos' && leadsNovos > 0 && (
+                      {item.label === 'Flow de Atendimento' && leadsNovos > 0 && (
                         <span className="mr-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center px-1">
                           {leadsNovos}
                         </span>

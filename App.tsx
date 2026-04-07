@@ -107,6 +107,7 @@ const ProjectUpsell    = lazy(() => import('./components/ProjectUpsell'));
 const ProjetosLanding  = lazy(() => import('./components/ProjetosLanding'));
 const ProjetosLandingEditor = lazy(() => import('./components/ProjetosLandingEditor'));
 const GanttGerencial   = lazy(() => import('./components/GanttGerencial'));
+const FlowAtendimento  = lazy(() => import('./components/FlowAtendimento'));
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -435,6 +436,10 @@ const AppContent: React.FC = () => {
           {/* ════════════════════════════════════════
               Sprint Projetos v2 — Ciclo de Vida Completo
           ════════════════════════════════════════ */}
+          {/* Flow de Atendimento — módulo unificado com 12 fases */}
+          <Route path="flow-atendimento"
+            element={hasPermission('canManageProjects') ? <FlowAtendimento /> : <Navigate to="/app" />} />
+          {/* Rotas individuais mantidas (backward compatible) */}
           <Route path="projetos-v2"
             element={hasPermission('canManageProjects') ? <ProjectHub /> : <Navigate to="/app" />} />
           <Route path="projetos-v2/:projectId"

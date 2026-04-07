@@ -158,7 +158,7 @@ const EspelhoMensal: React.FC = () => {
         );
         const oSnap = await getDocs(oq);
         setOcorrencias(oSnap.docs.map(d => ({ id: d.id, ...d.data() } as EmployeeOccurrence)));
-      } catch { setOcorrencias([]); }
+      } catch (err) { console.error('Erro ao carregar ocorrências:', err); setOcorrencias([]); }
 
       setGerado(true);
     } catch (err) {

@@ -202,13 +202,13 @@ const FolhaPonto: React.FC = () => {
           where('userId', '==', uid),
           where('data', '>=', dataInicio),
           where('data', '<=', dataFim)
-        )).catch(() => ({ docs: [] as any[] })),
+        )).catch((err) => { console.error('Erro ao carregar ocorrências:', err); return { docs: [] as any[] }; }),
         getDocs(query(
           collection(db, CollectionName.EMPLOYEE_DOCS),
           where('userId', '==', uid),
           where('dataReferencia', '>=', dataInicio),
           where('dataReferencia', '<=', dataFim)
-        )).catch(() => ({ docs: [] as any[] })),
+        )).catch((err) => { console.error('Erro ao carregar documentos:', err); return { docs: [] as any[] }; }),
       ]);
 
       const ocMap = new Map<string, EmployeeOccurrence[]>();
@@ -246,17 +246,34 @@ const FolhaPonto: React.FC = () => {
   }, [turnos, filtroStatus]);
 
   // ── Expandir turno para edição ──────────────────────────────────────────────
+  /** Gera um datetime-local pré-preenchido com a data do turno + hora default */
+  const defaultDateTime = (dateStr: string, time: string): string => {
+    return `${dateStr}T${time}`;
+  };
+
   const expandirTurno = (turno: Turno) => {
     if (turnoEmEdicao === turno.data) {
       setTurnoEmEdicao(null);
       return;
     }
     setTurnoEmEdicao(turno.data);
+
+    // Encontrar a jornada do colaborador para pré-preencher horários padrão
+    const uid = colaboradorId || currentUser?.uid;
+    const user = uid ? users.find(u => u.uid === uid) : null;
+    const schedule = user?.workSchedule;
+    const defaultStart = schedule?.startTime || '08:00';
+    const defaultEnd = schedule?.endTime || '17:00';
+    // Calcular horários padrão de almoço (meio da jornada)
+    const [sh, ] = defaultStart.split(':').map(Number);
+    const defaultLunchStart = `${String(sh + 4).padStart(2, '0')}:00`;
+    const defaultLunchEnd = `${String(sh + 5).padStart(2, '0')}:00`;
+
     setEditTimes({
-      entry: toLocalInput(turno.entry),
-      lunch_start: toLocalInput(turno.lunchStart),
-      lunch_end: toLocalInput(turno.lunchEnd),
-      exit: toLocalInput(turno.exit),
+      entry: toLocalInput(turno.entry) || defaultDateTime(turno.data, defaultStart),
+      lunch_start: toLocalInput(turno.lunchStart) || defaultDateTime(turno.data, defaultLunchStart),
+      lunch_end: toLocalInput(turno.lunchEnd) || defaultDateTime(turno.data, defaultLunchEnd),
+      exit: toLocalInput(turno.exit) || defaultDateTime(turno.data, defaultEnd),
     });
     setEditMotivo('');
     setAddSlotTipo(null);

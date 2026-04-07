@@ -36,7 +36,7 @@ export interface ProjectAtividade {
   criadoPorFoto?: string;
 }
 
-const COLLECTION = 'project_activities';
+const COLLECTION = CollectionName.PROJECT_ACTIVITIES;
 
 export const useProjectActivity = (projectId: string) => {
   const { currentUser, userProfile } = useAuth();

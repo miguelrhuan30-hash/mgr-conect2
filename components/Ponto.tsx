@@ -533,6 +533,10 @@ const Ponto: React.FC = () => {
     const rateCheck = checkPontoRateLimit(currentUser!.uid);
     if (!rateCheck.allowed) {
       setErrorMessage(`Aguarde ${rateCheck.remainingSeconds}s antes de registrar novamente.`);
+      logEvent(currentUser!.uid, userProfile?.displayName, 'ponto_blocked_rate_limit', 'warning',
+        `Tentativa bloqueada por rate limit: ${nextAction.type} — aguardar ${rateCheck.remainingSeconds}s`,
+        { extra: { actionType: nextAction.type, remainingSeconds: rateCheck.remainingSeconds } }
+      );
       return;
     }
 
@@ -541,6 +545,10 @@ const Ponto: React.FC = () => {
       const check = validateLunchMinTime();
       if (!check.valid) {
         setErrorMessage(`Almoço mínimo de 1h não cumprido. Retorne em ${check.remaining}.`);
+        logEvent(currentUser!.uid, userProfile?.displayName, 'ponto_blocked_lunch_min', 'warning',
+          `Tentativa de retorno de almoço bloqueada — tempo mínimo não cumprido. Faltam ${check.remaining}`,
+          { extra: { actionType: 'lunch_end', remaining: check.remaining } }
+        );
         return;
       }
     }

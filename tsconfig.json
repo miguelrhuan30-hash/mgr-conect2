@@ -20,6 +20,6 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "components", "contexts", "utils", "types.ts", "firebase.ts", "App.tsx", "main.tsx", "index.tsx"],
+  "include": ["src", "config", "components", "contexts", "hooks", "utils", "types.ts", "firebase.ts", "App.tsx", "main.tsx", "index.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
