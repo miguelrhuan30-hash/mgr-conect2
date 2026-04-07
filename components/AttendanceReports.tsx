@@ -44,7 +44,8 @@ const AttendanceReports: React.FC = () => {
   const [loadingMonitoring, setLoadingMonitoring] = useState(false);
   const [liveTime, setLiveTime] = useState(new Date());
   const [forceExitModalOpen, setForceExitModalOpen] = useState(false);
-  const [selectedShiftToClose, setSelectedShiftToClose] = useState<{user: UserProfile, entry: TimeEntry} | null>(null);
+  const [selectedShiftToClose, setSelectedShiftToClose] = useState<{user: UserProfile, entry: TimeEntry, lastType: string} | null>(null);
+  const [forceActionType, setForceActionType] = useState<'lunch_start' | 'lunch_end' | 'exit'>('exit');
   const [exitTime, setExitTime] = useState('');
   const [exitReason, setExitReason] = useState('');
   const [isSavingExit, setIsSavingExit] = useState(false);
@@ -306,19 +307,40 @@ const AttendanceReports: React.FC = () => {
       }
   };
 
+  // ── Labels e config por tipo de ação forçada ──
+  const FORCE_ACTION_CONFIG: Record<string, { label: string; buttonLabel: string; buttonColor: string; defaultReason: string }> = {
+    lunch_start: { label: 'Iniciar Almoço (Forçado)', buttonLabel: '☕ Forçar Início Almoço', buttonColor: 'bg-yellow-600 hover:bg-yellow-700', defaultReason: 'Esquecimento - Registro administrativo de almoço' },
+    lunch_end:   { label: 'Encerrar Almoço (Forçado)', buttonLabel: '🔄 Forçar Volta Almoço', buttonColor: 'bg-orange-600 hover:bg-orange-700', defaultReason: 'Esquecimento - Retorno de almoço administrativo' },
+    exit:        { label: 'Encerrar Turno (Forçado)', buttonLabel: '⛔ Forçar Saída', buttonColor: 'bg-red-600 hover:bg-red-700', defaultReason: 'Esquecimento - Fechamento administrativo' },
+  };
+
+  /** Determina próxima ação com base no último registro do colaborador */
+  const getNextForceAction = (shift: {user: UserProfile, entry: TimeEntry}): 'lunch_start' | 'lunch_end' | 'exit' => {
+    const userEntries = allMonitoringEntries
+      .filter(e => e.userId === shift.user.uid)
+      .sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
+    const lastEntry = userEntries[0];
+    if (!lastEntry) return 'exit';
+    switch (lastEntry.type) {
+      case 'entry': return 'lunch_start';
+      case 'lunch_start': return 'lunch_end';
+      case 'lunch_end': return 'exit';
+      default: return 'exit';
+    }
+  };
+
   const handleOpenForceExit = (shift: {user: UserProfile, entry: TimeEntry}) => {
-      setSelectedShiftToClose(shift);
-      // Default exit time: 9 hours after entry or current time if earlier
-      const entryDate = shift.entry.timestamp.toDate();
-      const defaultExit = new Date(entryDate.getTime() + 9 * 60 * 60 * 1000); // +9h
-      
-      // Format for datetime-local input (YYYY-MM-DDTHH:mm)
-      // Adjust for timezone offset for input value
-      const tzOffset = defaultExit.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(defaultExit.getTime() - tzOffset)).toISOString().slice(0, 16);
-      
-      setExitTime(localISOTime);
-      setExitReason('Esquecimento - Fechamento administrativo');
+      const nextAction = getNextForceAction(shift);
+      setForceActionType(nextAction);
+      setSelectedShiftToClose({ ...shift, lastType: nextAction });
+
+      // Horário default: hora atual
+      const now = new Date();
+      const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      setExitTime(defaultTime);
+
+      const cfg = FORCE_ACTION_CONFIG[nextAction] || FORCE_ACTION_CONFIG.exit;
+      setExitReason(cfg.defaultReason);
       setForceExitModalOpen(true);
   };
 
@@ -327,26 +349,36 @@ const AttendanceReports: React.FC = () => {
       setIsSavingExit(true);
 
       try {
-          const exitTimestamp = new Date(exitTime);
-          
+          // Montar timestamp a partir da data do turno + hora selecionada
+          const entryDate = selectedShiftToClose.entry.timestamp.toDate();
+          const dateStr = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}-${String(entryDate.getDate()).padStart(2, '0')}`;
+          const exitTimestamp = new Date(`${dateStr}T${exitTime}:00`);
+
           await addDoc(collection(db, CollectionName.TIME_ENTRIES), {
               userId: selectedShiftToClose.user.uid,
-              type: 'exit',
+              type: forceActionType,
               timestamp: Timestamp.fromDate(exitTimestamp),
               locationId: 'manual_adjustment',
               isManual: true,
               forcedClose: true,
               editedBy: currentUser?.uid,
+              editedByNome: userProfile?.displayName || currentUser?.email || '',
               editReason: exitReason,
-              userAgent: 'Manager Dashboard'
+              userAgent: 'Manager Dashboard',
+              // Campos obrigatórios para Security Rules
+              biometricVerified: false,
+              processingStatus: 'skipped_manual',
+              photoURL: null,
+              aiValidation: null,
           });
 
+          const cfg = FORCE_ACTION_CONFIG[forceActionType] || FORCE_ACTION_CONFIG.exit;
           setForceExitModalOpen(false);
           fetchOpenShifts(); // Refresh list
-          alert("Turno encerrado com sucesso.");
+          alert(`${cfg.label} — registrado com sucesso.`);
       } catch (error) {
-          console.error(error);
-          alert("Erro ao encerrar turno.");
+          console.error('Erro ao forçar ação:', error);
+          alert(`Erro ao executar ação forçada: ${(error as any)?.message || 'Erro desconhecido'}`);
       } finally {
           setIsSavingExit(false);
       }
@@ -1218,6 +1250,7 @@ const AttendanceReports: React.FC = () => {
   }
 
   return (
+    <>
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -1370,12 +1403,18 @@ const AttendanceReports: React.FC = () => {
                                       </div>
                                   </div>
 
-                                  <button
-                                      onClick={() => handleOpenForceExit(shift)}
-                                      className="w-full py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
-                                  >
-                                      <X size={14} /> Encerrar Turno (Forçar Saída)
-                                  </button>
+                                  {(() => {
+                                    const nextAction = getNextForceAction(shift);
+                                    const cfg = FORCE_ACTION_CONFIG[nextAction] || FORCE_ACTION_CONFIG.exit;
+                                    return (
+                                      <button
+                                          onClick={() => handleOpenForceExit(shift)}
+                                          className={`w-full py-2 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${cfg.buttonColor}`}
+                                      >
+                                        <X size={14} /> {cfg.buttonLabel}
+                                      </button>
+                                    );
+                                  })()}
 
                                   {/* Botão para inspecionar registros */}
                                   <button
@@ -1656,6 +1695,81 @@ const AttendanceReports: React.FC = () => {
       })()}
 
     </div>
+
+      {/* ── MODAL: Ação Forçada (Almoço / Saída) ── */}
+      {forceExitModalOpen && selectedShiftToClose && (() => {
+        const cfg = FORCE_ACTION_CONFIG[forceActionType] || FORCE_ACTION_CONFIG.exit;
+        const entryDate = selectedShiftToClose.entry.timestamp.toDate();
+        const dateDisplay = entryDate.toLocaleDateString('pt-BR');
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-900">{cfg.label}</h3>
+                <button onClick={() => setForceExitModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
+                <p className="text-sm text-gray-700">
+                  <span className="font-bold">Colaborador:</span> {selectedShiftToClose.user.displayName}
+                </p>
+                <p className="text-sm text-gray-700">
+                  <span className="font-bold">Data do turno:</span> {dateDisplay}
+                </p>
+                <p className="text-sm text-gray-700">
+                  <span className="font-bold">Entrada:</span> {entryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">
+                  Horário da Ação ({dateDisplay})
+                </label>
+                <input
+                  type="time"
+                  value={exitTime}
+                  onChange={e => setExitTime(e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900 text-sm px-3 py-2 border"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">
+                  O horário será registrado na data {dateDisplay} (data do turno).
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Motivo</label>
+                <input
+                  type="text"
+                  value={exitReason}
+                  onChange={e => setExitReason(e.target.value)}
+                  placeholder="Ex: Esquecimento de registro..."
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900 text-sm px-3 py-2 border"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setForceExitModalOpen(false)}
+                  className="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={submitForceExit}
+                  disabled={isSavingExit || !exitTime || !exitReason}
+                  className={`flex-1 py-2 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${cfg.buttonColor}`}
+                >
+                  {isSavingExit ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {isSavingExit ? 'Salvando...' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </>
   );
 };
 
