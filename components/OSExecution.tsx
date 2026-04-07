@@ -836,6 +836,40 @@ const OSExecution: React.FC = () => {
             )}
           </div>
 
+          {/* E2 — O.S. Física Assinada pelo Cliente */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 text-sm">
+                <FileText className="w-4 h-4 text-emerald-600" /> O.S. Assinada pelo Cliente
+                {docFotoUrl && <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full border border-emerald-200 flex items-center gap-0.5"><CheckCircle2 className="w-2.5 h-2.5" /> Anexada</span>}
+              </h2>
+              {!docFotoUrl && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full border border-amber-200">Recomendado</span>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400">Fotografe a O.S. impressa após coleta da assinatura do cliente. Este documento é vinculado ao projeto e ao relatório final.</p>
+            {docFotoUrl ? (
+              <div className="relative rounded-xl overflow-hidden border border-emerald-200">
+                <img src={docFotoUrl} className="w-full max-h-48 object-cover" alt="O.S. assinada" />
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-600 text-white rounded-full">✓ Arquivo salvo</span>
+                  <button onClick={() => docFileRef.current?.click()}
+                    className="text-[10px] font-bold px-2 py-0.5 bg-gray-700 text-white rounded-full">
+                    Substituir
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => docFileRef.current?.click()} disabled={analisandoDoc}
+                className="w-full border-2 border-dashed border-gray-200 hover:border-emerald-300 rounded-xl p-4 flex flex-col items-center gap-2 text-gray-400 hover:text-emerald-600 transition-colors group">
+                {analisandoDoc ? <Loader2 className="w-7 h-7 animate-spin" /> : <Camera className="w-7 h-7 group-hover:scale-110 transition-transform" />}
+                <span className="text-xs font-bold">{analisandoDoc ? 'Analisando com IA...' : 'Fotografar O.S. assinada pelo cliente'}</span>
+                <span className="text-[10px] text-gray-300">O Gemini irá extrair os dados automaticamente</span>
+              </button>
+            )}
+            <input ref={docFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleDocUpload} />
+          </div>
+
           {/* Sprint 44 — Finalizar */}
           <button onClick={() => setShowQuestionario(true)}
             className="w-full py-4 rounded-2xl text-lg font-extrabold flex items-center justify-center gap-3 bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg">

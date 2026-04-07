@@ -11,7 +11,7 @@ import {
   XCircle, RotateCcw, Clock, Save, Briefcase, Plus, ExternalLink, Link2, Search,
 } from 'lucide-react';
 import {
-  getDocs, collection, query, orderBy as fbOrderBy,
+  getDocs, collection, query, orderBy as fbOrderBy, onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Client } from '../types';
@@ -25,6 +25,8 @@ import ProjectRelatorio from './ProjectRelatorio';
 import ProjectGantt from './ProjectGantt';
 import ProjectProposta from './ProjectProposta';
 import ProjectActivity from './ProjectActivity';
+import ProjectOSDistribuicao from './ProjectOSDistribuicao';
+import ProjectAdendoMudancas from './ProjectAdendoMudancas';
 import { useProjectActivity } from '../hooks/useProjectActivity';
 import {
   ProjectPhase, PROJECT_PHASE_LABELS, PROJECT_PHASE_COLORS,
@@ -33,6 +35,7 @@ import {
 } from '../types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { AdendoMudanca } from './ProjectAdendoMudancas';
 
 // ── Autocomplete de Cliente — Sprint 16 ──
 const ClientAutocomplete: React.FC<{
@@ -185,6 +188,25 @@ const PhaseHistory: React.FC<{ history: any[] }> = ({ history }) => {
   );
 };
 
+// ── Wrapper: carrega adendos da sub-coleção e passa para o componente ──────────
+const ProjectAdendoMudancasWrapper: React.FC<{ projectId: string }> = ({ projectId }) => {
+  const [adendos, setAdendos] = useState<AdendoMudanca[]>([]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const q = query(
+      collection(db, 'projects_v2', projectId, 'adendos'),
+      fbOrderBy('criadoEm', 'desc')
+    );
+    const unsub = onSnapshot(q, snap => {
+      setAdendos(snap.docs.map(d => ({ id: d.id, ...d.data() } as AdendoMudanca)));
+    }, () => {});
+    return () => unsub();
+  }, [projectId]);
+
+  return <ProjectAdendoMudancas projectId={projectId} adendos={adendos} />;
+};
+
 // ── Tabs de conteúdo por fase ──
 type TabKey = 'lead' | 'prancheta' | 'cotacao' | 'proposta' | 'contrato' | 'gantt' | 'os' | 'relatorio' | 'faturamento' | 'historico' | 'atividades';
 
@@ -209,7 +231,7 @@ const ProjectDetail: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { projects, loading, advancePhase, archiveAsNaoAprovado, reopenProject } = useProject();
-  const { ordens, ganttFases, stats: osStats, vincularOS, desvincularOS, salvarGanttFases } = useProjectOS(projectId ?? '');
+  const { ordens, stats: osStats, vincularOS, desvincularOS } = useProjectOS(projectId ?? '');
   const { logFaseAvancada } = useProjectActivity(projectId ?? '');
   const [activeTab, setActiveTab] = useState<TabKey>('prancheta');
   const [advanceLoading, setAdvanceLoading] = useState(false);
@@ -530,84 +552,23 @@ const ProjectDetail: React.FC = () => {
           {activeTab === 'relatorio' && (
             <ProjectRelatorio
               projectId={project.id}
-              projectNome={project.nome}
-              clientName={project.clientName}
+              project={project}
               onSave={() => {}}
             />
           )}
 
-          {/* Gantt tab — Sprint 4 */}
+          {/* Gantt tab — Sprint Gantt Completo */}
           {activeTab === 'gantt' && (
-            <ProjectGantt
-              projectId={project.id}
-              fases={ganttFases}
-              onSave={salvarGanttFases}
-            />
+            <ProjectGantt projectId={project.id} />
           )}
 
-          {/* O.S. tab — Sprint 4 */}
+          {/* O.S. tab — Sprint B (Distribuição com sugestões do Gantt) + Sprint E3 (Adendos) */}
           {activeTab === 'os' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-gray-900 flex items-center gap-2">🔧 Ordens de Serviço</h3>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="px-2 py-1 bg-brand-50 text-brand-700 rounded-lg font-bold">{osStats.total} total</span>
-                  <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg font-bold">{osStats.concluidas} concluídas</span>
-                  {osStats.bloqueadas > 0 && <span className="px-2 py-1 bg-red-50 text-red-700 rounded-lg font-bold">{osStats.bloqueadas} bloqueadas</span>}
-                </div>
+            <div className="space-y-6">
+              <ProjectOSDistribuicao project={project} />
+              <div className="border-t border-gray-200 pt-6">
+                <ProjectAdendoMudancasWrapper projectId={project.id} />
               </div>
-
-              {ordens.length === 0 ? (
-                <div className="text-center py-10 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                  <Briefcase className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                  <p className="text-sm text-gray-500 font-medium">Nenhuma O.S. vinculada a este projeto.</p>
-                  <p className="text-xs text-gray-400 mt-1">Abra uma O.S. e vincule ao projeto pelo campo "Projeto".</p>
-                  <a href="#/app/pipeline" className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700">
-                    <Plus className="w-3.5 h-3.5" /> Criar Nova O.S.
-                  </a>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {ordens.map(os => {
-                    const statusColor = {
-                      'pending': 'bg-yellow-50 text-yellow-700 border-yellow-200',
-                      'in-progress': 'bg-blue-50 text-blue-700 border-blue-200',
-                      'completed': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                      'blocked': 'bg-red-50 text-red-700 border-red-200',
-                      'cancelled': 'bg-gray-50 text-gray-500 border-gray-200',
-                    }[os.status] ?? 'bg-gray-50 text-gray-500 border-gray-200';
-                    const statusLabel = {
-                      'pending': 'Pendente', 'in-progress': 'Em Andamento',
-                      'completed': 'Concluída', 'blocked': 'Bloqueada', 'cancelled': 'Cancelada',
-                    }[os.status] ?? os.status;
-                    return (
-                      <div key={os.id} className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {os.code && <span className="text-[10px] font-bold text-gray-400">{os.code}</span>}
-                            <p className="text-sm font-bold text-gray-900 truncate">{os.title}</p>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}>{statusLabel}</span>
-                          </div>
-                          {os.assigneeName && <p className="text-xs text-gray-500 mt-0.5">👤 {os.assigneeName}</p>}
-                          {os.scheduling?.dataPrevista && (
-                            <p className="text-xs text-gray-400">📅 Previsto: {os.scheduling.dataPrevista.toDate().toLocaleDateString('pt-BR')}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <a href={`#/app/pipeline?os=${os.id}`}
-                            className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
-                            <ExternalLink className="w-3.5 h-3.5 text-gray-500" />
-                          </a>
-                          <button onClick={() => desvincularOS(os.id)}
-                            className="p-2 rounded-xl border border-red-100 text-red-400 hover:bg-red-50 transition-colors">
-                            <Link2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
 

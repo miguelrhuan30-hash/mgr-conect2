@@ -983,6 +983,9 @@ export enum CollectionName {
   PROJECT_COTACOES = 'project_cotacoes',
   PROJECT_CONTRATOS = 'project_contratos',
   PROJECT_FATURAMENTOS = 'project_faturamentos',
+  // Sprint Gantt Completo — WBS, Baselines, Adversidades
+  GANTT_TASKS = 'gantt_tasks',
+  GANTT_BASELINES = 'gantt_baselines',
 }
 
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
@@ -1383,6 +1386,143 @@ export interface PresentationView {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sprint Projetos v2 — Módulo de Projetos: Ciclo de Vida Completo
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gantt Completo — WBS, Adversidades, Baselines, KPIs
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type GanttPartyV2 = 'mgr' | 'cliente' | 'terceiro';
+export type GanttTaskStatus = 'nao_iniciada' | 'em_andamento' | 'concluida' | 'bloqueada' | 'cancelada';
+
+/** Responsável alocado a uma tarefa do Gantt */
+export interface GanttResponsavel {
+  userId: string;
+  userName: string;
+  equipeId?: string;
+  equipeName?: string;
+}
+
+/** Dependência entre tarefas (Finish-to-Start ou outras) */
+export type GanttDependenciaTipo = 'FS' | 'SS' | 'FF' | 'SF'; // Finish-Start, Start-Start, Finish-Finish, Start-Finish
+
+export interface GanttDependencia {
+  taskId: string;        // ID da tarefa predecessora
+  tipo: GanttDependenciaTipo;
+  lagDias?: number;      // lag positivo = esperar N dias após conclusão
+}
+
+/** Adversidade registrada em uma tarefa do Gantt */
+export interface GanttAdversidade {
+  id: string;
+  taskId: string;
+  descricao: string;
+  responsavel: GanttPartyV2;  // quem causou o atraso
+  diasImpacto: number;         // impacto direto em dias
+  evidenciaUrl?: string;       // foto obrigatória de evidência
+  registradoPor: string;       // uid
+  registradoPorNome: string;
+  registradoEm: Timestamp;
+  aplicadoCascata: boolean;    // se o impacto foi propagado nas dependências
+}
+
+/** Tarefa WBS do Gantt (pode ter subtarefas aninhadas) */
+export interface GanttTask {
+  id: string;
+  projectId: string;
+
+  // Hierarquia WBS
+  parentId?: string | null;    // null = tarefa raiz
+  wbsCode?: string;            // ex: "1.2.3"
+  nivel: number;               // 0 = raiz, 1 = subtarefa, 2 = sub-subtarefa
+  ordem: number;               // posição dentro do pai
+
+  // Identificação
+  label: string;
+  descricao?: string;
+  party: GanttPartyV2;
+
+  // Status
+  status: GanttTaskStatus;
+  progresso: number;           // 0-100 %
+
+  // Datas Previstas (baseline original)
+  dataInicioPrevista?: Timestamp | null;
+  dataFimPrevista?: Timestamp | null;
+  duracaoDias?: number;        // calculada ou manual
+
+  // Datas Reais
+  dataInicioReal?: Timestamp | null;
+  dataFimReal?: Timestamp | null;
+
+  // Caminho Crítico
+  isCritico: boolean;          // true = está no caminho crítico
+  folga?: number;             // dias de folga total (slack)
+  earlyStart?: number;        // dia do projeto (CPM calculation)
+  earlyFinish?: number;
+  lateStart?: number;
+  lateFinish?: number;
+
+  // Dependências
+  dependencias?: GanttDependencia[];
+
+  // Responsáveis
+  responsaveis?: GanttResponsavel[];
+
+  // Custo estimado
+  custoEstimado?: number;
+
+  // Adversidades registradas nesta tarefa
+  adversidades?: GanttAdversidade[];
+
+  // Observação
+  observacao?: string;
+
+  // Metadados
+  criadoPor: string;
+  criadoEm: Timestamp;
+  atualizadoEm?: Timestamp;
+}
+
+/** Snapshot do cronograma para versionamento (baseline) */
+export interface GanttBaseline {
+  id: string;
+  projectId: string;
+  nome: string;                // ex: "Baseline Original", "Revisão 1"
+  descricao?: string;
+  tasks: Pick<GanttTask, 'id' | 'label' | 'dataInicioPrevista' | 'dataFimPrevista' | 'duracaoDias' | 'isCritico'>[];
+  totalDias: number;
+  criadoPor: string;
+  criadoPorNome: string;
+  criadoEm: Timestamp;
+}
+
+/** KPIs calculados do Gantt do projeto */
+export interface GanttKPI {
+  totalTarefas: number;
+  tarefasConcluidas: number;
+  tarefasAtrasadas: number;
+  tarefasBloqueadas: number;
+  tarefasCriticas: number;     // no caminho crítico
+
+  // Schedule Performance Index
+  spi: number;                 // SPI = EV / PV (1.0 = no prazo, <1 = atrasado)
+  ev: number;                  // Earned Value (% previsto de tarefas concluídas)
+  pv: number;                  // Planned Value (% planejado concluído até hoje)
+
+  // Desvio
+  desvioTotalDias: number;     // desvio da data fim real vs prevista (baseado em tarefas atrasadas)
+
+  // Distribuição de responsabilidade por atrasos
+  atrasoPorParty: {
+    mgr: number;          // dias de atraso causados pela MGR
+    cliente: number;      // dias de atraso causados pelo cliente
+    terceiro: number;     // dias de atraso causados por terceiros
+  };
+
+  // Adversidades
+  totalAdversidades: number;
+  adversidadesAtivas: number;  // que ainda impactam o cronograma
+}
 
 // ── Fase do Projeto (máquina de estados — 16 estados) ──
 export type ProjectPhase =

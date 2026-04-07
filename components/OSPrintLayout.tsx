@@ -73,6 +73,13 @@ const OSPrintLayout: React.FC = () => {
         .os-number { font-size: 24px; font-weight: bold; }
         .badge { display: inline-block; background: #f0f0f0; border: 1px solid #ccc; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
         .footer { margin-top: 32px; border-top: 1px solid #ccc; padding-top: 8px; display: flex; justify-content: space-between; font-size: 10px; color: #666; }
+        .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 8px; }
+        .sig-col { border: 1px solid #bbb; border-radius: 4px; padding: 12px; }
+        .sig-col-title { font-size: 12px; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .sig-field { margin-bottom: 10px; }
+        .sig-label { font-size: 10px; color: #666; margin-bottom: 3px; }
+        .sig-line { border-bottom: 1px solid #999; min-height: 30px; }
+        .declaration { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px; font-size: 11px; margin: 8px 0; line-height: 1.5; }
       `}</style>
 
       <div className="page">

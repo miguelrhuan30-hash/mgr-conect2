@@ -139,6 +139,41 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // GANTT COMPLETO — WBS, ADVERSIDADES, BASELINES
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Tarefas WBS do Gantt (gestores podem editar; técnicos só leem) ──
+    match /gantt_tasks/{taskId} {
+      allow read: if isAuthenticated();
+      // Criar: apenas gestores
+      allow create: if isAuthenticated() && isManager()
+        && request.resource.data.keys().hasAll(['projectId', 'label', 'nivel', 'ordem', 'party', 'status', 'progresso', 'isCritico'])
+        && request.resource.data.projectId is string
+        && request.resource.data.label is string
+        && request.resource.data.label.size() > 0
+        && request.resource.data.label.size() <= 500;
+      // Atualizar: gestores podem editar tudo exceto projectId/criadoPor/criadoEm
+      allow update: if isAuthenticated() && isManager()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['projectId', 'criadoPor', 'criadoEm']);
+      // Deletar: apenas gestores (também deleta subtarefas via batch no client)
+      allow delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Baselines de Cronograma (snapshots imutáveis após criação) ──
+    match /gantt_baselines/{baselineId} {
+      allow read: if isAuthenticated();
+      // Criar: gestores
+      allow create: if isAuthenticated() && isManager()
+        && request.resource.data.keys().hasAll(['projectId', 'nome', 'tasks', 'criadoPor', 'criadoEm'])
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() > 0;
+      // Baselines são imutáveis (não permite update, apenas delete)
+      allow update: if false;
+      allow delete: if isAuthenticated() && isManager();
+    }
+
     // ── Regra padrão: apenas autenticados ────────────────────────────────
     match /{document=**} {
       allow read, write: if isAuthenticated();
