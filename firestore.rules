@@ -54,16 +54,31 @@ service cloud.firestore {
     match /timeEntries/{entryId} {
       allow read: if isAuthenticated()
         && (isOwner(resource.data.userId) || isManager());
+      // Colaborador criando seu próprio ponto
       allow create: if isAuthenticated()
-        && isOwner(request.resource.data.userId)
-        && hasRequiredPontoFields()
-        && isValidPontoType()
-        && clientCannotElevateBiometric();
+        && (
+          // Próprio colaborador
+          (isOwner(request.resource.data.userId)
+            && hasRequiredPontoFields()
+            && isValidPontoType()
+            && clientCannotElevateBiometric())
+          ||
+          // Gestor/Admin fazendo correção manual para outro colaborador
+          (isManager()
+            && hasRequiredPontoFields()
+            && isValidPontoType())
+        );
       allow update: if isAuthenticated()
-        && isOwner(resource.data.userId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['photoURL', 'aiValidation',
-                     'biometricVerified', 'processingStatus']);
+        && (
+          // Próprio ponto: atualização restrita a campos de processamento
+          (isOwner(resource.data.userId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['photoURL', 'aiValidation',
+                         'biometricVerified', 'processingStatus']))
+          ||
+          // Gestor/Admin: pode editar qualquer campo
+          isManager()
+        );
       allow delete: if isAdmin();
     }
 

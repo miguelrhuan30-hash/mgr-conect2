@@ -56,7 +56,9 @@ export const adicionarRegistro = async (
     editReason: motivo,
     editTimestamp: serverTimestamp(),
     biometricVerified: false,
+    processingStatus: 'skipped_manual',
     photoURL: null,
+    aiValidation: null,
   });
 };
 

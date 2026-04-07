@@ -36,11 +36,11 @@ const formatTime = (entry: TimeEntry | null) => {
   return entry.timestamp.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
-const toLocalInput = (entry: TimeEntry | null): string => {
+/** Retorna apenas HH:mm para input type="time" */
+const toTimeInput = (entry: TimeEntry | null): string => {
   if (!entry) return '';
   const d = entry.timestamp.toDate();
-  const tzOffset = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
 const hoje = (): string => toDateStr(new Date());
@@ -247,9 +247,9 @@ const FolhaPonto: React.FC = () => {
   }, [turnos, filtroStatus]);
 
   // ── Expandir turno para edição ──────────────────────────────────────────────
-  /** Gera um datetime-local pré-preenchido com a data do turno + hora default */
-  const defaultDateTime = (dateStr: string, time: string): string => {
-    return `${dateStr}T${time}`;
+  /** Monta Date a partir da data do turno + hora HH:mm */
+  const buildTimestamp = (dateStr: string, time: string): Date => {
+    return new Date(`${dateStr}T${time}:00`);
   };
 
   const expandirTurno = (turno: Turno) => {
@@ -270,11 +270,12 @@ const FolhaPonto: React.FC = () => {
     const defaultLunchStart = `${String(sh + 4).padStart(2, '0')}:00`;
     const defaultLunchEnd = `${String(sh + 5).padStart(2, '0')}:00`;
 
+    // Armazenar apenas HH:mm — data é fixada pelo turno.data
     setEditTimes({
-      entry: toLocalInput(turno.entry) || defaultDateTime(turno.data, defaultStart),
-      lunch_start: toLocalInput(turno.lunchStart) || defaultDateTime(turno.data, defaultLunchStart),
-      lunch_end: toLocalInput(turno.lunchEnd) || defaultDateTime(turno.data, defaultLunchEnd),
-      exit: toLocalInput(turno.exit) || defaultDateTime(turno.data, defaultEnd),
+      entry: toTimeInput(turno.entry) || defaultStart,
+      lunch_start: toTimeInput(turno.lunchStart) || defaultLunchStart,
+      lunch_end: toTimeInput(turno.lunchEnd) || defaultLunchEnd,
+      exit: toTimeInput(turno.exit) || defaultEnd,
     });
     setEditMotivo('');
     setAddSlotTipo(null);
@@ -299,16 +300,18 @@ const FolhaPonto: React.FC = () => {
                      : tipo === 'lunch_end' ? turno.lunchEnd
                      : turno.exit;
 
+      // Montar Date a partir da data do turno + hora informada
+      const newTs = buildTimestamp(turno.data, novoTime);
+
       if (existing) {
         // Editar horário existente
-        const newTs = new Date(novoTime);
         const oldTs = existing.timestamp.toDate();
         if (Math.abs(newTs.getTime() - oldTs.getTime()) > 60000) {
           await editarHorarioRegistro(existing.id, newTs, currentUser.uid, adminNome, editMotivo);
         }
       } else {
         // Adicionar registro faltante
-        await adicionarRegistro(uid, tipo, new Date(novoTime), currentUser.uid, adminNome, editMotivo);
+        await adicionarRegistro(uid, tipo, newTs, currentUser.uid, adminNome, editMotivo);
       }
       await buscarRegistros();
     } catch (err: any) {
@@ -331,7 +334,7 @@ const FolhaPonto: React.FC = () => {
       await adicionarRegistro(
         uid,
         addSlotTipo as 'entry' | 'lunch_start' | 'lunch_end' | 'exit',
-        new Date(addSlotTime),
+        buildTimestamp(turno.data, addSlotTime),
         currentUser.uid,
         adminNome,
         editMotivo
@@ -506,14 +509,16 @@ const FolhaPonto: React.FC = () => {
         { type: 'exit', existing: turno.exit, newTime: editTimes['exit'] || '' },
       ];
       for (const s of slots) {
-        if (s.existing && s.newTime) {
-          const newTs = new Date(s.newTime);
+        if (!s.newTime) continue;
+        // Montar Date: data fixa do turno + hora informada
+        const newTs = buildTimestamp(turno.data, s.newTime);
+        if (s.existing) {
           const oldTs = s.existing.timestamp.toDate();
           if (Math.abs(newTs.getTime() - oldTs.getTime()) > 60000) {
             await editarHorarioRegistro(s.existing.id, newTs, currentUser.uid, adminNome, editMotivo);
           }
-        } else if (!s.existing && s.newTime) {
-          await adicionarRegistro(uid, s.type, new Date(s.newTime), currentUser.uid, adminNome, editMotivo);
+        } else {
+          await adicionarRegistro(uid, s.type, newTs, currentUser.uid, adminNome, editMotivo);
         }
       }
       await buscarRegistros();
@@ -860,7 +865,7 @@ const FolhaPonto: React.FC = () => {
                             {reg ? (
                               <div className="flex items-center gap-2">
                                 <input
-                                  type="datetime-local"
+                                  type="time"
                                   value={editTimes[tipo] || ''}
                                   onChange={e => setEditTimes({ ...editTimes, [tipo]: e.target.value })}
                                   className="flex-1 rounded-lg border-gray-300 text-sm bg-white text-gray-900"
@@ -886,7 +891,7 @@ const FolhaPonto: React.FC = () => {
                             ) : (
                               <div className="flex items-center gap-2">
                                 <input
-                                  type="datetime-local"
+                                  type="time"
                                   value={editTimes[tipo] || ''}
                                   onChange={e => setEditTimes({ ...editTimes, [tipo]: e.target.value })}
                                   className="flex-1 rounded-lg border-gray-300 text-sm bg-white text-gray-900"
