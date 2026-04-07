@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp
+  collection, query, where, getDocs, Timestamp, orderBy, addDoc, serverTimestamp,
+  deleteDoc, doc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
@@ -304,6 +305,17 @@ const EspelhoMensal: React.FC = () => {
       alert(err?.message || 'Erro ao registrar ocorrência.');
     } finally {
       setSavingOc(false);
+    }
+  };
+
+  // ── Excluir ocorrência do dia (modal) ────────────────────────────────────
+  const excluirOcorrenciaModal = async (ocId: string, descricao: string) => {
+    if (!confirm(`Excluir ocorrência "${descricao}"?\nEsta ação não pode ser desfeita.`)) return;
+    try {
+      await deleteDoc(doc(db, CollectionName.EMPLOYEE_OCCURRENCES, ocId));
+      await gerarEspelho();
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao excluir ocorrência.');
     }
   };
 
@@ -963,19 +975,28 @@ const EspelhoMensal: React.FC = () => {
                     <div className="space-y-2 mb-3">
                       {diaOcs.map(oc => (
                         <div key={oc.id} className={`rounded-lg border p-3 text-xs ${OCCURRENCE_COLORS[oc.tipo]}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold">{OCCURRENCE_LABELS[oc.tipo]}</span>
-                            {oc.minutosAbonados && (
-                              <span className="font-bold">🏥 {minutesToHHMM(oc.minutosAbonados)} abonadas</span>
-                            )}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-bold">{OCCURRENCE_LABELS[oc.tipo]}</span>
+                              {oc.minutosAbonados && (
+                                <span className="ml-2 font-bold">🏥 {minutesToHHMM(oc.minutosAbonados)} abonadas</span>
+                              )}
+                              {oc.descricao && <p className="mt-1 text-gray-600">{oc.descricao}</p>}
+                              {oc.horaInicio && oc.horaFim && (
+                                <p className="mt-0.5 text-gray-500">Período: {oc.horaInicio} — {oc.horaFim}</p>
+                              )}
+                              {oc.diaCompleto && oc.tipo === 'atestado' && (
+                                <p className="mt-0.5 text-gray-500">Dia completo</p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => excluirOcorrenciaModal(oc.id, OCCURRENCE_LABELS[oc.tipo] + (oc.descricao ? `: ${oc.descricao}` : ''))}
+                              className="flex-shrink-0 p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                              title="Excluir ocorrência"
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
-                          {oc.descricao && <p className="mt-1 text-gray-600">{oc.descricao}</p>}
-                          {oc.horaInicio && oc.horaFim && (
-                            <p className="mt-0.5 text-gray-500">Período: {oc.horaInicio} — {oc.horaFim}</p>
-                          )}
-                          {oc.diaCompleto && oc.tipo === 'atestado' && (
-                            <p className="mt-0.5 text-gray-500">Dia completo</p>
-                          )}
                         </div>
                       ))}
                     </div>

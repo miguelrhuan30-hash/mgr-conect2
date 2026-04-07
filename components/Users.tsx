@@ -246,6 +246,14 @@ const EmployeeDetailPanel: React.FC<{
     finally { setAddingOcc(false); }
   };
 
+  const handleDeleteOccurrence = async (ocId: string, label: string) => {
+    if (!window.confirm(`Excluir ocorrência "${label}"?\nEsta ação não pode ser desfeita.`)) return;
+    try {
+      await deleteDoc(doc(db, CollectionName.EMPLOYEE_OCCURRENCES, ocId));
+      // O onSnapshot do componente pai já atualiza a lista automaticamente
+    } catch (e) { console.error(e); alert('Erro ao excluir ocorrência.'); }
+  };
+
   const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
     { key: 'dados', label: 'Dados', icon: <User size={14} /> },
     { key: 'jornada', label: 'Jornada', icon: <Clock size={14} /> },
@@ -534,10 +542,18 @@ const EmployeeDetailPanel: React.FC<{
                 {userOccs.length === 0 && <p className="text-xs text-gray-400 text-center py-8">Nenhuma ocorrência registrada.</p>}
                 {userOccs.map(occ => (
                   <div key={occ.id} className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 px-3 py-2.5">
-                    <span className="text-xs font-bold text-gray-500 w-20">{occ.data.split('-').reverse().join('/')}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${OCCURRENCE_COLORS[occ.tipo]}`}>{OCCURRENCE_LABELS[occ.tipo]}</span>
+                    <span className="text-xs font-bold text-gray-500 w-20 flex-shrink-0">{occ.data.split('-').reverse().join('/')}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${OCCURRENCE_COLORS[occ.tipo]}`}>{OCCURRENCE_LABELS[occ.tipo]}</span>
                     {occ.descricao && <span className="text-xs text-gray-500 truncate flex-1">{occ.descricao}</span>}
-                    {occ.arquivoUrl && <a href={occ.arquivoUrl} target="_blank" rel="noreferrer" className="text-brand-600 hover:text-brand-800"><Eye size={12} /></a>}
+                    {!occ.descricao && <span className="flex-1" />}
+                    {occ.arquivoUrl && <a href={occ.arquivoUrl} target="_blank" rel="noreferrer" className="text-brand-600 hover:text-brand-800 flex-shrink-0"><Eye size={12} /></a>}
+                    <button
+                      onClick={() => handleDeleteOccurrence(occ.id, `${OCCURRENCE_LABELS[occ.tipo]}${occ.descricao ? ': ' + occ.descricao : ''}`)}
+                      className="flex-shrink-0 p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Excluir ocorrência"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
                 ))}
               </div>
