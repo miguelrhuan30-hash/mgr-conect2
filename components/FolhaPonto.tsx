@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  collection, query, where, getDocs, Timestamp, orderBy, limit, addDoc, serverTimestamp
+  collection, query, where, getDocs, Timestamp, orderBy, limit, addDoc, serverTimestamp, deleteDoc, doc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -93,6 +93,7 @@ const FolhaPonto: React.FC = () => {
   const [ocDiaCompleto, setOcDiaCompleto] = useState(true);
   const [ocHoraInicio, setOcHoraInicio] = useState('08:00');
   const [ocHoraFim, setOcHoraFim] = useState('12:00');
+  const [ocDataFolga, setOcDataFolga] = useState('');  // data de folga compensatória (banco_troca)
   const [savingOc, setSavingOc] = useState(false);
 
   // ── Upload de documento ─────────────────────────────────────────────────────
@@ -414,17 +415,44 @@ const FolhaPonto: React.FC = () => {
         diaCompleto: ocDiaCompleto,
         ...(ocTipo === 'atestado' && !ocDiaCompleto ? { horaInicio: ocHoraInicio, horaFim: ocHoraFim } : {}),
         ...(minutosAbonados ? { minutosAbonados } : {}),
+        ...(ocTipo === 'banco_troca' && ocDataFolga ? { dataFolgaCompensacao: ocDataFolga } : {}),
         criadoPor: currentUser.uid,
         criadoEm: serverTimestamp(),
       });
+
+      // Se for banco_troca, criar ocorrência de folga compensatória na data indicada
+      if (ocTipo === 'banco_troca' && ocDataFolga) {
+        await addDoc(collection(db, CollectionName.EMPLOYEE_OCCURRENCES), {
+          userId: uid,
+          data: ocDataFolga,
+          tipo: 'folga' as OccurrenceType,
+          descricao: `Folga compensatória (Banco de Troca ref. ${dia})`,
+          diaCompleto: true,
+          criadoPor: currentUser.uid,
+          criadoEm: serverTimestamp(),
+        });
+      }
+
       setShowOcForm(false);
       setOcDescricao('');
+      setOcDataFolga('');
       await buscarRegistros();
       alert('Ocorrência registrada com sucesso.');
     } catch (err: any) {
       alert(err?.message || 'Erro ao registrar ocorrência.');
     } finally {
       setSavingOc(false);
+    }
+  };
+
+  // ── Excluir ocorrência ────────────────────────────────────────────────────────
+  const excluirOcorrencia = async (ocId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta ocorrência?')) return;
+    try {
+      await deleteDoc(doc(db, CollectionName.EMPLOYEE_OCCURRENCES, ocId));
+      await buscarRegistros();
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao excluir ocorrência.');
     }
   };
 
@@ -765,6 +793,40 @@ const FolhaPonto: React.FC = () => {
                   )}
                 </div>
 
+                {/* ── Sub-linhas de ocorrências (visíveis sem expandir) ── */}
+                {(ocorrenciasPorDia.get(turno.data) || []).map(oc => (
+                  <div key={oc.id} className={`flex items-center gap-3 px-5 py-2 border-t border-dashed border-gray-100 ${OCCURRENCE_COLORS[oc.tipo]} bg-opacity-30`}>
+                    <div className="w-20 flex-shrink-0" />
+                    <div className="flex-1 flex items-center gap-3 min-w-0">
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border whitespace-nowrap ${OCCURRENCE_COLORS[oc.tipo]}`}>
+                        {OCCURRENCE_LABELS[oc.tipo]}
+                      </span>
+                      {oc.descricao && (
+                        <span className="text-xs text-gray-600 truncate">{oc.descricao}</span>
+                      )}
+                      {oc.horaInicio && oc.horaFim && (
+                        <span className="text-[10px] text-gray-500 font-mono">{oc.horaInicio} - {oc.horaFim}</span>
+                      )}
+                      {oc.diaCompleto && <span className="text-[10px] text-gray-400">Dia completo</span>}
+                      {oc.dataFolgaCompensacao && (
+                        <span className="text-[10px] text-teal-600 font-bold">→ Folga em {oc.dataFolgaCompensacao.split('-').reverse().join('/')}</span>
+                      )}
+                      {oc.minutosAbonados && oc.minutosAbonados > 0 && (
+                        <span className="text-[10px] text-gray-500">{minutesToHHMM(oc.minutosAbonados)} abonadas</span>
+                      )}
+                    </div>
+                    {isGestor && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); excluirOcorrencia(oc.id); }}
+                        className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
+                        title="Excluir ocorrência"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
                 {/* ── PAINEL DE EDIÇÃO INLINE ── */}
                 {isExpanded && isGestor && (
                   <div className="border-t border-gray-100 bg-gray-50/50 px-5 py-4 space-y-4">
@@ -890,7 +952,7 @@ const FolhaPonto: React.FC = () => {
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <label className="block text-xs font-bold text-gray-600 mb-1">Tipo</label>
-                              <select value={ocTipo} onChange={e => setOcTipo(e.target.value as OccurrenceType)} className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900">
+                              <select value={ocTipo} onChange={e => { setOcTipo(e.target.value as OccurrenceType); setOcDataFolga(''); }} className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900">
                                 {(Object.entries(OCCURRENCE_LABELS) as [OccurrenceType, string][]).map(([k, v]) => (
                                   <option key={k} value={k}>{v}</option>
                                 ))}
@@ -916,12 +978,25 @@ const FolhaPonto: React.FC = () => {
                               </div>
                             </div>
                           )}
+                          {/* Campo especial: Banco de Troca → data de folga compensatória */}
+                          {ocTipo === 'banco_troca' && (
+                            <div className="bg-teal-50 border border-teal-200 rounded-lg p-3">
+                              <label className="block text-xs font-bold text-teal-700 mb-1">📅 Data da Folga Compensatória</label>
+                              <p className="text-[10px] text-teal-600 mb-2">Selecione o dia que será usado como folga para compensar o excesso de horas deste dia. O dia selecionado será marcado automaticamente como folga.</p>
+                              <input
+                                type="date"
+                                value={ocDataFolga}
+                                onChange={e => setOcDataFolga(e.target.value)}
+                                className="w-full rounded-lg border-teal-300 text-sm bg-white text-gray-900"
+                              />
+                            </div>
+                          )}
                           <div>
                             <label className="block text-xs font-bold text-gray-600 mb-1">Descrição</label>
                             <input type="text" value={ocDescricao} onChange={e => setOcDescricao(e.target.value)} placeholder="Descrição da ocorrência..." className="w-full rounded-lg border-gray-300 text-sm bg-white text-gray-900" />
                           </div>
                           <div className="flex gap-2">
-                            <button onClick={() => salvarOcorrencia(turno.data)} disabled={savingOc} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1">
+                            <button onClick={() => salvarOcorrencia(turno.data)} disabled={savingOc || (ocTipo === 'banco_troca' && !ocDataFolga)} className="px-4 py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1">
                               {savingOc ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Ocorrência
                             </button>
                             <button onClick={() => setShowOcForm(false)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-300">Cancelar</button>

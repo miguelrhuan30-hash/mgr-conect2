@@ -1086,6 +1086,7 @@ export type OccurrenceType =
   | 'suspensao'
   | 'folga'
   | 'ferias'
+  | 'banco_troca'
   | 'outro';
 
 export const OCCURRENCE_LABELS: Record<OccurrenceType, string> = {
@@ -1095,6 +1096,7 @@ export const OCCURRENCE_LABELS: Record<OccurrenceType, string> = {
   suspensao: 'Suspensão',
   folga: 'Folga',
   ferias: 'Férias',
+  banco_troca: 'Banco de Troca',
   outro: 'Outro',
 };
 
@@ -1105,6 +1107,7 @@ export const OCCURRENCE_COLORS: Record<OccurrenceType, string> = {
   suspensao: 'bg-purple-100 text-purple-700 border-purple-200',
   folga: 'bg-green-100 text-green-700 border-green-200',
   ferias: 'bg-blue-100 text-blue-700 border-blue-200',
+  banco_troca: 'bg-teal-100 text-teal-700 border-teal-200',
   outro: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
@@ -1134,6 +1137,7 @@ export interface EmployeeOccurrence {
   horaFim?: string;          // "12:00" — para atestado parcial
   diaCompleto?: boolean;     // true = abona o dia inteiro (default true p/ atestado sem horário)
   minutosAbonados?: number;  // minutos justificados (calculado ao salvar)
+  dataFolgaCompensacao?: string; // "YYYY-MM-DD" — dia de folga compensatória (para banco_troca)
   criadoPor: string;
   criadoEm: Timestamp;
   atualizadoEm?: Timestamp;
