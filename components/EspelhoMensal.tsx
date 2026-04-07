@@ -417,19 +417,38 @@ const EspelhoMensal: React.FC = () => {
   // ── Exportar Excel ────────────────────────────────────────────────────────
   const exportarExcel = () => {
     const nome = colaborador?.displayName || 'colaborador';
-    const linhas = linhasEspelho.map(l => ({
-      'Data': l.dia,
-      'Dia': l.weekDay,
-      'Entrada': l.turno ? formatTime(l.turno.entry) : '-',
-      'Saída Almoço': l.turno ? formatTime(l.turno.lunchStart) : '-',
-      'Volta Almoço': l.turno ? formatTime(l.turno.lunchEnd) : '-',
-      'Saída': l.turno ? formatTime(l.turno.exit) : '-',
-      'H. Trabalhadas': l.turno?.duracaoTrabalhoMinutos != null ? minutesToHHMM(l.turno.duracaoTrabalhoMinutos) : '-',
-      'Status': (STATUS_CONFIG[l.statusKey] || STATUS_CONFIG.completo).label,
-      'Editado': l.hasManual ? 'Sim' : '',
-    }));
+    const linhas = linhasEspelho.map(l => {
+      // Horas abonadas por atestado neste dia
+      const minutosAbonados = l.ocorrencias
+        .filter(o => o.tipo === 'atestado' && o.minutosAbonados)
+        .reduce((sum, o) => sum + (o.minutosAbonados || 0), 0);
 
-    // Adicionar linha de totais
+      // Texto das ocorrências do dia
+      const ocTexto = l.ocorrencias.length > 0
+        ? l.ocorrencias.map(o => {
+            const label = OCCURRENCE_LABELS[o.tipo] || o.tipo;
+            return o.descricao ? `${label}: ${o.descricao}` : label;
+          }).join(' | ')
+        : '';
+
+      return {
+        'Data': l.dia,
+        'Dia': l.weekDay,
+        'Entrada': l.turno ? formatTime(l.turno.entry) : '-',
+        'Saída Almoço': l.turno ? formatTime(l.turno.lunchStart) : '-',
+        'Volta Almoço': l.turno ? formatTime(l.turno.lunchEnd) : '-',
+        'Saída': l.turno ? formatTime(l.turno.exit) : '-',
+        'H. Trabalhadas': l.turno?.duracaoTrabalhoMinutos != null
+          ? minutesToHHMM(l.turno.duracaoTrabalhoMinutos)
+          : minutosAbonados > 0 ? minutesToHHMM(minutosAbonados) : '-',
+        'H. Abonadas': minutosAbonados > 0 ? minutesToHHMM(minutosAbonados) : '',
+        'Status': (STATUS_CONFIG[l.statusKey] || STATUS_CONFIG.completo).label,
+        'Ocorrências': ocTexto,
+        'Editado': l.hasManual ? 'Sim' : '',
+      };
+    });
+
+    // Linha de totais
     linhas.push({
       'Data': '',
       'Dia': 'TOTAIS',
@@ -438,11 +457,19 @@ const EspelhoMensal: React.FC = () => {
       'Volta Almoço': '',
       'Saída': '',
       'H. Trabalhadas': minutesToHHMM(resumo.totalHorasTrabalhadasMinutos),
-      'Status': `${resumo.diasPresentes} presentes / ${resumo.diasAusentes} ausências`,
+      'H. Abonadas': resumo.horasAbonadas > 0 ? minutesToHHMM(resumo.horasAbonadas) : '',
+      'Status': `${resumo.diasPresentes} presentes / ${resumo.diasAusentes} ausências / ${resumo.turnosIncompletos} incompletos`,
+      'Ocorrências': `${resumo.ocorrenciasCount} ocorrência(s)`,
       'Editado': '',
     });
 
     const ws = XLSX.utils.json_to_sheet(linhas);
+    // Largura automática das colunas
+    const colWidths = [
+      { wch: 12 }, { wch: 6 }, { wch: 10 }, { wch: 12 }, { wch: 13 }, { wch: 8 },
+      { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 8 },
+    ];
+    ws['!cols'] = colWidths;
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Espelho');
     XLSX.writeFile(wb, `espelho_${nome.replace(/ /g, '_')}_${selectedMonth}.xlsx`);
@@ -537,9 +564,9 @@ const EspelhoMensal: React.FC = () => {
 
       {/* ── ESPELHO (visível no print) ── */}
       {gerado && (
-        <div ref={printRef}>
+        <div ref={printRef} id="espelho-print-area">
           {/* Botões de exportação (ocultos no print) */}
-          <div className="flex items-center gap-3 mb-4 print:hidden">
+          <div className="flex items-center gap-3 mb-4 print:hidden print-hidden">
             <button
               onClick={exportarExcel}
               className="px-4 py-2 bg-green-600 text-white rounded-lg font-bold text-sm hover:bg-green-700 flex items-center gap-2 transition-colors"
@@ -769,10 +796,19 @@ const EspelhoMensal: React.FC = () => {
       {/* ── Print CSS ── */}
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          .print\\:hidden { display: none !important; }
-          [class*="print:"] { break-inside: avoid; }
-          #root { visibility: visible; }
+          body * { visibility: hidden !important; }
+          #espelho-print-area,
+          #espelho-print-area * { visibility: visible !important; }
+          #espelho-print-area {
+            position: fixed !important;
+            inset: 0 !important;
+            width: 100% !important;
+            z-index: 9999 !important;
+            background: white !important;
+            padding: 16px !important;
+            overflow: visible !important;
+          }
+          .print-hidden { display: none !important; }
         }
       `}</style>
 
