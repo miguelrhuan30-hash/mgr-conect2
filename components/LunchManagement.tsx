@@ -87,9 +87,9 @@ const LunchManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
 
   // ── Choices ──
-  const [choices, setChoices] = useState<LunchChoice[]>([]);
-  const [selectedMenuId, setSelectedMenuId] = useState<string>('');
-  const [selectedDay, setSelectedDay] = useState<DayKey>('segunda');
+  const [allChoices, setAllChoices] = useState<LunchChoice[]>([]);
+  // Filtro único por data
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [copied, setCopied] = useState(false);
   const [copiedGrouped, setCopiedGrouped] = useState(false);
   const [exportingXLS, setExportingXLS] = useState(false);
@@ -141,18 +141,16 @@ const LunchManagement: React.FC = () => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchMenu[];
       setMenus(data);
       setLoadingMenus(false);
-      if (!selectedMenuId && data.length > 0) setSelectedMenuId(data[0].id);
     });
   }, []);
 
-  /* ─── Real-time: choices for selected menu ─── */
+  /* ─── Real-time: TODOS os choices (busca por data depois) ─── */
   useEffect(() => {
-    if (!selectedMenuId) return;
-    const q = query(collection(db, CollectionName.LUNCH_CHOICES), where('menuId', '==', selectedMenuId));
+    const q = query(collection(db, CollectionName.LUNCH_CHOICES), orderBy('enviadoEm', 'desc'));
     return onSnapshot(q, snap => {
-      setChoices(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[]);
+      setAllChoices(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[]);
     });
-  }, [selectedMenuId]);
+  }, []);
 
   /* ─── Real-time: locations ─── */
   useEffect(() => {
@@ -307,36 +305,94 @@ const LunchManagement: React.FC = () => {
     return parts.join(', ') || '—';
   };
 
-  /* ─── Pedidos: filtrados para o dia (dedup por userId) ─── */
-  const filteredChoices = useMemo(() => {
-    const withChoice = choices.filter(c => {
-      const dc = c.escolhas[selectedDay] as LunchDayChoice | null | undefined;
-      return dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0);
+  /* ─── Helper: resolve a data ISO de uma escolha (dayKey) dentro de um menu ─── */
+  const getChoiceDateForDay = (menu: LunchMenu, dayKey: DayKey): string | null => {
+    if (menu.modo === 'diario') return menu.dataUnica ?? null;
+    if (menu.modo === 'fixo' || !menu.weekStart || menu.weekStart.trim() === '') return null;
+    const idx = DAY_KEYS.indexOf(dayKey);
+    const d = new Date(menu.weekStart + 'T12:00:00');
+    if (isNaN(d.getTime())) return null;
+    d.setDate(d.getDate() + idx);
+    return d.toISOString().split('T')[0];
+  };
+
+  /* ─── Helper: nome do dia da semana a partir de uma data ISO ─── */
+  const getDayOfWeekLabel = (isoDate: string): string => {
+    const d = new Date(isoDate + 'T12:00:00');
+    if (isNaN(d.getTime())) return '';
+    const names = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    return names[d.getDay()] ?? '';
+  };
+
+  /* ─── Pedidos filtrados pela selectedDate — busca em TODOS os choices ─── */
+  type FilteredChoiceEntry = {
+    choice: LunchChoice;
+    dayKey: DayKey;
+    menu: LunchMenu | null;
+    menuEncerrado: boolean;
+  };
+
+  const filteredChoicesByDate = useMemo((): FilteredChoiceEntry[] => {
+    if (!selectedDate) return [];
+    const candidates: FilteredChoiceEntry[] = [];
+
+    allChoices.forEach(choice => {
+      const menu = menus.find(m => m.id === choice.menuId) ?? null;
+
+      // Para cardápio semanal: testar cada dayKey
+      const keysToCheck: DayKey[] = menu?.modo === 'diario' ? [] : DAY_KEYS as unknown as DayKey[];
+
+      if (menu?.modo === 'diario') {
+        // cardápio diário: só tem 'segunda' como dayKey padrão, mas a data é dataUnica
+        // O usuário faz escolha em `segunda` quando é diário
+        const dateForDay = getChoiceDateForDay(menu, 'segunda');
+        if (dateForDay === selectedDate) {
+          const dc = choice.escolhas['segunda'] as LunchDayChoice | null | undefined;
+          if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
+            candidates.push({
+              choice,
+              dayKey: 'segunda',
+              menu,
+              menuEncerrado: menu.status === 'encerrado',
+            });
+          }
+        }
+      } else {
+        // cardápio semanal ou null: testar cada dayKey
+        for (const dayKey of keysToCheck) {
+          const dateForDay = menu ? getChoiceDateForDay(menu, dayKey) : null;
+          if (dateForDay !== selectedDate) continue;
+          const dc = choice.escolhas[dayKey] as LunchDayChoice | null | undefined;
+          if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
+            candidates.push({
+              choice,
+              dayKey,
+              menu,
+              menuEncerrado: (menu?.status ?? 'encerrado') === 'encerrado',
+            });
+          }
+        }
+      }
     });
-    // Dedup: manter somente o último por userId (mais recente = enviadoEm mais novo)
-    const byUser = new Map<string, LunchChoice>();
-    withChoice.forEach(c => {
-      const existing = byUser.get(c.userId);
-      if (!existing || (c.enviadoEm?.toMillis?.() ?? 0) > (existing.enviadoEm?.toMillis?.() ?? 0)) {
-        byUser.set(c.userId, c);
+
+    // Dedup: manter somente o mais recente por userId
+    const byUser = new Map<string, FilteredChoiceEntry>();
+    candidates.forEach(entry => {
+      const existing = byUser.get(entry.choice.userId);
+      if (!existing ||
+        (entry.choice.enviadoEm?.toMillis?.() ?? 0) > (existing.choice.enviadoEm?.toMillis?.() ?? 0)) {
+        byUser.set(entry.choice.userId, entry);
       }
     });
     return Array.from(byUser.values());
-  }, [choices, selectedDay]);
+  }, [allChoices, menus, selectedDate]);
 
-  /* ─── Locations split ─── */
+  // Alias retrocompatível para partes do código que ainda usam filteredChoices
+  const filteredChoices = filteredChoicesByDate.map(e => e.choice);
+
+  /* ─── Locations split para a data selecionada ─── */
   const dayLocations = useMemo(() => {
-    const menuObj = menus.find(m => m.id === selectedMenuId);
-    const empty = { sede: [] as LunchLocation[], campo: [] as LunchLocation[], fora: [] as LunchLocation[] };
-    if (!menuObj) return empty;
-    // Menus do tipo 'fixo' ou 'diario' sem weekStart não têm localização por dia da semana
-    if (!menuObj.weekStart || typeof menuObj.weekStart !== 'string' || menuObj.weekStart.trim() === '') return empty;
-    const dayIndex = DAY_KEYS.indexOf(selectedDay);
-    const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
-    if (isNaN(menuDate.getTime())) return empty;
-    menuDate.setDate(menuDate.getDate() + dayIndex);
-    const dateISO = menuDate.toISOString().split('T')[0];
-    const dayLocs = locations.filter(l => l.data === dateISO);
+    const dayLocs = locations.filter(l => l.data === selectedDate);
     const sede: LunchLocation[] = [], campo: LunchLocation[] = [], fora: LunchLocation[] = [];
     dayLocs.forEach(loc => {
       if (loc.tipo === 'sede') sede.push(loc);
@@ -344,37 +400,27 @@ const LunchManagement: React.FC = () => {
       else fora.push(loc);
     });
     return { sede, campo, fora };
-  }, [locations, selectedDay, selectedMenuId, menus]);
+  }, [locations, selectedDate]);
 
-  /* ─── Clipboard: lista simples ─── */
-  const getDayDateISO = (): string => {
-    const menuObj = menus.find(m => m.id === selectedMenuId);
-    if (!menuObj) return '';
-    if (!menuObj.weekStart || typeof menuObj.weekStart !== 'string' || menuObj.weekStart.trim() === '') return '';
-    const dayIndex = DAY_KEYS.indexOf(selectedDay);
-    const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
-    if (isNaN(menuDate.getTime())) return '';
-    menuDate.setDate(menuDate.getDate() + dayIndex);
-    return menuDate.toISOString().split('T')[0];
-  };
+  /* ─── Clipboard: usa selectedDate diretamente ─── */
+  const getDayDateISO = (): string => selectedDate;
 
   const TAMANHO_LABELS: Record<string, string> = {
     pequena: 'pequena', media: 'média', grande: 'grande',
   };
 
   const buildClipboardText = (): string => {
-    const menuObj = menus.find(m => m.id === selectedMenuId);
-    const weekLabel = menuObj ? `${formatDateBR(menuObj.weekStart)} a ${formatDateBR(menuObj.weekEnd)}` : '';
-    const dayDateLabel = getDayDateISO() ? formatDateBR(getDayDateISO()) : '';
-    let text = `📋 Pedidos ${DAY_LABELS[selectedDay]} (${dayDateLabel}):\n\n`;
-    filteredChoices.forEach((c, i) => {
-      const dc = c.escolhas[selectedDay] as LunchDayChoice | null;
+    const dayLabel = getDayOfWeekLabel(selectedDate);
+    const dateBR = formatDateBR(selectedDate);
+    let text = `📋 Pedidos ${dayLabel} · ${dateBR}:\n\n`;
+    filteredChoicesByDate.forEach(({ choice, dayKey }, i) => {
+      const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
       const mistStr  = dc?.misturas?.map(m => m.nome).join(' + ')  || '—';
       const garnStr  = dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—';
       const tamLabel = dc?.tamanho ? TAMANHO_LABELS[dc.tamanho] || dc.tamanho : 'média';
-      text += `${i + 1} ${tamLabel}: ${c.userName}\n   🥩 ${mistStr}\n   🥗 ${garnStr}\n`;
+      text += `${i + 1} ${tamLabel}: ${choice.userName}\n   🥩 ${mistStr}\n   🥗 ${garnStr}\n`;
     });
-    text += `\nTotal: ${filteredChoices.length} marmita(s)`;
+    text += `\nTotal: ${filteredChoicesByDate.length} marmita(s)`;
     return text;
   };
 
@@ -395,20 +441,11 @@ const LunchManagement: React.FC = () => {
     });
     const dedupedLocations = Array.from(latestLocs.values());
 
-    filteredChoices.forEach(c => {
-      const menuObj = menus.find(m => m.id === selectedMenuId);
-      if (!menuObj) return;
-      // Menus sem weekStart válido (fixo/diario) não têm localização por dia
-      if (!menuObj.weekStart || typeof menuObj.weekStart !== 'string' || menuObj.weekStart.trim() === '') return;
-      const dayIndex = DAY_KEYS.indexOf(selectedDay);
-      const menuDate = new Date(menuObj.weekStart + 'T12:00:00');
-      if (isNaN(menuDate.getTime())) return;
-      menuDate.setDate(menuDate.getDate() + dayIndex);
-      const dateISO = menuDate.toISOString().split('T')[0];
-      const loc = dedupedLocations.find(l => l.userId === c.userId && l.data === dateISO);
+    filteredChoicesByDate.forEach(({ choice, dayKey }) => {
+      const loc = dedupedLocations.find(l => l.userId === choice.userId && l.data === selectedDate);
       if (loc?.tipo === 'fora_cidade') return;
 
-      const dc = c.escolhas[selectedDay] as LunchDayChoice | null;
+      const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
       const mistStr  = dc?.misturas?.map(m => m.nome).join(' + ')  || '—';
       const garnStr  = dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—';
       const tamLabel = dc?.tamanho ? (TAMANHO_LABELS[dc.tamanho] || dc.tamanho) : 'média';
@@ -421,37 +458,28 @@ const LunchManagement: React.FC = () => {
         addressKey = addrParts || 'Endereço não informado';
       }
       if (!groups[addressKey]) groups[addressKey] = { address: addressKey, meals: [] };
-      groups[addressKey].meals.push({ userName: c.userName, misturas: mistStr, guarnicoes: garnStr, tamanho: tamLabel });
+      groups[addressKey].meals.push({ userName: choice.userName, misturas: mistStr, guarnicoes: garnStr, tamanho: tamLabel });
     });
     return Object.values(groups);
-  }, [filteredChoices, locations, selectedDay, selectedMenuId, menus, sedeNome, sedeEndereco]);
+  }, [filteredChoicesByDate, locations, selectedDate, sedeNome, sedeEndereco]);
 
   const buildGroupedClipboardText = (): string => {
-    const menuObj = menus.find(m => m.id === selectedMenuId);
-    const weekLabel = menuObj ? `${formatDateBR(menuObj.weekStart)} a ${formatDateBR(menuObj.weekEnd)}` : '';
-    const dayDateLabel = getDayDateISO() ? formatDateBR(getDayDateISO()) : '';
-    let text = `📋 Pedidos por Endereço — ${DAY_LABELS[selectedDay]} (${dayDateLabel}):\n`;
+    const dayLabel = getDayOfWeekLabel(selectedDate);
+    const dateBR = formatDateBR(selectedDate);
+    let text = `📋 Pedidos por Endereço — ${dayLabel} · ${dateBR}:\n`;
     groupedByAddress.forEach(group => {
       text += `\n📍 ${group.address}\n`;
       group.meals.forEach((m, i) => {
         text += `   ${i + 1} ${m.tamanho}:  ${m.userName}\n     🥩 ${m.misturas}\n     🥗 ${m.guarnicoes}\n`;
       });
     });
-    const foraChoices = filteredChoices.filter(c => {
-      const menuObj2 = menus.find(m => m.id === selectedMenuId);
-      if (!menuObj2) return false;
-      if (!menuObj2.weekStart || typeof menuObj2.weekStart !== 'string' || menuObj2.weekStart.trim() === '') return false;
-      const dayIndex = DAY_KEYS.indexOf(selectedDay);
-      const menuDate = new Date(menuObj2.weekStart + 'T12:00:00');
-      if (isNaN(menuDate.getTime())) return false;
-      menuDate.setDate(menuDate.getDate() + dayIndex);
-      const dateISO = menuDate.toISOString().split('T')[0];
-      const loc = locations.find(l => l.userId === c.userId && l.data === dateISO);
+    const foraEntries = filteredChoicesByDate.filter(({ choice }) => {
+      const loc = locations.find(l => l.userId === choice.userId && l.data === selectedDate);
       return loc?.tipo === 'fora_cidade';
     });
-    if (foraChoices.length > 0) {
+    if (foraEntries.length > 0) {
       text += `\n✈️ Fora da Cidade (NÃO pedir):\n`;
-      foraChoices.forEach(c => { text += `   ❌ ${c.userName}\n`; });
+      foraEntries.forEach(({ choice }) => { text += `   ❌ ${choice.userName}\n`; });
     }
     // Totalizar marmitas por endereço
     const totalMarmitas = groupedByAddress.reduce((sum, g) => sum + g.meals.length, 0);
@@ -480,9 +508,8 @@ const LunchManagement: React.FC = () => {
     setExportingXLS(true);
     try {
       const wb = XLSX.utils.book_new();
-      const dayDate = getDayDateISO();
-      const dayLabel = DAY_LABELS[selectedDay];
-      const dateBR = dayDate ? formatDateBR(dayDate) : '';
+      const dayLabel = getDayOfWeekLabel(selectedDate);
+      const dateBR = formatDateBR(selectedDate);
 
       // Dedup locations
       const latestLocs = new Map<string, LunchLocation>();
@@ -492,39 +519,39 @@ const LunchManagement: React.FC = () => {
         if (!ex || (l.informadoEm?.toMillis?.() ?? 0) > (ex.informadoEm?.toMillis?.() ?? 0)) latestLocs.set(key, l);
       });
       const dedupLocs = Array.from(latestLocs.values());
-      const menuObj = menus.find(m => m.id === selectedMenuId);
-      const getLocForUser = (userId: string) => {
-        if (!menuObj?.weekStart) return null;
-        const idx = DAY_KEYS.indexOf(selectedDay);
-        const d = new Date(menuObj.weekStart + 'T12:00:00'); d.setDate(d.getDate() + idx);
-        return dedupLocs.find(l => l.userId === userId && l.data === d.toISOString().split('T')[0]) ?? null;
-      };
+
+      const getLocForUser = (userId: string) =>
+        dedupLocs.find(l => l.userId === userId && l.data === selectedDate) ?? null;
+
       const locLabel = (l: LunchLocation | null) => {
         if (!l || l.tipo === 'sede') return sedeNome + (sedeEndereco ? ` - ${sedeEndereco}` : '');
         if (l.tipo === 'fora_cidade') return 'Fora da Cidade';
         return [l.clienteNome, l.endereco].filter(Boolean).join(' - ') || 'Campo';
       };
       const locTipo = (l: LunchLocation | null) => {
-        if (!l || l.tipo === 'sede') return 'Sede'; if (l.tipo === 'fora_cidade') return 'Fora da Cidade'; return 'Campo';
+        if (!l || l.tipo === 'sede') return 'Sede';
+        if (l.tipo === 'fora_cidade') return 'Fora da Cidade';
+        return 'Campo';
       };
 
       // Aba 1: Pedidos
-      const pedidosData = filteredChoices.map((c, i) => {
-        const dc = c.escolhas[selectedDay] as LunchDayChoice | null;
-        const loc = getLocForUser(c.userId);
+      const pedidosData = filteredChoicesByDate.map(({ choice, dayKey, menuEncerrado }, i) => {
+        const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
+        const loc = getLocForUser(choice.userId);
         return {
           'Nº': i + 1,
-          'Nome': c.userName,
-          'Setor': c.userSector || '',
+          'Nome': choice.userName,
+          'Setor': choice.userSector || '',
           'Misturas': dc?.misturas?.map(m => m.nome).join(' + ') || '—',
           'Guarnições': dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—',
           'Tamanho': dc?.tamanho || 'média',
           'Tipo Localização': locTipo(loc),
           'Endereço Entrega': locLabel(loc),
+          'Status Cardápio': menuEncerrado ? '⚠️ Cardápio Desativado' : '✅ Ativo',
         };
       });
       const ws1 = XLSX.utils.json_to_sheet(pedidosData);
-      ws1['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 16 }, { wch: 36 }];
+      ws1['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 16 }, { wch: 36 }, { wch: 22 }];
       XLSX.utils.book_append_sheet(wb, ws1, 'Pedidos');
 
       // Aba 2: Por Endereço
@@ -547,9 +574,9 @@ const LunchManagement: React.FC = () => {
       XLSX.utils.book_append_sheet(wb, ws2, 'Por Endereço');
 
       // Aba 3: Fora da Cidade
-      const foraData = filteredChoices
-        .filter(c => getLocForUser(c.userId)?.tipo === 'fora_cidade')
-        .map(c => ({ 'Nome': c.userName, 'Setor': c.userSector || '' }));
+      const foraData = filteredChoicesByDate
+        .filter(({ choice }) => getLocForUser(choice.userId)?.tipo === 'fora_cidade')
+        .map(({ choice }) => ({ 'Nome': choice.userName, 'Setor': choice.userSector || '' }));
       if (foraData.length > 0) {
         const ws3 = XLSX.utils.json_to_sheet(foraData);
         XLSX.utils.book_append_sheet(wb, ws3, 'Fora da Cidade');
@@ -1002,24 +1029,28 @@ const LunchManagement: React.FC = () => {
             </div>
           )}
 
-          {/* Filtros */}
+          {/* Filtro único por data */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 items-end">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cardápio</label>
-                <select value={selectedMenuId} onChange={e => setSelectedMenuId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none">
-                  {menus.map(m => (
-                    <option key={m.id} value={m.id}>{formatDateBR(m.weekStart)} a {formatDateBR(m.weekEnd)} {m.status === 'ativo' ? '● Ativo' : ''}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                  <Calendar size={14} className="text-orange-500" />
+                  Data do Relatório
+                </label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={e => setSelectedDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none"
+                />
+                {selectedDate && (
+                  <p className="text-xs text-orange-600 font-semibold mt-1.5">
+                    📅 {getDayOfWeekLabel(selectedDate)} · {formatDateBR(selectedDate)}
+                  </p>
+                )}
               </div>
-              <div className="sm:w-52">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dia da Semana</label>
-                <select value={selectedDay} onChange={e => setSelectedDay(e.target.value as DayKey)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none">
-                  {DAY_KEYS.map(k => <option key={k} value={k}>{DAY_LABELS[k]}</option>)}
-                </select>
+              <div className="text-sm text-gray-500 pb-1">
+                {filteredChoicesByDate.length} pedido{filteredChoicesByDate.length !== 1 ? 's' : ''} encontrado{filteredChoicesByDate.length !== 1 ? 's' : ''}
               </div>
             </div>
           </div>
@@ -1028,10 +1059,11 @@ const LunchManagement: React.FC = () => {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-gray-100">
               <h3 className="text-sm font-bold text-gray-800">
-                📋 Lista de Pedidos — {DAY_LABELS[selectedDay]}
-                <span className="ml-2 text-xs font-normal text-gray-500">({filteredChoices.length} pedido{filteredChoices.length !== 1 ? 's' : ''})</span>
+                📋 Lista de Pedidos — {getDayOfWeekLabel(selectedDate) || 'Selecione uma data'}
+                {selectedDate && <span className="ml-1 font-normal text-gray-500">· {formatDateBR(selectedDate)}</span>}
+                <span className="ml-2 text-xs font-normal text-gray-500">({filteredChoicesByDate.length} pedido{filteredChoicesByDate.length !== 1 ? 's' : ''})</span>
               </h3>
-              {filteredChoices.length > 0 && (
+              {filteredChoicesByDate.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <button onClick={handleCopy}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -1047,21 +1079,31 @@ const LunchManagement: React.FC = () => {
                 </div>
               )}
             </div>
-            {filteredChoices.length === 0 ? (
+            {filteredChoicesByDate.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
                 <ClipboardList size={36} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Nenhum pedido para {DAY_LABELS[selectedDay]}</p>
+                <p className="text-sm">Nenhum pedido encontrado para {formatDateBR(selectedDate)}</p>
+                <p className="text-xs mt-1 text-gray-300">Verifique se a data está correta</p>
               </div>
             ) : (
               <ul className="divide-y divide-gray-50">
-                {filteredChoices.map((c, idx) => {
-                  const dc = c.escolhas[selectedDay] as LunchDayChoice | null;
+                {filteredChoicesByDate.map(({ choice, dayKey, menuEncerrado }, idx) => {
+                  const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
                   return (
-                    <li key={c.id} className="px-5 py-3 hover:bg-orange-50/30 transition-colors">
+                    <li key={choice.id} className={`px-5 py-3 hover:bg-orange-50/30 transition-colors ${
+                      menuEncerrado ? 'border-l-4 border-amber-400 bg-amber-50/20' : ''
+                    }`}>
                       <div className="flex items-start gap-3">
                         <span className="text-sm font-bold text-gray-400 w-6 text-right mt-0.5">{idx + 1}.</span>
                         <div className="flex-1">
-                          <p className="text-sm font-semibold text-gray-900">{c.userName}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-gray-900">{choice.userName}</p>
+                            {menuEncerrado && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300">
+                                <AlertTriangle size={9} /> Cardápio Desativado
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-2 mt-1">
                             {dc?.misturas?.map(m => (
                               <span key={m.id} className="text-xs bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-full">🥩 {m.nome}</span>

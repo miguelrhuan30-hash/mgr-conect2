@@ -75,10 +75,7 @@ const OrcamentoPublico = lazy(() => import('./components/OrcamentoPublico'));
 // ─────────────────────────────────────────────
 const PropostasPDF = lazy(() => import('./components/PropostasPDF'));
 
-// ─────────────────────────────────────────────
-// LAZY LOAD — Proposta Bimbo (HTML Standalone)
-// ─────────────────────────────────────────────
-const PropostaBimbo = lazy(() => import('./components/PropostaBimbo'));
+
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 51B: Apresentações Interativas
@@ -106,11 +103,8 @@ const SurveyDashboard  = lazy(() => import('./components/SurveyDashboard'));
 // ─────────────────────────────────────────────
 const ProjectHub       = lazy(() => import('./components/ProjectHub'));
 const ProjectDetail    = lazy(() => import('./components/ProjectDetail'));
-const LeadForm         = lazy(() => import('./components/LeadForm'));
 const LeadsDashboard   = lazy(() => import('./components/LeadsDashboard'));
 const ProjectUpsell    = lazy(() => import('./components/ProjectUpsell'));
-const ProjetosLanding  = lazy(() => import('./components/ProjetosLanding'));
-const ProjetosLandingEditor = lazy(() => import('./components/ProjetosLandingEditor'));
 const GanttGerencial   = lazy(() => import('./components/GanttGerencial'));
 const FlowAtendimento  = lazy(() => import('./components/FlowAtendimento'));
 
@@ -248,9 +242,6 @@ const AppContent: React.FC = () => {
         {/* ── ROTAS PÚBLICAS ── */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/solicitar-projeto" element={<LeadForm />} />
-        <Route path="/projetos" element={<ProjetosLanding />} />
-        <Route path="/propostabimbo" element={<PropostaBimbo />} />
 
         <Route
           path="/aguardando-aprovacao"
@@ -265,14 +256,7 @@ const AppContent: React.FC = () => {
               : <Navigate to="/app" />
           }
         />
-        <Route
-          path="/editor-projetos"
-          element={
-            currentUser && (userProfile?.role === 'developer' || userProfile?.role === 'admin')
-              ? <ProjetosLandingEditor />
-              : <Navigate to="/login" />
-          }
-        />
+
 
         {/* ── ROTAS PROTEGIDAS ── */}
         <Route
