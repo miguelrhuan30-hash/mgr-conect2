@@ -76,6 +76,11 @@ const OrcamentoPublico = lazy(() => import('./components/OrcamentoPublico'));
 const PropostasPDF = lazy(() => import('./components/PropostasPDF'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — Proposta Bimbo (HTML Standalone)
+// ─────────────────────────────────────────────
+const PropostaBimbo = lazy(() => import('./components/PropostaBimbo'));
+
+// ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 51B: Apresentações Interativas
 // ─────────────────────────────────────────────
 const Apresentacoes     = lazy(() => import('./components/Apresentacoes'));
@@ -245,6 +250,7 @@ const AppContent: React.FC = () => {
         <Route path="/login" element={<Login />} />
         <Route path="/solicitar-projeto" element={<LeadForm />} />
         <Route path="/projetos" element={<ProjetosLanding />} />
+        <Route path="/propostabimbo" element={<PropostaBimbo />} />
 
         <Route
           path="/aguardando-aprovacao"
