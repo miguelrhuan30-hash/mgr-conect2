@@ -150,6 +150,15 @@ export interface Partner {
   logoUrl: string;
 }
 
+export interface GalleryItem {
+  id: string;
+  imageUrl: string;
+  title: string;
+  caption: string;
+  date: string;
+  order: number;
+}
+
 // --- LANDING PAGE CMS ---
 export interface LandingPageContent {
   hero: {
@@ -165,21 +174,28 @@ export interface LandingPageContent {
   }[];
   services: {
     title: string;
-    items: { 
-      title: string; 
-      description: string; 
-      icon: string; 
+    items: {
+      title: string;
+      description: string;
+      icon: string;
     }[];
   };
   clients: {
     title: string;
     description: string;
-    partners: Partner[]; 
+    partners: Partner[];
+  };
+  gallery: {
+    title: string;
+    description: string;
+    items: GalleryItem[];
   };
   about: {
     title: string;
     description: string;
     imageUrl: string;
+    manifesto?: string;
+    differentials?: string[];
   };
   contact: {
     address: string;

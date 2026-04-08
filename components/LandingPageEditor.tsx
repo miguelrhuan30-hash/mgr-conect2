@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { CollectionName, LandingPageContent, Partner } from '../types';
+import { CollectionName, LandingPageContent, Partner, GalleryItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { compressImage } from '../utils/compressor';
-import { 
-  ArrowLeft, Save, Loader2, Monitor, Globe, Image as ImageIcon, Settings, 
-  MessageSquare, Plus, Trash2, BarChart2, Users, LayoutDashboard, X, Edit, UploadCloud 
+import {
+  ArrowLeft, Save, Loader2, Monitor, Globe, Image as ImageIcon, Settings,
+  MessageSquare, Plus, Trash2, BarChart2, Users, LayoutDashboard, X, Edit, UploadCloud,
+  Camera, GripVertical, Calendar, FileText, CheckCircle2
 } from 'lucide-react';
 
 const LandingPageEditor: React.FC = () => {
@@ -17,11 +18,12 @@ const LandingPageEditor: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [content, setContent] = useState<LandingPageContent | null>(null);
+  const [activeTab, setActiveTab] = useState<'hero' | 'stats' | 'clients' | 'gallery' | 'about' | 'contact' | 'features'>('hero');
 
   // Stats input state
   const [newStatValue, setNewStatValue] = useState('');
   const [newStatLabel, setNewStatLabel] = useState('');
-  
+
   // Partner (Client) State
   const [isPartnerModalOpen, setIsPartnerModalOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState<Partner | null>(null);
@@ -29,6 +31,19 @@ const LandingPageEditor: React.FC = () => {
   const [partnerLogoFile, setPartnerLogoFile] = useState<File | null>(null);
   const [partnerLogoPreview, setPartnerLogoPreview] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
+
+  // Gallery Modal State
+  const [isGalleryModalOpen, setIsGalleryModalOpen] = useState(false);
+  const [editingGalleryItem, setEditingGalleryItem] = useState<GalleryItem | null>(null);
+  const [galleryTitle, setGalleryTitle] = useState('');
+  const [galleryCaption, setGalleryCaption] = useState('');
+  const [galleryDate, setGalleryDate] = useState('');
+  const [galleryFile, setGalleryFile] = useState<File | null>(null);
+  const [galleryPreview, setGalleryPreview] = useState<string>('');
+  const [isGalleryUploading, setIsGalleryUploading] = useState(false);
+
+  // About Differentials
+  const [newDifferential, setNewDifferential] = useState('');
 
   // Security Redirect
   useEffect(() => {
@@ -39,9 +54,8 @@ const LandingPageEditor: React.FC = () => {
 
   // Load Content
   useEffect(() => {
-    // Authorization Check: Only allow if role is admin or developer
     if (!userProfile || (userProfile.role !== 'developer' && userProfile.role !== 'admin')) {
-        return;
+      return;
     }
 
     const fetchContent = async () => {
@@ -50,23 +64,33 @@ const LandingPageEditor: React.FC = () => {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as any;
-          
+
           // Migration Logic for Editor
           let partners = data.clients?.partners || [];
           if (data.clients?.logos && Array.isArray(data.clients.logos) && partners.length === 0) {
             partners = data.clients.logos.map((name: string, index: number) => ({
-               id: `legacy-${index}`,
-               name: name,
-               logoUrl: ''
+              id: `legacy-${index}`,
+              name: name,
+              logoUrl: ''
             }));
           }
 
           const normalizedData: LandingPageContent = {
-             ...data,
-             clients: {
-                ...data.clients,
-                partners: partners
-             }
+            ...data,
+            clients: {
+              ...data.clients,
+              partners: partners
+            },
+            gallery: {
+              title: data.gallery?.title || 'Projetos em Campo',
+              description: data.gallery?.description || '',
+              items: data.gallery?.items || [],
+            },
+            about: {
+              ...data.about,
+              manifesto: data.about?.manifesto || '',
+              differentials: data.about?.differentials || [],
+            }
           };
           setContent(normalizedData);
         } else {
@@ -75,7 +99,7 @@ const LandingPageEditor: React.FC = () => {
         }
       } catch (err: any) {
         if (err?.code !== 'permission-denied') {
-             console.error("Error loading CMS content", err);
+          console.error("Error loading CMS content", err);
         }
       } finally {
         setLoading(false);
@@ -109,7 +133,7 @@ const LandingPageEditor: React.FC = () => {
     });
   };
 
-  // Stats Handlers
+  // ── Stats Handlers ──
   const addStat = () => {
     if (!content || !newStatValue || !newStatLabel) return;
     const currentStats = content.stats || [];
@@ -128,8 +152,7 @@ const LandingPageEditor: React.FC = () => {
     setContent({ ...content, stats: newStats });
   };
 
-  // --- PARTNER (CLIENT) LOGIC ---
-  
+  // ── Partner (Client) Logic ──
   const openPartnerModal = (partner?: Partner) => {
     if (partner) {
       setEditingPartner(partner);
@@ -155,43 +178,30 @@ const LandingPageEditor: React.FC = () => {
   const handleSavePartner = async () => {
     if (!content || !partnerName.trim()) return;
     setIsUploading(true);
-
     try {
       let logoUrl = editingPartner?.logoUrl || '';
-
-      // Upload if new file
       if (partnerLogoFile) {
-        // Compress Image
         const compressedFile = await compressImage(partnerLogoFile, 400, 0.8);
-
         const storageRef = ref(storage, `landing/partners/${Date.now()}_${compressedFile.name}`);
         await uploadBytes(storageRef, compressedFile);
         logoUrl = await getDownloadURL(storageRef);
       }
-
       const newPartner: Partner = {
         id: editingPartner?.id || Math.random().toString(36).substr(2, 9),
         name: partnerName.trim(),
         logoUrl: logoUrl
       };
-
       const currentPartners = content.clients?.partners || [];
       let updatedPartners;
-
       if (editingPartner) {
         updatedPartners = currentPartners.map(p => p.id === editingPartner.id ? newPartner : p);
       } else {
         updatedPartners = [...currentPartners, newPartner];
       }
-
       setContent({
         ...content,
-        clients: {
-          ...content.clients,
-          partners: updatedPartners
-        }
+        clients: { ...content.clients, partners: updatedPartners }
       });
-
       setIsPartnerModalOpen(false);
     } catch (error) {
       console.error("Error saving partner:", error);
@@ -206,352 +216,768 @@ const LandingPageEditor: React.FC = () => {
     const updatedPartners = (content.clients?.partners || []).filter(p => p.id !== id);
     setContent({
       ...content,
-      clients: {
-        ...content.clients,
-        partners: updatedPartners
-      }
+      clients: { ...content.clients, partners: updatedPartners }
     });
   };
 
-  if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin text-brand-600 w-8 h-8"/></div>;
+  // ── Gallery Logic ──
+  const openGalleryModal = (item?: GalleryItem) => {
+    if (item) {
+      setEditingGalleryItem(item);
+      setGalleryTitle(item.title);
+      setGalleryCaption(item.caption);
+      setGalleryDate(item.date);
+      setGalleryPreview(item.imageUrl);
+    } else {
+      setEditingGalleryItem(null);
+      setGalleryTitle('');
+      setGalleryCaption('');
+      setGalleryDate('');
+      setGalleryPreview('');
+    }
+    setGalleryFile(null);
+    setIsGalleryModalOpen(true);
+  };
+
+  const handleGalleryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setGalleryFile(file);
+      setGalleryPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSaveGalleryItem = async () => {
+    if (!content || !galleryTitle.trim()) return;
+    if (!editingGalleryItem && !galleryFile) {
+      alert("Selecione uma imagem para o projeto.");
+      return;
+    }
+    setIsGalleryUploading(true);
+    try {
+      let imageUrl = editingGalleryItem?.imageUrl || '';
+      if (galleryFile) {
+        const compressedFile = await compressImage(galleryFile, 1200, 0.85);
+        const storageRef = ref(storage, `landing/gallery/${Date.now()}_${compressedFile.name}`);
+        await uploadBytes(storageRef, compressedFile);
+        imageUrl = await getDownloadURL(storageRef);
+      }
+      const currentItems = content.gallery?.items || [];
+      const newItem: GalleryItem = {
+        id: editingGalleryItem?.id || Math.random().toString(36).substr(2, 9),
+        imageUrl,
+        title: galleryTitle.trim(),
+        caption: galleryCaption.trim(),
+        date: galleryDate.trim(),
+        order: editingGalleryItem?.order || currentItems.length + 1,
+      };
+      let updatedItems;
+      if (editingGalleryItem) {
+        updatedItems = currentItems.map(i => i.id === editingGalleryItem.id ? newItem : i);
+      } else {
+        updatedItems = [...currentItems, newItem];
+      }
+      setContent({
+        ...content,
+        gallery: { ...content.gallery, items: updatedItems }
+      });
+      setIsGalleryModalOpen(false);
+    } catch (error) {
+      console.error("Error saving gallery item:", error);
+      alert("Erro ao salvar projeto.");
+    } finally {
+      setIsGalleryUploading(false);
+    }
+  };
+
+  const handleDeleteGalleryItem = (id: string) => {
+    if (!content || !window.confirm("Remover este projeto da galeria?")) return;
+    const updatedItems = (content.gallery?.items || []).filter(i => i.id !== id);
+    setContent({
+      ...content,
+      gallery: { ...content.gallery, items: updatedItems }
+    });
+  };
+
+  // ── About Differentials ──
+  const addDifferential = () => {
+    if (!content || !newDifferential.trim()) return;
+    const current = content.about?.differentials || [];
+    setContent({
+      ...content,
+      about: { ...content.about, differentials: [...current, newDifferential.trim()] }
+    });
+    setNewDifferential('');
+  };
+
+  const removeDifferential = (index: number) => {
+    if (!content) return;
+    const updated = [...(content.about?.differentials || [])];
+    updated.splice(index, 1);
+    setContent({
+      ...content,
+      about: { ...content.about, differentials: updated }
+    });
+  };
+
+  if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin text-brand-500 w-8 h-8" /></div>;
   if (!content) return <div>Erro ao carregar editor.</div>;
+
+  const tabs = [
+    { id: 'hero' as const, label: 'Hero', icon: <Monitor size={16} /> },
+    { id: 'stats' as const, label: 'Estatísticas', icon: <BarChart2 size={16} /> },
+    { id: 'clients' as const, label: 'Parceiros', icon: <Users size={16} /> },
+    { id: 'gallery' as const, label: 'Galeria', icon: <Camera size={16} /> },
+    { id: 'about' as const, label: 'Sobre', icon: <FileText size={16} /> },
+    { id: 'contact' as const, label: 'Contato', icon: <MessageSquare size={16} /> },
+    { id: 'features' as const, label: 'Config', icon: <Settings size={16} /> },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-50 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigate('/app')} 
+          <button
+            onClick={() => navigate('/app')}
             className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-colors"
           >
             <ArrowLeft size={16} />
-            Voltar ao Dashboard
+            Voltar
           </button>
-          <div className="h-6 w-px bg-gray-300 mx-2 hidden md:block"></div>
+          <div className="h-6 w-px bg-gray-300 mx-1 hidden md:block"></div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <Monitor size={20} className="text-brand-600" />
+            <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <Monitor size={18} className="text-brand-500" />
               Editor do Site
             </h1>
-            <p className="text-xs text-gray-500 hidden md:block">CMS - Gerenciador de Conteúdo</p>
+            <p className="text-xs text-gray-500 hidden md:block">CMS — Brand Guide MGR v1.0</p>
           </div>
         </div>
         <div className="flex gap-2">
           <button onClick={() => navigate('/')} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-2">
             <Globe size={16} /> <span className="hidden md:inline">Ver Site</span>
           </button>
-          <button 
-            onClick={handleSave} 
+          <button
+            onClick={handleSave}
             disabled={saving}
-            className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-2 font-medium shadow-sm disabled:opacity-70"
+            className="px-5 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 font-medium shadow-sm disabled:opacity-70"
           >
-            {saving ? <Loader2 className="animate-spin w-4 h-4"/> : <Save className="w-4 h-4" />}
-            <span className="hidden md:inline">Salvar Alterações</span>
-            <span className="md:hidden">Salvar</span>
+            {saving ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />}
+            <span className="hidden md:inline">Salvar</span>
           </button>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
-        
-        {/* HERO SECTION */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700 flex items-center gap-2">
-            Seção Hero (Topo)
-          </div>
-          <div className="p-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Título Principal</label>
-              <input 
-                type="text" 
-                value={content.hero.title} 
-                onChange={e => updateField('hero', 'title', e.target.value)}
-                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-              />
+      {/* Tab Navigation */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-4">
+        <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-hide">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                activeTab === tab.id
+                  ? 'bg-brand-500 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+        {/* ── HERO SECTION ── */}
+        {activeTab === 'hero' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Monitor size={18} /> Seção Hero (Topo)
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Subtítulo</label>
-              <textarea 
-                rows={2}
-                value={content.hero.subtitle} 
-                onChange={e => updateField('hero', 'subtitle', e.target.value)}
-                className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Imagem de Fundo (URL)</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <ImageIcon className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
-                  <input 
-                    type="text" 
-                    value={content.hero.backgroundImageUrl} 
-                    onChange={e => updateField('hero', 'backgroundImageUrl', e.target.value)}
-                    className="w-full pl-9 rounded-lg border-gray-300 font-mono text-xs bg-white text-gray-900"
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título Principal</label>
+                <input
+                  type="text"
+                  value={content.hero.title}
+                  onChange={e => updateField('hero', 'title', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subtítulo</label>
+                <textarea
+                  rows={3}
+                  value={content.hero.subtitle}
+                  onChange={e => updateField('hero', 'subtitle', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Imagem de Fundo (URL)</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <ImageIcon className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      value={content.hero.backgroundImageUrl}
+                      onChange={e => updateField('hero', 'backgroundImageUrl', e.target.value)}
+                      className="w-full pl-9 rounded-lg border-gray-300 font-mono text-xs bg-white text-gray-900"
+                      placeholder="Deixe vazio para usar gradiente premium"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Texto do Botão</label>
+                  <input
+                    type="text"
+                    value={content.hero.ctaText}
+                    onChange={e => updateField('hero', 'ctaText', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Link do Botão</label>
+                  <input
+                    type="text"
+                    value={content.hero.ctaLink}
+                    onChange={e => updateField('hero', 'ctaLink', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                   />
                 </div>
               </div>
             </div>
-             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Texto do Botão</label>
-                <input 
-                  type="text" 
-                  value={content.hero.ctaText} 
-                  onChange={e => updateField('hero', 'ctaText', e.target.value)}
-                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Link do Botão</label>
-                <input 
-                  type="text" 
-                  value={content.hero.ctaLink} 
-                  onChange={e => updateField('hero', 'ctaLink', e.target.value)}
-                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-                />
-              </div>
-            </div>
           </div>
-        </div>
+        )}
 
-        {/* STATS SECTION */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700 flex items-center gap-2">
-             <BarChart2 size={18} /> Estatísticas (Barra Azul)
-          </div>
-          <div className="p-6">
-            <div className="space-y-3 mb-4">
-              {(content.stats || []).map((stat, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-2 border border-gray-200 rounded-lg bg-white">
-                   <div className="flex-1 font-bold text-gray-900">{stat.value}</div>
-                   <div className="flex-1 text-sm text-gray-500">{stat.label}</div>
-                   <button onClick={() => removeStat(idx)} className="text-red-400 hover:text-red-600">
-                     <Trash2 size={16} />
-                   </button>
-                </div>
-              ))}
+        {/* ── STATS SECTION ── */}
+        {activeTab === 'stats' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <BarChart2 size={18} /> Estatísticas (Barra de Números)
             </div>
-            <div className="flex gap-2 p-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-               <input 
-                 placeholder="Valor (ex: +10)" 
-                 value={newStatValue}
-                 onChange={e => setNewStatValue(e.target.value)}
-                 className="flex-1 rounded border-gray-300 text-sm bg-white text-gray-900"
-               />
-               <input 
-                 placeholder="Rótulo (ex: Anos)" 
-                 value={newStatLabel}
-                 onChange={e => setNewStatLabel(e.target.value)}
-                 className="flex-[2] rounded border-gray-300 text-sm bg-white text-gray-900"
-               />
-               <button onClick={addStat} className="p-2 bg-brand-600 text-white rounded hover:bg-brand-700">
-                 <Plus size={16} />
-               </button>
-            </div>
-          </div>
-        </div>
-
-        {/* PARTNERS / CLIENTS SECTION */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700 flex items-center gap-2">
-             <Users size={18} /> Clientes e Parceiros
-          </div>
-          <div className="p-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Título da Seção</label>
-              <input 
-                type="text" 
-                value={content.clients?.title || ''} 
-                onChange={e => updateField('clients', 'title', e.target.value)}
-                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-              <input 
-                type="text" 
-                value={content.clients?.description || ''} 
-                onChange={e => updateField('clients', 'description', e.target.value)}
-                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-              />
-            </div>
-            
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="flex items-center justify-between mb-4">
-                <label className="block text-sm font-medium text-gray-700">Lista de Parceiros (Logos)</label>
-                <button 
-                  onClick={() => openPartnerModal()}
-                  className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-gray-800"
-                >
-                  <Plus size={14} /> Adicionar
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {(content.clients?.partners || []).map((partner) => (
-                  <div key={partner.id} className="border border-gray-200 rounded-lg p-3 flex flex-col items-center gap-2 bg-gray-50 hover:bg-white hover:shadow-sm transition-all group relative">
-                    <div className="h-12 w-full flex items-center justify-center bg-white rounded border border-gray-100 overflow-hidden">
-                      {partner.logoUrl ? (
-                        <img src={partner.logoUrl} alt={partner.name} className="max-h-full max-w-full object-contain p-1" />
-                      ) : (
-                        <span className="text-xs text-gray-300">Sem Logo</span>
-                      )}
-                    </div>
-                    <span className="text-xs font-bold text-gray-700 truncate w-full text-center">{partner.name}</span>
-                    
-                    {/* Action Buttons */}
-                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 rounded p-0.5">
-                       <button onClick={() => openPartnerModal(partner)} className="text-blue-500 hover:text-blue-700"><Edit size={14} /></button>
-                       <button onClick={() => handleDeletePartner(partner.id)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
-                    </div>
+            <div className="p-6">
+              <div className="space-y-3 mb-4">
+                {(content.stats || []).map((stat, idx) => (
+                  <div key={idx} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                    <div className="flex-1 font-bold text-accent-500 text-lg">{stat.value}</div>
+                    <div className="flex-[2] text-sm text-gray-600">{stat.label}</div>
+                    <button onClick={() => removeStat(idx)} className="text-red-400 hover:text-red-600 p-1">
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 ))}
               </div>
+              <div className="flex gap-2 p-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                <input
+                  placeholder="Valor (ex: +10)"
+                  value={newStatValue}
+                  onChange={e => setNewStatValue(e.target.value)}
+                  className="flex-1 rounded border-gray-300 text-sm bg-white text-gray-900"
+                />
+                <input
+                  placeholder="Rótulo (ex: Anos)"
+                  value={newStatLabel}
+                  onChange={e => setNewStatLabel(e.target.value)}
+                  className="flex-[2] rounded border-gray-300 text-sm bg-white text-gray-900"
+                />
+                <button onClick={addStat} className="p-2 bg-brand-500 text-white rounded hover:bg-brand-600">
+                  <Plus size={16} />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* SERVICES SECTION */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700">
-            Seção Soluções (Serviços)
-          </div>
-          <div className="p-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Título da Seção</label>
-              <input 
-                type="text" 
-                value={content.services.title} 
-                onChange={e => updateField('services', 'title', e.target.value)}
-                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-              />
+        {/* ── PARTNERS / CLIENTS SECTION ── */}
+        {activeTab === 'clients' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Users size={18} /> Parceiros de Operação
             </div>
-            <div className="mt-4 pt-4 border-t border-gray-100">
-               <p className="text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
-                * Para manter o layout alinhado, os itens de serviço devem ser editados via código ou solicitação específica.
-              </p>
-            </div>
-          </div>
-        </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título da Seção</label>
+                <input
+                  type="text"
+                  value={content.clients?.title || ''}
+                  onChange={e => updateField('clients', 'title', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                <input
+                  type="text"
+                  value={content.clients?.description || ''}
+                  onChange={e => updateField('clients', 'description', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                />
+              </div>
 
-        {/* CONTACT INFO */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700 flex items-center gap-2">
-             <MessageSquare size={18} /> Informações de Contato
-          </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
-              <input 
-                type="text" 
-                value={content.contact.address} 
-                onChange={e => updateField('contact', 'address', e.target.value)}
-                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp</label>
-              <input 
-                type="text" 
-                value={content.contact.whatsapp} 
-                onChange={e => updateField('contact', 'whatsapp', e.target.value)}
-                className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
-              />
-            </div>
-          </div>
-        </div>
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center justify-between mb-4">
+                  <label className="block text-sm font-medium text-gray-700">Lista de Parceiros (Logos)</label>
+                  <button
+                    onClick={() => openPartnerModal()}
+                    className="text-xs bg-brand-500 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-brand-600"
+                  >
+                    <Plus size={14} /> Adicionar
+                  </button>
+                </div>
 
-        {/* FEATURES TOGGLE */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700 flex items-center gap-2">
-            <Settings size={18} /> Funcionalidades
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {(content.clients?.partners || []).map((partner) => (
+                    <div key={partner.id} className="border border-gray-200 rounded-lg p-3 flex flex-col items-center gap-2 bg-gray-50 hover:bg-white hover:shadow-sm transition-all group relative">
+                      <div className="h-12 w-full flex items-center justify-center bg-white rounded border border-gray-100 overflow-hidden">
+                        {partner.logoUrl ? (
+                          <img src={partner.logoUrl} alt={partner.name} className="max-h-full max-w-full object-contain p-1" />
+                        ) : (
+                          <span className="text-xs text-gray-300">Sem Logo</span>
+                        )}
+                      </div>
+                      <span className="text-xs font-bold text-gray-700 truncate w-full text-center">{partner.name}</span>
+                      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 rounded p-0.5">
+                        <button onClick={() => openPartnerModal(partner)} className="text-blue-500 hover:text-blue-700"><Edit size={14} /></button>
+                        <button onClick={() => handleDeletePartner(partner.id)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-green-600 mt-3 bg-green-50 p-2 rounded flex items-center gap-1">
+                  <CheckCircle2 size={14} /> Os logos aparecerão sempre coloridos no site (sem filtro P&B).
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-             <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                <span className="text-sm font-medium text-gray-700">Botão Flutuante WhatsApp</span>
-                <input 
-                  type="checkbox" 
+        )}
+
+        {/* ══════════════════════════════════════════
+            GALLERY EDITOR — "Projetos em Campo"
+           ══════════════════════════════════════════ */}
+        {activeTab === 'gallery' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Camera size={18} /> Galeria — Projetos em Campo
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Título da Seção</label>
+                  <input
+                    type="text"
+                    value={content.gallery?.title || ''}
+                    onChange={e => updateField('gallery', 'title', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                  <input
+                    type="text"
+                    value={content.gallery?.description || ''}
+                    onChange={e => updateField('gallery', 'description', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Fotos de Projetos</label>
+                    <p className="text-xs text-gray-400">Adicione fotos de obras com nome, legenda e data.</p>
+                  </div>
+                  <button
+                    onClick={() => openGalleryModal()}
+                    className="text-xs bg-accent-500 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-accent-600 font-bold"
+                  >
+                    <Plus size={14} /> Adicionar Projeto
+                  </button>
+                </div>
+
+                {(content.gallery?.items || []).length === 0 && (
+                  <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+                    <Camera className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-400 font-medium">Nenhum projeto cadastrado</p>
+                    <p className="text-xs text-gray-300 mt-1">A seção ficará oculta no site até adicionar fotos.</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {(content.gallery?.items || [])
+                    .sort((a, b) => (a.order || 0) - (b.order || 0))
+                    .map((item) => (
+                      <div key={item.id} className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50 hover:shadow-md transition-all group relative">
+                        <div className="aspect-[4/3] overflow-hidden bg-gray-200">
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Camera className="w-8 h-8 text-gray-300" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-3">
+                          <div className="flex items-center gap-1 text-xs text-accent-500 font-bold mb-1">
+                            <Calendar size={10} /> {item.date || 'Sem data'}
+                          </div>
+                          <h4 className="text-sm font-bold text-gray-900 truncate">{item.title}</h4>
+                          <p className="text-xs text-gray-500 truncate">{item.caption}</p>
+                        </div>
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => openGalleryModal(item)} className="bg-white/90 p-1.5 rounded-lg shadow text-blue-500 hover:text-blue-700"><Edit size={14} /></button>
+                          <button onClick={() => handleDeleteGalleryItem(item.id)} className="bg-white/90 p-1.5 rounded-lg shadow text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── ABOUT/ MANIFESTO SECTION ── */}
+        {activeTab === 'about' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+                <FileText size={18} /> Seção Sobre / Manifesto
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                  <input
+                    type="text"
+                    value={content.about?.title || ''}
+                    onChange={e => updateField('about', 'title', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                  <textarea
+                    rows={4}
+                    value={content.about?.description || ''}
+                    onChange={e => updateField('about', 'description', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Imagem (URL)</label>
+                  <input
+                    type="text"
+                    value={content.about?.imageUrl || ''}
+                    onChange={e => updateField('about', 'imageUrl', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900 font-mono text-xs"
+                    placeholder="Deixe vazio para usar placeholder premium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Manifesto da Marca</label>
+                  <textarea
+                    rows={3}
+                    value={content.about?.manifesto || ''}
+                    onChange={e => updateField('about', 'manifesto', e.target.value)}
+                    className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
+                    placeholder="Texto que aparece em destaque com borda laranja..."
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Aparece como citação em destaque na seção Sobre.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Differentials */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700 flex items-center gap-2">
+                <CheckCircle2 size={18} /> Diferenciais
+              </div>
+              <div className="p-6">
+                <div className="space-y-2 mb-4">
+                  {(content.about?.differentials || []).map((diff, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <CheckCircle2 size={16} className="text-accent-500 flex-shrink-0" />
+                      <span className="flex-1 text-sm text-gray-700">{diff}</span>
+                      <button onClick={() => removeDifferential(idx)} className="text-red-400 hover:text-red-600">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    placeholder="Novo diferencial (ex: Equipe técnica certificada)"
+                    value={newDifferential}
+                    onChange={e => setNewDifferential(e.target.value)}
+                    className="flex-1 rounded-lg border-gray-300 text-sm bg-white text-gray-900"
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addDifferential())}
+                  />
+                  <button onClick={addDifferential} className="p-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600">
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CONTACT INFO ── */}
+        {activeTab === 'contact' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <MessageSquare size={18} /> Informações de Contato
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                <input
+                  type="text"
+                  value={content.contact.address}
+                  onChange={e => updateField('contact', 'address', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                <input
+                  type="text"
+                  value={content.contact.phone}
+                  onChange={e => updateField('contact', 'phone', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                <input
+                  type="text"
+                  value={content.contact.email}
+                  onChange={e => updateField('contact', 'email', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp (número completo)</label>
+                <input
+                  type="text"
+                  value={content.contact.whatsapp}
+                  onChange={e => updateField('contact', 'whatsapp', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  placeholder="5519999999999"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Instagram</label>
+                <input
+                  type="text"
+                  value={content.contact.instagram || ''}
+                  onChange={e => updateField('contact', 'instagram', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  placeholder="@mgrrefrigeracao"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── FEATURES TOGGLE ── */}
+        {activeTab === 'features' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Settings size={18} /> Funcionalidades
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                <div>
+                  <span className="text-sm font-medium text-gray-700 block">Botão Flutuante WhatsApp</span>
+                  <span className="text-xs text-gray-400">Aparece no canto inferior direito</span>
+                </div>
+                <input
+                  type="checkbox"
                   checked={content.features.whatsappFloat}
                   onChange={e => updateField('features', 'whatsappFloat', e.target.checked)}
-                  className="h-5 w-5 text-brand-600 focus:ring-brand-500 border-gray-300 rounded bg-white"
+                  className="h-5 w-5 text-brand-500 focus:ring-brand-500 border-gray-300 rounded bg-white"
                 />
-             </div>
-             <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                <span className="text-sm font-medium text-gray-700">Formulário de Contato</span>
-                <input 
-                  type="checkbox" 
+              </div>
+              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                <div>
+                  <span className="text-sm font-medium text-gray-700 block">Formulário de Contato</span>
+                  <span className="text-xs text-gray-400">Formulário no footer do site</span>
+                </div>
+                <input
+                  type="checkbox"
                   checked={content.features.contactForm}
                   onChange={e => updateField('features', 'contactForm', e.target.checked)}
-                  className="h-5 w-5 text-brand-600 focus:ring-brand-500 border-gray-300 rounded bg-white"
+                  className="h-5 w-5 text-brand-500 focus:ring-brand-500 border-gray-300 rounded bg-white"
                 />
-             </div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
+        {/* ── SERVICES NOTE ── */}
+        {activeTab === 'hero' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 font-bold text-gray-700">
+              Seção Soluções (Serviços)
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título da Seção</label>
+                <input
+                  type="text"
+                  value={content.services.title}
+                  onChange={e => updateField('services', 'title', e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                />
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                  ℹ️ Os itens de serviço devem ser editados via código para manter o layout alinhado.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* PARTNER EDIT MODAL */}
+      {/* ══════════════════════════════════════════
+          MODAL: Partner Edit
+         ══════════════════════════════════════════ */}
       {isPartnerModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <h3 className="font-bold text-gray-900">{editingPartner ? 'Editar Parceiro' : 'Adicionar Parceiro'}</h3>
-              <button onClick={() => setIsPartnerModalOpen(false)}><X className="text-gray-500 w-5 h-5"/></button>
+              <button onClick={() => setIsPartnerModalOpen(false)}><X className="text-gray-500 w-5 h-5" /></button>
             </div>
-            
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={partnerName}
                   onChange={(e) => setPartnerName(e.target.value)}
                   className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                   placeholder="Ex: MGR Refrigeração"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Logotipo (Imagem)</label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-gray-50 transition-colors cursor-pointer relative bg-white">
-                   <input 
-                     type="file" 
-                     accept="image/*"
-                     onChange={handleLogoFileChange}
-                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                   />
-                   {partnerLogoPreview ? (
-                      <div className="flex flex-col items-center">
-                        <img src={partnerLogoPreview} alt="Preview" className="h-20 object-contain mb-2" />
-                        <span className="text-xs text-brand-600 font-medium">Clique para alterar</span>
-                      </div>
-                   ) : (
-                      <div className="flex flex-col items-center text-gray-500">
-                        <UploadCloud className="w-8 h-8 mb-2 text-gray-400" />
-                        <span className="text-sm">Clique para upload</span>
-                        <span className="text-xs text-gray-400 mt-1">PNG, JPG ou SVG</span>
-                      </div>
-                   )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoFileChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  {partnerLogoPreview ? (
+                    <div className="flex flex-col items-center">
+                      <img src={partnerLogoPreview} alt="Preview" className="h-20 object-contain mb-2" />
+                      <span className="text-xs text-brand-500 font-medium">Clique para alterar</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center text-gray-500">
+                      <UploadCloud className="w-8 h-8 mb-2 text-gray-400" />
+                      <span className="text-sm">Clique para upload</span>
+                      <span className="text-xs text-gray-400 mt-1">PNG, JPG ou SVG</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-
             <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-              <button 
-                onClick={() => setIsPartnerModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-transparent hover:border-gray-300 rounded-lg transition-all"
-              >
+              <button onClick={() => setIsPartnerModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-transparent hover:border-gray-300 rounded-lg transition-all">
                 Cancelar
               </button>
-              <button 
-                onClick={handleSavePartner}
-                disabled={isUploading}
-                className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 flex items-center gap-2 disabled:opacity-70"
-              >
-                {isUploading ? <Loader2 className="animate-spin w-4 h-4"/> : <Save className="w-4 h-4"/>}
+              <button onClick={handleSavePartner} disabled={isUploading} className="px-4 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-70">
+                {isUploading ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />}
                 Salvar Parceiro
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          MODAL: Gallery Item Edit
+         ══════════════════════════════════════════ */}
+      {isGalleryModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 flex justify-between items-center bg-brand-900 text-white">
+              <h3 className="font-bold flex items-center gap-2">
+                <Camera size={18} />
+                {editingGalleryItem ? 'Editar Projeto' : 'Adicionar Projeto à Galeria'}
+              </h3>
+              <button onClick={() => setIsGalleryModalOpen(false)}><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Foto do Projeto *</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors cursor-pointer relative bg-white">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleGalleryFileChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  {galleryPreview ? (
+                    <div className="flex flex-col items-center">
+                      <img src={galleryPreview} alt="Preview" className="h-40 object-cover rounded-lg mb-2" />
+                      <span className="text-xs text-brand-500 font-medium">Clique para alterar</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center text-gray-500 py-6">
+                      <UploadCloud className="w-10 h-10 mb-3 text-gray-300" />
+                      <span className="text-sm font-medium">Clique para upload da foto</span>
+                      <span className="text-xs text-gray-400 mt-1">JPG ou PNG — será comprimida automaticamente</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Projeto *</label>
+                <input
+                  type="text"
+                  value={galleryTitle}
+                  onChange={e => setGalleryTitle(e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  placeholder="Ex: Câmara Fria Walk-in — Halipar"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Legenda (descrição curta)</label>
+                <textarea
+                  rows={2}
+                  value={galleryCaption}
+                  onChange={e => setGalleryCaption(e.target.value)}
+                  className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
+                  placeholder="Ex: 48h de trabalho, câmara operando a -25°C"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                <input
+                  type="text"
+                  value={galleryDate}
+                  onChange={e => setGalleryDate(e.target.value)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  placeholder="Ex: Março 2026"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+              <button onClick={() => setIsGalleryModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-transparent hover:border-gray-300 rounded-lg transition-all">
+                Cancelar
+              </button>
+              <button onClick={handleSaveGalleryItem} disabled={isGalleryUploading} className="px-4 py-2 bg-accent-600 text-white text-sm font-bold rounded-lg hover:bg-accent-700 flex items-center gap-2 disabled:opacity-70">
+                {isGalleryUploading ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />}
+                Salvar Projeto
               </button>
             </div>
           </div>
