@@ -45,3 +45,7 @@ vite.config.ts.timestamp-*
 # Scope docs locais (não fazem parte do repositório)
 scopoprojetos.md
 brandmgrrules.md
+
+# Apresentações HTML standalone (arquivos grandes, não versionados)
+MGR_Bimbo_Proposta_v3.html
+public/MGR_Bimbo_Proposta_v3.html
