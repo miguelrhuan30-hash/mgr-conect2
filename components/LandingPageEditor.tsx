@@ -18,6 +18,7 @@ const LandingPageEditor: React.FC = () => {
   const { userProfile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [content, setContent] = useState<LandingPageContent | null>(null);
   type TabId = 'hero' | 'stats' | 'clients' | 'gallery' | 'about' | 'contact' | 'features'
     | 'painPoints' | 'plan' | 'stakes' | 'mgrConnect' | 'leadMagnet' | 'segments' | 'testimonial';
@@ -111,12 +112,17 @@ const LandingPageEditor: React.FC = () => {
     fetchContent();
   }, [userProfile, navigate]);
 
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const [previewKey, setPreviewKey] = useState(0);
+
   const handleSave = async () => {
     if (!content) return;
     setSaving(true);
     try {
       await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), content, { merge: true });
-      alert("Alterações salvas com sucesso!");
+      setSavedAt(new Date());
+      // Reload iframe to reflect saved changes
+      setPreviewKey(k => k + 1);
     } catch (error) {
       console.error("Error saving content:", error);
       alert("Erro ao salvar.");
@@ -323,84 +329,171 @@ const LandingPageEditor: React.FC = () => {
     });
   };
 
+  // ── Generic section image upload ──
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+
+  const uploadSectionImage = async (
+    file: File,
+    storagePath: string,
+    onSuccess: (url: string) => void
+  ) => {
+    setUploadingKey(storagePath);
+    try {
+      const compressed = await compressImage(file, 1600, 0.88);
+      const storageRef = ref(storage, `landing/${storagePath}/${Date.now()}_${compressed.name}`);
+      await uploadBytes(storageRef, compressed);
+      const url = await getDownloadURL(storageRef);
+      onSuccess(url);
+    } catch (err) {
+      console.error('Upload error', err);
+      alert('Erro ao fazer upload da imagem.');
+    } finally {
+      setUploadingKey(null);
+    }
+  };
+
+  const ImageUploadField = ({
+    label, currentUrl, storagePath, onSuccess, previewHeight = 140
+  }: {
+    label: string;
+    currentUrl: string;
+    storagePath: string;
+    onSuccess: (url: string) => void;
+    previewHeight?: number;
+  }) => (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <div className="border-2 border-dashed border-gray-300 rounded-xl overflow-hidden hover:border-brand-400 transition-colors relative bg-white">
+        <input
+          type="file" accept="image/*"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+          onChange={e => { if (e.target.files?.[0]) uploadSectionImage(e.target.files[0], storagePath, onSuccess); }}
+        />
+        {uploadingKey === storagePath ? (
+          <div style={{ height: previewHeight }} className="flex flex-col items-center justify-center text-gray-400">
+            <Loader2 className="animate-spin w-8 h-8 mb-2 text-brand-500" />
+            <span className="text-sm">Enviando...</span>
+          </div>
+        ) : currentUrl ? (
+          <div className="relative group">
+            <img src={currentUrl} alt={label} style={{ height: previewHeight, width: '100%', objectFit: 'cover' }} />
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <span className="text-white text-sm font-medium flex items-center gap-2"><UploadCloud size={16}/> Substituir imagem</span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ height: previewHeight }} className="flex flex-col items-center justify-center text-gray-400">
+            <UploadCloud className="w-10 h-10 mb-2 text-gray-300" />
+            <span className="text-sm font-medium">Clique para fazer upload</span>
+            <span className="text-xs text-gray-400 mt-1">JPG, PNG, WebP — comprimido automaticamente</span>
+          </div>
+        )}
+      </div>
+      {currentUrl && (
+        <button
+          onClick={() => onSuccess('')}
+          className="mt-1 text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
+          <Trash2 size={11}/> Remover imagem
+        </button>
+      )}
+    </div>
+  );
+
+
   if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin text-brand-500 w-8 h-8" /></div>;
   if (!content) return <div>Erro ao carregar editor.</div>;
 
   const tabs = [
-    { id: 'hero' as const, label: 'Hero', icon: <Monitor size={16} /> },
-    { id: 'stats' as const, label: 'Estatísticas', icon: <BarChart2 size={16} /> },
-    { id: 'clients' as const, label: 'Parceiros', icon: <Users size={16} /> },
-    { id: 'gallery' as const, label: 'Galeria', icon: <Camera size={16} /> },
-    { id: 'about' as const, label: 'Sobre', icon: <FileText size={16} /> },
-    { id: 'contact' as const, label: 'Contato', icon: <MessageSquare size={16} /> },
-    { id: 'features' as const, label: 'Config', icon: <Settings size={16} /> },
-    // v3.0 — Redesign Sections
-    { id: 'painPoints' as const, label: 'Problema', icon: <AlertTriangle size={16} /> },
-    { id: 'plan' as const, label: 'Plano 3 Passos', icon: <CheckCircle2 size={16} /> },
-    { id: 'stakes' as const, label: 'Stakes/Risco', icon: <Activity size={16} /> },
-    { id: 'mgrConnect' as const, label: 'MGR Connect', icon: <Wifi size={16} /> },
-    { id: 'leadMagnet' as const, label: 'Lead Magnet', icon: <Download size={16} /> },
-    { id: 'segments' as const, label: 'Setores', icon: <Building2 size={16} /> },
-    { id: 'testimonial' as const, label: 'Depoimento', icon: <Quote size={16} /> },
+    { id: 'hero' as const, label: 'Hero', icon: <Monitor size={15} />, anchor: '' },
+    { id: 'stats' as const, label: 'Estatísticas', icon: <BarChart2 size={15} />, anchor: '' },
+    { id: 'painPoints' as const, label: 'Problema', icon: <AlertTriangle size={15} />, anchor: '' },
+    { id: 'clients' as const, label: 'Parceiros', icon: <Users size={15} />, anchor: '' },
+    { id: 'plan' as const, label: 'Plano 3 Passos', icon: <CheckCircle2 size={15} />, anchor: '' },
+    { id: 'stakes' as const, label: 'Stakes', icon: <Activity size={15} />, anchor: '' },
+    { id: 'mgrConnect' as const, label: 'MGR Connect', icon: <Wifi size={15} />, anchor: 'connect' },
+    { id: 'leadMagnet' as const, label: 'Lead Magnet', icon: <Download size={15} />, anchor: '' },
+    { id: 'segments' as const, label: 'Setores', icon: <Building2 size={15} />, anchor: 'setores' },
+    { id: 'testimonial' as const, label: 'Depoimento', icon: <Quote size={15} />, anchor: '' },
+    { id: 'gallery' as const, label: 'Galeria', icon: <Camera size={15} />, anchor: 'galeria' },
+    { id: 'about' as const, label: 'Sobre', icon: <FileText size={15} />, anchor: 'sobre' },
+    { id: 'contact' as const, label: 'Contato', icon: <MessageSquare size={15} />, anchor: 'contato' },
+    { id: 'features' as const, label: 'Config', icon: <Settings size={15} />, anchor: '' },
   ];
 
+  const activeTabAnchor = tabs.find(t => t.id === activeTab)?.anchor ?? '';
+  const previewSrc = `${window.location.origin}/${
+    activeTabAnchor ? `#${activeTabAnchor}` : ''
+  }`;
+
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-50 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate('/app')}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-colors"
-          >
-            <ArrowLeft size={16} />
-            Voltar
+    <React.Fragment>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#F1F5F9' }}>
+
+      {/* ─── TOP BAR ─── */}
+      <div style={{ background:'#0F172A', borderBottom:'1px solid rgba(255,255,255,.08)', padding:'0 20px', height:56, display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, zIndex:60 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <button onClick={() => navigate('/app')} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 12px', borderRadius:8, background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.8)', fontSize:13, fontWeight:600, cursor:'pointer', transition:'.2s' }}>
+            <ArrowLeft size={14}/> Voltar
           </button>
-          <div className="h-6 w-px bg-gray-300 mx-1 hidden md:block"></div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <Monitor size={18} className="text-brand-500" />
-              Editor do Site
-            </h1>
-            <p className="text-xs text-gray-500 hidden md:block">CMS — Brand Guide MGR v1.0</p>
+          <div style={{ width:1, height:24, background:'rgba(255,255,255,.1)' }}/>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{ width:32, height:32, borderRadius:8, background:'linear-gradient(135deg,#1B5E8A,#2272a8)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <Monitor size={15} color="#fff"/>
+            </div>
+            <div>
+              <span style={{ display:'block', fontWeight:700, fontSize:14, color:'#fff', lineHeight:1.2 }}>Editor do Site</span>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,.4)', letterSpacing:'.5px' }}>MGR Refrigeração v3.0</span>
+            </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => navigate('/')} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-2">
-            <Globe size={16} /> <span className="hidden md:inline">Ver Site</span>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {savedAt && !saving && (
+            <span style={{ fontSize:12, color:'#4ADE80', display:'flex', alignItems:'center', gap:6 }}>
+              <CheckCircle2 size={13}/> Salvo às {savedAt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+            </span>
+          )}
+          <button onClick={() => window.open('/', '_blank')} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:8, background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.7)', fontSize:13, cursor:'pointer' }}>
+            <Globe size={14}/> Ver Site
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-5 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 font-medium shadow-sm disabled:opacity-70"
-          >
-            {saving ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />}
-            <span className="hidden md:inline">Salvar</span>
+          <button onClick={handleSave} disabled={saving} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 20px', borderRadius:8, background:'#D4792A', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', opacity: saving ? .7 : 1, transition:'.2s' }}>
+            {saving ? <Loader2 className="animate-spin w-4 h-4"/> : <Save size={15}/>}
+            {saving ? 'Salvando...' : 'Publicar'}
           </button>
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-4">
-        <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-hide">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-                activeTab === tab.id
-                  ? 'bg-brand-500 text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* ─── SPLIT BODY ─── */}
+      <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* ── LEFT PANEL: Section Nav + Form Fields ── */}
+        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', borderRight:'1px solid #E2E8F0', background:'#fff', overflow:'hidden' }}>
+
+          {/* Section Navigator */}
+          <div style={{ borderBottom:'1px solid #E2E8F0', padding:'12px', background:'#F8FAFC', flexShrink:0 }}>
+            <p style={{ fontSize:10, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'.8px', marginBottom:8, paddingLeft:4 }}>Seções</p>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    display:'flex', alignItems:'center', gap:6,
+                    padding:'6px 10px', borderRadius:8, fontSize:12, fontWeight:600,
+                    border: activeTab === tab.id ? '1.5px solid #1B5E8A' : '1.5px solid transparent',
+                    background: activeTab === tab.id ? '#EFF6FF' : 'transparent',
+                    color: activeTab === tab.id ? '#1B5E8A' : '#64748B',
+                    cursor:'pointer', transition:'.15s', whiteSpace:'nowrap'
+                  }}
+                >
+                  {tab.icon}{tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Form content — scrollable */}
+          <div style={{ flex:1, overflowY:'auto', padding:'20px 16px', display:'flex', flexDirection:'column', gap:20 }}>
 
         {/* ── HERO SECTION ── */}
         {activeTab === 'hero' && (
@@ -427,21 +520,14 @@ const LandingPageEditor: React.FC = () => {
                   className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Imagem de Fundo (URL)</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <ImageIcon className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
-                    <input
-                      type="text"
-                      value={content.hero.backgroundImageUrl}
-                      onChange={e => updateField('hero', 'backgroundImageUrl', e.target.value)}
-                      className="w-full pl-9 rounded-lg border-gray-300 font-mono text-xs bg-white text-gray-900"
-                      placeholder="Deixe vazio para usar gradiente premium"
-                    />
-                  </div>
-                </div>
-              </div>
+              <ImageUploadField
+                label="Imagem de Fundo do Hero (opcional)"
+                currentUrl={content.hero.backgroundImageUrl}
+                storagePath="hero"
+                onSuccess={url => updateField('hero', 'backgroundImageUrl', url)}
+                previewHeight={160}
+              />
+              <p className="text-xs text-gray-400 -mt-2">ℹ️ Deixe sem imagem para usar o gradiente premium animado.</p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Texto do Botão</label>
@@ -679,16 +765,13 @@ const LandingPageEditor: React.FC = () => {
                     className="w-full rounded-lg border-gray-300 resize-none bg-white text-gray-900"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Imagem (URL)</label>
-                  <input
-                    type="text"
-                    value={content.about?.imageUrl || ''}
-                    onChange={e => updateField('about', 'imageUrl', e.target.value)}
-                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900 font-mono text-xs"
-                    placeholder="Deixe vazio para usar placeholder premium"
-                  />
-                </div>
+                <ImageUploadField
+                  label="Foto da Seção Sobre"
+                  currentUrl={content.about?.imageUrl || ''}
+                  storagePath="about"
+                  onSuccess={url => updateField('about', 'imageUrl', url)}
+                  previewHeight={180}
+                />
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Manifesto da Marca</label>
                   <textarea
@@ -1016,12 +1099,13 @@ const LandingPageEditor: React.FC = () => {
                   onChange={e=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,ctaText:e.target.value}}):prev)}
                   className="w-full rounded-lg border-gray-300 bg-white text-gray-900"/>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL da Imagem / Dashboard</label>
-                <input type="url" value={content.mgrConnect?.imageUrl ?? ''}
-                  onChange={e=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,imageUrl:e.target.value}}):prev)}
-                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="https://..."/>
-              </div>
+              <ImageUploadField
+                label="Imagem / Screenshot do Dashboard MGR Connect"
+                currentUrl={content.mgrConnect?.imageUrl ?? ''}
+                storagePath="connect"
+                onSuccess={url=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,imageUrl:url}}):prev)}
+                previewHeight={180}
+              />
               <div className="border-t pt-4">
                 <h4 className="font-medium text-gray-700 mb-3">Features / Benefícios</h4>
                 {(content.mgrConnect?.features||[]).map((f,i) => (
@@ -1098,9 +1182,13 @@ const LandingPageEditor: React.FC = () => {
                     <input type="text" placeholder="Ícone (ex: Factory, Pill, Truck, Building2)" value={seg.icon}
                       onChange={e=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],icon:e.target.value};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
                       className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
-                    <input type="url" placeholder="URL da imagem (opcional)" value={seg.imageUrl}
-                      onChange={e=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],imageUrl:e.target.value};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
-                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <ImageUploadField
+                      label={`Foto do Setor ${i+1} (opcional)`}
+                      currentUrl={seg.imageUrl}
+                      storagePath={`segments/seg_${i}`}
+                      onSuccess={url=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],imageUrl:url};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
+                      previewHeight={100}
+                    />
                     <textarea rows={2} placeholder="Descrição" value={seg.description}
                       onChange={e=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],description:e.target.value};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
                       className="w-full rounded border-gray-300 bg-white text-sm resize-none text-gray-900"/>
@@ -1150,20 +1238,67 @@ const LandingPageEditor: React.FC = () => {
                   className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
                   placeholder="Indústria Alimentícia — Indaiatuba/SP"/>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL da Foto (opcional)</label>
-                <input type="url" value={content.testimonial?.photoUrl ?? ''}
-                  onChange={e=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,photoUrl:e.target.value}}):prev)}
-                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="https://..."/>
-              </div>
+              <ImageUploadField
+                label="Foto do Depoente (opcional)"
+                currentUrl={content.testimonial?.photoUrl ?? ''}
+                storagePath="testimonial"
+                onSuccess={url=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,photoUrl:url}}):prev)}
+                previewHeight={100}
+              />
             </div>
           </div>
         )}
-      </div>
+          </div>{/* end scrollable form */}
+        </div>{/* end left panel */}
 
-      {/* ══════════════════════════════════════════
-          MODAL: Partner Edit
-         ══════════════════════════════════════════ */}
+        {/* ── RIGHT PANEL: live iframe preview ── */}
+        <div style={{ flex:1, display:'flex', flexDirection:'column', background:'#E2E8F0', overflow:'hidden' }}>
+          {/* Preview toolbar */}
+          <div style={{ height:44, background:'#1E293B', display:'flex', alignItems:'center', padding:'0 16px', gap:12, flexShrink:0 }}>
+            <div style={{ display:'flex', gap:6 }}>
+              <div style={{ width:11, height:11, borderRadius:'50%', background:'#EF4444' }}/>
+              <div style={{ width:11, height:11, borderRadius:'50%', background:'#F59E0B' }}/>
+              <div style={{ width:11, height:11, borderRadius:'50%', background:'#22C55E' }}/>
+            </div>
+            <div style={{ flex:1, background:'rgba(255,255,255,.06)', borderRadius:8, padding:'4px 12px', fontSize:12, color:'rgba(255,255,255,.5)', border:'1px solid rgba(255,255,255,.08)', display:'flex', alignItems:'center', gap:8 }}>
+              <Globe size={12} color="rgba(255,255,255,.4)"/>
+              <span>mgrrefrigeracao.com.br{activeTabAnchor ? ` — #${activeTabAnchor}` : ''}</span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: saving ? '#F59E0B' : '#4ADE80', fontWeight:600 }}>
+              {saving ? <Loader2 size={12} className="animate-spin"/> : <div style={{ width:8, height:8, borderRadius:'50%', background:'#4ADE80' }}/>}
+              {saving ? 'Salvando...' : 'Preview ao vivo'}
+            </div>
+          </div>
+          {/* iframe */}
+          <div style={{ flex:1, overflow:'hidden', padding:16, display:'flex', flexDirection:'column', gap:12 }}>
+            <div style={{ flex:1, borderRadius:12, overflow:'hidden', boxShadow:'0 8px 32px rgba(0,0,0,.2)', background:'#fff', position:'relative' }}>
+              <iframe
+                key={previewKey}
+                ref={iframeRef}
+                src={previewSrc}
+                style={{ width:'100%', height:'100%', border:'none', display:'block' }}
+                title="Preview do site MGR"
+              />
+              {saving && (
+                <div style={{ position:'absolute', inset:0, background:'rgba(255,255,255,.6)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }}>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
+                    <Loader2 size={32} className="animate-spin" style={{ color:'#1B5E8A' }}/>
+                    <span style={{ fontSize:14, fontWeight:600, color:'#1B5E8A' }}>Publicando alterações...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ textAlign:'center', fontSize:11, color:'#94A3B8', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+              <CheckCircle2 size={12}/>
+              Clique em <strong style={{ color:'#D4792A' }}>Publicar</strong> para atualizar o preview com as suas alterações
+            </div>
+          </div>{/* end iframe padding wrapper */}
+        </div>{/* end right panel */}
+
+      </div>{/* end split body */}
+    </div>{/* end wrapper */}
+
+      {/* Modais */}
       {isPartnerModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -1219,9 +1354,6 @@ const LandingPageEditor: React.FC = () => {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════
-          MODAL: Gallery Item Edit
-         ══════════════════════════════════════════ */}
       {isGalleryModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
@@ -1299,9 +1431,9 @@ const LandingPageEditor: React.FC = () => {
           </div>
         </div>
       )}
-
-    </div>
+    </React.Fragment>
   );
 };
 
 export default LandingPageEditor;
+
