@@ -502,7 +502,7 @@ const LandingPageEditor: React.FC = () => {
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
 
         {/* ── LEFT PANEL: Section Nav + Form Fields ── */}
-        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', borderRight:'1px solid #E2E8F0', background:'#fff', overflow:'hidden' }}>
+        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', borderRight:'1px solid #E2E8F0', background:'#fff', minHeight:0 }}>
 
           {/* Section Navigator */}
           <div style={{ borderBottom:'1px solid #E2E8F0', padding:'12px', background:'#F8FAFC', flexShrink:0 }}>
@@ -528,7 +528,7 @@ const LandingPageEditor: React.FC = () => {
           </div>
 
           {/* Form content — scrollable */}
-          <div style={{ flex:1, overflowY:'auto', padding:'20px 16px', display:'flex', flexDirection:'column', gap:20 }}>
+          <div style={{ flex:1, overflowY:'scroll', padding:'20px 16px', display:'flex', flexDirection:'column', gap:20, minHeight:0, scrollbarWidth:'thin', scrollbarColor:'#CBD5E1 transparent' }}>
 
         {/* ── HERO SECTION ── */}
         {activeTab === 'hero' && (
