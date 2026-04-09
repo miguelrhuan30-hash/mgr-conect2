@@ -12,7 +12,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { calcularTurnos, Turno, toDateStr, minutesToHHMM } from '../utils/shift-calculator';
 import {
-  adicionarRegistro, editarHorarioRegistro, excluirRegistro, TIPO_LABELS
+  adicionarRegistro, editarHorarioRegistro, excluirRegistro, hardDeleteRegistro, TIPO_LABELS
 } from '../utils/shift-editor';
 import {
   Search, Loader2, Clock, AlertTriangle, CheckCircle,
@@ -145,6 +145,7 @@ const FolhaPonto: React.FC = () => {
       const snap = await getDocs(q);
       const entries = snap.docs
         .map(d => ({ id: d.id, ...d.data() } as TimeEntry))
+        .filter(e => !e.excluido)
         .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
       setRawEntries(entries);
 
@@ -363,7 +364,28 @@ const FolhaPonto: React.FC = () => {
     }
   };
 
-  // ── Coletar registros editados de um turno para o accordion de histórico ────
+  // ── Hard delete emergencial (admin only) ────────────────────────────────────
+  const handleHardDelete = async (entry: TimeEntry) => {
+    if (!isAdmin) return;
+    if (!currentUser) return;
+    if (!confirm(
+      `⚠️ HARD DELETE — AÇÃO IRREVERSÍVEL\n\n` +
+      `Isso removerá FISICAMENTE o registro de ${TIPO_LABELS[entry.type]} ` +
+      `(${entry.timestamp.toDate().toLocaleString('pt-BR')}) do banco de dados.\n\n` +
+      `Use apenas em emergência (ex: ponto travado por data futura).\n\n` +
+      `Continuar?`
+    )) return;
+    const adminNome = userProfile?.displayName || currentUser.email || currentUser.uid;
+    try {
+      await hardDeleteRegistro(entry.id, currentUser.uid, adminNome);
+      await buscarRegistros();
+      alert('✅ Registro removido fisicamente. Verifique se o ponto do colaborador foi desbloqueado.');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao realizar hard delete.');
+    }
+  };
+
+
   const getHistoricoDeTurno = (turno: Turno): TimeEntry[] => {
     const registros = [turno.entry, turno.lunchStart, turno.lunchEnd, turno.exit].filter(Boolean) as TimeEntry[];
     return registros.filter(r => r.isManual || r.editedBy);
@@ -835,6 +857,18 @@ const FolhaPonto: React.FC = () => {
                 {/* ── PAINEL DE EDIÇÃO INLINE ── */}
                 {isExpanded && isGestor && (
                   <div className="border-t border-gray-100 bg-gray-50/50 px-5 py-4 space-y-4">
+                    {/* Banner: data travada */}
+                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                      <Calendar size={14} className="text-blue-600 flex-shrink-0" />
+                      <span className="text-xs font-bold text-blue-700">
+                        📅 Editando registros do dia{' '}
+                        <span className="font-black">
+                          {new Date(turno.data + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        </span>
+                      </span>
+                      <span className="ml-auto text-[10px] text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded font-bold">DATA TRAVADA</span>
+                    </div>
+
                     {/* Motivo da correção */}
                     <div>
                       <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Motivo da Correção</label>
@@ -879,13 +913,22 @@ const FolhaPonto: React.FC = () => {
                                   <Save size={14} />
                                 </button>
                                 {isAdmin && (
-                                  <button
-                                    onClick={() => handleExcluir(reg)}
-                                    className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
-                                    title="Excluir registro (soft delete)"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => handleExcluir(reg)}
+                                      className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                                      title="Soft delete — inativa o registro (recuperável)"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleHardDelete(reg)}
+                                      className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                      title="⚠️ Hard delete emergencial — remove fisicamente (irreversível)"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             ) : (

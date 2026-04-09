@@ -234,7 +234,7 @@ const Ponto: React.FC = () => {
 
       const entries = snapshot.docs
         .map(d => ({ id: d.id, ...(d.data() as any) } as TimeEntry))
-        .filter(e => e.timestamp?.toDate);
+        .filter(e => !!e.timestamp?.seconds && !e.excluido);
 
       setHistory(entries);
       setLoadingData(false);

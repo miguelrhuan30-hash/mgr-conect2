@@ -2,6 +2,7 @@ import {
   collection,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   Timestamp,
 } from 'firebase/firestore';
@@ -63,9 +64,30 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 250): P
   throw new Error('Falha após múltiplas tentativas no Firestore.');
 }
 
+// ─── Validação de timestamp ──────────────────────────────────────────────────
+/**
+ * Garante que o timestamp não está no futuro.
+ * Tolerância de 5 minutos para compensar desvios de relógio.
+ * Lança erro com mensagem clara se a data for inválida.
+ */
+function validateTimestamp(ts: Date): void {
+  const maxAllowed = new Date(Date.now() + 5 * 60 * 1000); // +5 min de tolerância
+  if (ts > maxAllowed) {
+    const formatted = ts.toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    throw new Error(
+      `Data/hora inválida: ${formatted} está no futuro. ` +
+      `Correções manuais só são permitidas para datas passadas.`
+    );
+  }
+}
+
 // ─── Adicionar registro faltante ──────────────────────────────────────────────
 /**
  * Adiciona um TIME_ENTRY manual para um dia passado.
+ * Valida que o timestamp não está no futuro antes de gravar.
  */
 export const adicionarRegistro = async (
   userId: string,
@@ -75,6 +97,8 @@ export const adicionarRegistro = async (
   adminNome: string,
   motivo: string,
 ): Promise<void> => {
+  validateTimestamp(timestampManual);
+
   await withRetry(() =>
     addDoc(collection(db, CollectionName.TIME_ENTRIES), {
       userId,
@@ -108,6 +132,8 @@ export const editarHorarioRegistro = async (
   adminNome: string,
   motivo: string,
 ): Promise<void> => {
+  validateTimestamp(novoTimestamp);
+
   await withRetry(() =>
     updateDoc(doc(db, CollectionName.TIME_ENTRIES, docId), {
       timestamp: Timestamp.fromDate(novoTimestamp),
@@ -119,6 +145,35 @@ export const editarHorarioRegistro = async (
       editTimestamp: Timestamp.now(),
     })
   );
+};
+
+// ─── Hard delete (emergência admin) ─────────────────────────────────────────
+/**
+ * Remove FISICAMENTE um TIME_ENTRY corrompido do Firestore.
+ * Usar APENAS em situações de emergência onde o soft delete
+ * não foi suficiente para desbloquear o ponto de um colaborador.
+ *
+ * Pré-requisito: chamar com adminId de um usuário com role 'admin'.
+ */
+export const hardDeleteRegistro = async (
+  docId: string,
+  adminId: string,
+  adminNome: string,
+): Promise<void> => {
+  // Usa deleteDoc direto — sem retry pois delete é idempotente
+  await deleteDoc(doc(db, CollectionName.TIME_ENTRIES, docId));
+
+  // Log de auditoria via system_logs
+  await withRetry(() =>
+    addDoc(collection(db, CollectionName.SYSTEM_LOGS), {
+      action: 'ponto_hard_delete',
+      level: 'warning',
+      message: `HARD DELETE de TimeEntry ${docId} por ${adminNome}`,
+      userId: adminId,
+      timestamp: Timestamp.now(),
+      metadata: { docId, adminId, adminNome },
+    })
+  ).catch(() => { /* log falhou — não bloqueia o delete */ });
 };
 
 // ─── Soft delete ──────────────────────────────────────────────────────────────
