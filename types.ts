@@ -208,6 +208,52 @@ export interface LandingPageContent {
     whatsappFloat: boolean;
     contactForm: boolean;
   };
+
+  // ── v3.0 — Redesign Homepage (campos opcionais) ──────────
+  /** Seção 2 — Pain Points (o problema do gestor) */
+  painPoints?: {
+    headline: string;
+    items: { icon: string; stat: string; description: string }[];
+  };
+  /** Seção 4 — Plano de 3 passos */
+  plan?: {
+    headline: string;
+    steps: { number: number; title: string; description: string }[];
+    ctaText: string;
+  };
+  /** Seção 6 — Stakes (custo da inação) */
+  stakes?: {
+    headline: string;
+    items: { icon: string; title: string; description: string }[];
+    transition: string;
+  };
+  /** Seção 7 — MGR Connect (diferencial tech) */
+  mgrConnect?: {
+    headline: string;
+    description: string;
+    features: string[];
+    ctaText: string;
+    imageUrl: string;
+  };
+  /** Seção 8 — Lead Magnet CTA */
+  leadMagnet?: {
+    headline: string;
+    ctaText: string;
+    description: string;
+  };
+  /** Seção 9 — Segmentação por mercado */
+  segments?: {
+    headline: string;
+    items: { title: string; description: string; icon: string; imageUrl: string }[];
+  };
+  /** Prova social — Depoimento em destaque */
+  testimonial?: {
+    quote: string;
+    name: string;
+    role: string;
+    company: string;
+    photoUrl: string;
+  };
 }
 
 // --- BANCO DE HORAS ---

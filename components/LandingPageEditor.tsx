@@ -9,7 +9,8 @@ import { compressImage } from '../utils/compressor';
 import {
   ArrowLeft, Save, Loader2, Monitor, Globe, Image as ImageIcon, Settings,
   MessageSquare, Plus, Trash2, BarChart2, Users, LayoutDashboard, X, Edit, UploadCloud,
-  Camera, GripVertical, Calendar, FileText, CheckCircle2
+  Camera, GripVertical, Calendar, FileText, CheckCircle2,
+  AlertTriangle, Wifi, Activity, Zap, Building2, Download, Quote
 } from 'lucide-react';
 
 const LandingPageEditor: React.FC = () => {
@@ -18,7 +19,9 @@ const LandingPageEditor: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [content, setContent] = useState<LandingPageContent | null>(null);
-  const [activeTab, setActiveTab] = useState<'hero' | 'stats' | 'clients' | 'gallery' | 'about' | 'contact' | 'features'>('hero');
+  type TabId = 'hero' | 'stats' | 'clients' | 'gallery' | 'about' | 'contact' | 'features'
+    | 'painPoints' | 'plan' | 'stakes' | 'mgrConnect' | 'leadMagnet' | 'segments' | 'testimonial';
+  const [activeTab, setActiveTab] = useState<TabId>('hero');
 
   // Stats input state
   const [newStatValue, setNewStatValue] = useState('');
@@ -331,6 +334,14 @@ const LandingPageEditor: React.FC = () => {
     { id: 'about' as const, label: 'Sobre', icon: <FileText size={16} /> },
     { id: 'contact' as const, label: 'Contato', icon: <MessageSquare size={16} /> },
     { id: 'features' as const, label: 'Config', icon: <Settings size={16} /> },
+    // v3.0 — Redesign Sections
+    { id: 'painPoints' as const, label: 'Problema', icon: <AlertTriangle size={16} /> },
+    { id: 'plan' as const, label: 'Plano 3 Passos', icon: <CheckCircle2 size={16} /> },
+    { id: 'stakes' as const, label: 'Stakes/Risco', icon: <Activity size={16} /> },
+    { id: 'mgrConnect' as const, label: 'MGR Connect', icon: <Wifi size={16} /> },
+    { id: 'leadMagnet' as const, label: 'Lead Magnet', icon: <Download size={16} /> },
+    { id: 'segments' as const, label: 'Setores', icon: <Building2 size={16} /> },
+    { id: 'testimonial' as const, label: 'Depoimento', icon: <Quote size={16} /> },
   ];
 
   return (
@@ -839,6 +850,311 @@ const LandingPageEditor: React.FC = () => {
                 <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
                   ℹ️ Os itens de serviço devem ser editados via código para manter o layout alinhado.
                 </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ PAIN POINTS ══ */}
+        {activeTab === 'painPoints' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-yellow-600 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <AlertTriangle size={18} /> Seção "Problema" — Pain Points
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Headline da Seção</label>
+                <input type="text" value={content.painPoints?.headline ?? ''}
+                  onChange={e => setContent(prev => prev ? ({ ...prev, painPoints: { ...prev.painPoints!, headline: e.target.value } }) : prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  placeholder="Você sabe o que uma parada não planejada custa..."
+                />
+              </div>
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-700">Cards de Pain Points ({(content.painPoints?.items || []).length})</h4>
+                </div>
+                {(content.painPoints?.items || []).map((item, i) => (
+                  <div key={i} className="border border-gray-200 rounded-lg p-4 mb-3 bg-gray-50 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-xs font-bold text-gray-500">CARD {i+1}</span>
+                      <button onClick={() => { const items = [...(content.painPoints?.items||[])]; items.splice(i,1); setContent(prev => prev ? ({...prev, painPoints: {...prev.painPoints!, items}}) : prev); }} className="text-red-500 hover:text-red-700"><Trash2 size={14}/></button>
+                    </div>
+                    <input type="text" placeholder="Ícone (ex: PackageX, TrendingDown, AlertTriangle)" value={item.icon}
+                      onChange={e => { const items = [...(content.painPoints?.items||[])]; items[i]={...items[i],icon:e.target.value}; setContent(prev => prev?({...prev,painPoints:{...prev.painPoints!,items}}):prev); }}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <input type="text" placeholder="Estatística (ex: R$ 200 mil)" value={item.stat}
+                      onChange={e => { const items = [...(content.painPoints?.items||[])]; items[i]={...items[i],stat:e.target.value}; setContent(prev => prev?({...prev,painPoints:{...prev.painPoints!,items}}):prev); }}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <textarea rows={2} placeholder="Descrição do pain point" value={item.description}
+                      onChange={e => { const items = [...(content.painPoints?.items||[])]; items[i]={...items[i],description:e.target.value}; setContent(prev => prev?({...prev,painPoints:{...prev.painPoints!,items}}):prev); }}
+                      className="w-full rounded border-gray-300 bg-white text-sm resize-none text-gray-900"/>
+                  </div>
+                ))}
+                <button onClick={() => setContent(prev => prev ? ({...prev, painPoints: {...prev.painPoints!, items: [...(prev.painPoints?.items||[]), {icon:'AlertTriangle',stat:'',description:''}]}}) : prev)}
+                  className="flex items-center gap-2 text-sm font-medium text-brand-600 hover:text-brand-700">
+                  <Plus size={16}/> Adicionar Card
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ PLANO 3 PASSOS ══ */}
+        {activeTab === 'plan' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <CheckCircle2 size={18}/> Seção "Plano 3 Passos"
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Headline</label>
+                <input type="text" value={content.plan?.headline ?? ''}
+                  onChange={e => setContent(prev => prev ? ({...prev, plan:{...prev.plan!, headline:e.target.value}}) : prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="Como a MGR protege sua operação"/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Texto do CTA</label>
+                <input type="text" value={content.plan?.ctaText ?? ''}
+                  onChange={e => setContent(prev => prev ? ({...prev, plan:{...prev.plan!, ctaText:e.target.value}}) : prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="Comece pela Visita de Valor"/>
+              </div>
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-gray-700 mb-3">Passos ({(content.plan?.steps||[]).length})</h4>
+                {(content.plan?.steps||[]).map((step, i) => (
+                  <div key={i} className="border border-gray-200 rounded-lg p-4 mb-3 bg-gray-50 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500">PASSO {step.number}</span>
+                      <button onClick={() => { const steps=[...(content.plan?.steps||[])]; steps.splice(i,1); setContent(prev => prev?({...prev,plan:{...prev.plan!,steps}}):prev); }} className="text-red-500"><Trash2 size={14}/></button>
+                    </div>
+                    <input type="text" placeholder="Título do passo" value={step.title}
+                      onChange={e => { const steps=[...(content.plan?.steps||[])]; steps[i]={...steps[i],title:e.target.value}; setContent(prev => prev?({...prev,plan:{...prev.plan!,steps}}):prev); }}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <textarea rows={2} placeholder="Descrição" value={step.description}
+                      onChange={e => { const steps=[...(content.plan?.steps||[])]; steps[i]={...steps[i],description:e.target.value}; setContent(prev => prev?({...prev,plan:{...prev.plan!,steps}}):prev); }}
+                      className="w-full rounded border-gray-300 bg-white text-sm resize-none text-gray-900"/>
+                  </div>
+                ))}
+                <button onClick={() => { const n=(content.plan?.steps||[]).length+1; setContent(prev => prev?({...prev,plan:{...prev.plan!,steps:[...(prev.plan?.steps||[]),{number:n,title:'',description:''}]}}):prev); }}
+                  className="flex items-center gap-2 text-sm font-medium text-brand-600">
+                  <Plus size={16}/> Adicionar Passo
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ STAKES ══ */}
+        {activeTab === 'stakes' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-red-700 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Activity size={18}/> Seção "Stakes / Risco"
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Headline</label>
+                <input type="text" value={content.stakes?.headline ?? ''}
+                  onChange={e => setContent(prev => prev?({...prev,stakes:{...prev.stakes!,headline:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Frase de Transição</label>
+                <textarea rows={2} value={content.stakes?.transition ?? ''}
+                  onChange={e => setContent(prev => prev?({...prev,stakes:{...prev.stakes!,transition:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white resize-none text-gray-900"/>
+              </div>
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-gray-700 mb-3">Cards de Risco</h4>
+                {(content.stakes?.items||[]).map((item,i) => (
+                  <div key={i} className="border border-gray-200 rounded-lg p-4 mb-3 bg-gray-50 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-xs font-bold text-gray-500">RISCO {i+1}</span>
+                      <button onClick={() => { const items=[...(content.stakes?.items||[])]; items.splice(i,1); setContent(prev=>prev?({...prev,stakes:{...prev.stakes!,items}}):prev); }} className="text-red-500"><Trash2 size={14}/></button>
+                    </div>
+                    <input type="text" placeholder="Ícone (ex: PackageX, Gavel, Users)" value={item.icon}
+                      onChange={e=>{const items=[...(content.stakes?.items||[])];items[i]={...items[i],icon:e.target.value};setContent(prev=>prev?({...prev,stakes:{...prev.stakes!,items}}):prev);}}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <input type="text" placeholder="Título" value={item.title}
+                      onChange={e=>{const items=[...(content.stakes?.items||[])];items[i]={...items[i],title:e.target.value};setContent(prev=>prev?({...prev,stakes:{...prev.stakes!,items}}):prev);}}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <textarea rows={2} placeholder="Descrição" value={item.description}
+                      onChange={e=>{const items=[...(content.stakes?.items||[])];items[i]={...items[i],description:e.target.value};setContent(prev=>prev?({...prev,stakes:{...prev.stakes!,items}}):prev);}}
+                      className="w-full rounded border-gray-300 bg-white text-sm resize-none text-gray-900"/>
+                  </div>
+                ))}
+                <button onClick={()=>setContent(prev=>prev?({...prev,stakes:{...prev.stakes!,items:[...(prev.stakes?.items||[]),{icon:'AlertTriangle',title:'',description:''}]}}):prev)}
+                  className="flex items-center gap-2 text-sm font-medium text-brand-600">
+                  <Plus size={16}/> Adicionar Risco
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ MGR CONNECT ══ */}
+        {activeTab === 'mgrConnect' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Wifi size={18}/> Seção "MGR Connect"
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Headline</label>
+                <input type="text" value={content.mgrConnect?.headline ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,headline:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                <textarea rows={3} value={content.mgrConnect?.description ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,description:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white resize-none text-gray-900"/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Texto do CTA</label>
+                <input type="text" value={content.mgrConnect?.ctaText ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,ctaText:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">URL da Imagem / Dashboard</label>
+                <input type="url" value={content.mgrConnect?.imageUrl ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,imageUrl:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="https://..."/>
+              </div>
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-gray-700 mb-3">Features / Benefícios</h4>
+                {(content.mgrConnect?.features||[]).map((f,i) => (
+                  <div key={i} className="flex gap-2 mb-2">
+                    <input type="text" value={f}
+                      onChange={e=>{const features=[...(content.mgrConnect?.features||[])];features[i]=e.target.value;setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,features}}):prev);}}
+                      className="flex-1 rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <button onClick={()=>{const features=[...(content.mgrConnect?.features||[])];features.splice(i,1);setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,features}}):prev);}} className="text-red-500"><Trash2 size={16}/></button>
+                  </div>
+                ))}
+                <button onClick={()=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,features:[...(prev.mgrConnect?.features||[]),'']}}):prev)}
+                  className="flex items-center gap-2 text-sm font-medium text-brand-600 mt-2">
+                  <Plus size={16}/> Adicionar Feature
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ LEAD MAGNET ══ */}
+        {activeTab === 'leadMagnet' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-accent-600 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Download size={18}/> Seção "Lead Magnet"
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título do Guia</label>
+                <input type="text" value={content.leadMagnet?.headline ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,leadMagnet:{...prev.leadMagnet!,headline:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  placeholder="7 Sinais de que Seu Sistema..."/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição Curta</label>
+                <textarea rows={2} value={content.leadMagnet?.description ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,leadMagnet:{...prev.leadMagnet!,description:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white resize-none text-gray-900"/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Texto do Botão</label>
+                <input type="text" value={content.leadMagnet?.ctaText ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,leadMagnet:{...prev.leadMagnet!,ctaText:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="Baixar o Guia Gratuito"/>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ SEGMENTAÇÃO ══ */}
+        {activeTab === 'segments' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Building2 size={18}/> Seção "Setores / Segmentos"
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Headline da Seção</label>
+                <input type="text" value={content.segments?.headline ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,segments:{...prev.segments!,headline:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"/>
+              </div>
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-gray-700 mb-3">Segmentos ({(content.segments?.items||[]).length})</h4>
+                {(content.segments?.items||[]).map((seg,i) => (
+                  <div key={i} className="border border-gray-200 rounded-lg p-4 mb-3 bg-gray-50 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-xs font-bold text-gray-500">SETOR {i+1}</span>
+                      <button onClick={()=>{const items=[...(content.segments?.items||[])];items.splice(i,1);setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}} className="text-red-500"><Trash2 size={14}/></button>
+                    </div>
+                    <input type="text" placeholder="Título" value={seg.title}
+                      onChange={e=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],title:e.target.value};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <input type="text" placeholder="Ícone (ex: Factory, Pill, Truck, Building2)" value={seg.icon}
+                      onChange={e=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],icon:e.target.value};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <input type="url" placeholder="URL da imagem (opcional)" value={seg.imageUrl}
+                      onChange={e=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],imageUrl:e.target.value};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
+                      className="w-full rounded border-gray-300 bg-white text-sm text-gray-900"/>
+                    <textarea rows={2} placeholder="Descrição" value={seg.description}
+                      onChange={e=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],description:e.target.value};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
+                      className="w-full rounded border-gray-300 bg-white text-sm resize-none text-gray-900"/>
+                  </div>
+                ))}
+                <button onClick={()=>setContent(prev=>prev?({...prev,segments:{...prev.segments!,items:[...(prev.segments?.items||[]),{title:'',description:'',icon:'Factory',imageUrl:''}]}}):prev)}
+                  className="flex items-center gap-2 text-sm font-medium text-brand-600">
+                  <Plus size={16}/> Adicionar Setor
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ DEPOIMENTO ══ */}
+        {activeTab === 'testimonial' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-brand-900 px-6 py-4 text-white font-bold flex items-center gap-2">
+              <Quote size={18}/> Seção "Depoimento / Prova Social"
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Citação</label>
+                <textarea rows={4} value={content.testimonial?.quote ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,quote:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white resize-none text-gray-900"
+                  placeholder="Desde que a MGR assumiu a gestão..."/>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                  <input type="text" value={content.testimonial?.name ?? ''}
+                    onChange={e=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,name:e.target.value}}):prev)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cargo</label>
+                  <input type="text" value={content.testimonial?.role ?? ''}
+                    onChange={e=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,role:e.target.value}}):prev)}
+                    className="w-full rounded-lg border-gray-300 bg-white text-gray-900"/>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Empresa / Contexto</label>
+                <input type="text" value={content.testimonial?.company ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,company:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900"
+                  placeholder="Indústria Alimentícia — Indaiatuba/SP"/>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">URL da Foto (opcional)</label>
+                <input type="url" value={content.testimonial?.photoUrl ?? ''}
+                  onChange={e=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,photoUrl:e.target.value}}):prev)}
+                  className="w-full rounded-lg border-gray-300 bg-white text-gray-900" placeholder="https://..."/>
               </div>
             </div>
           </div>
