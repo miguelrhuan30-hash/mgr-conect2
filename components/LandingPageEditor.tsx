@@ -404,26 +404,37 @@ const LandingPageEditor: React.FC = () => {
   if (!content) return <div>Erro ao carregar editor.</div>;
 
   const tabs = [
-    { id: 'hero' as const, label: 'Hero', icon: <Monitor size={15} />, anchor: '' },
-    { id: 'stats' as const, label: 'Estatísticas', icon: <BarChart2 size={15} />, anchor: '' },
-    { id: 'painPoints' as const, label: 'Problema', icon: <AlertTriangle size={15} />, anchor: '' },
-    { id: 'clients' as const, label: 'Parceiros', icon: <Users size={15} />, anchor: '' },
-    { id: 'plan' as const, label: 'Plano 3 Passos', icon: <CheckCircle2 size={15} />, anchor: '' },
-    { id: 'stakes' as const, label: 'Stakes', icon: <Activity size={15} />, anchor: '' },
-    { id: 'mgrConnect' as const, label: 'MGR Connect', icon: <Wifi size={15} />, anchor: 'connect' },
-    { id: 'leadMagnet' as const, label: 'Lead Magnet', icon: <Download size={15} />, anchor: '' },
-    { id: 'segments' as const, label: 'Setores', icon: <Building2 size={15} />, anchor: 'setores' },
-    { id: 'testimonial' as const, label: 'Depoimento', icon: <Quote size={15} />, anchor: '' },
-    { id: 'gallery' as const, label: 'Galeria', icon: <Camera size={15} />, anchor: 'galeria' },
-    { id: 'about' as const, label: 'Sobre', icon: <FileText size={15} />, anchor: 'sobre' },
-    { id: 'contact' as const, label: 'Contato', icon: <MessageSquare size={15} />, anchor: 'contato' },
-    { id: 'features' as const, label: 'Config', icon: <Settings size={15} />, anchor: '' },
+    { id: 'hero' as const, label: 'Hero', icon: <Monitor size={15} />, sectionId: 'mgr-sec-hero' },
+    { id: 'stats' as const, label: 'Estatísticas', icon: <BarChart2 size={15} />, sectionId: 'mgr-sec-stats' },
+    { id: 'painPoints' as const, label: 'Problema', icon: <AlertTriangle size={15} />, sectionId: 'mgr-sec-pain' },
+    { id: 'clients' as const, label: 'Parceiros', icon: <Users size={15} />, sectionId: 'mgr-sec-clients' },
+    { id: 'plan' as const, label: 'Plano 3 Passos', icon: <CheckCircle2 size={15} />, sectionId: 'mgr-sec-plan' },
+    { id: 'stakes' as const, label: 'Stakes', icon: <Activity size={15} />, sectionId: 'mgr-sec-stakes' },
+    { id: 'mgrConnect' as const, label: 'MGR Connect', icon: <Wifi size={15} />, sectionId: 'mgr-sec-connect' },
+    { id: 'leadMagnet' as const, label: 'Lead Magnet', icon: <Download size={15} />, sectionId: 'mgr-sec-leadmagnet' },
+    { id: 'segments' as const, label: 'Setores', icon: <Building2 size={15} />, sectionId: 'mgr-sec-setores' },
+    { id: 'testimonial' as const, label: 'Depoimento', icon: <Quote size={15} />, sectionId: 'mgr-sec-testimonial' },
+    { id: 'gallery' as const, label: 'Galeria', icon: <Camera size={15} />, sectionId: 'mgr-sec-gallery' },
+    { id: 'about' as const, label: 'Sobre', icon: <FileText size={15} />, sectionId: 'mgr-sec-about' },
+    { id: 'contact' as const, label: 'Contato', icon: <MessageSquare size={15} />, sectionId: 'mgr-sec-contact' },
+    { id: 'features' as const, label: 'Config', icon: <Settings size={15} />, sectionId: 'mgr-sec-hero' },
   ];
 
-  const activeTabAnchor = tabs.find(t => t.id === activeTab)?.anchor ?? '';
-  const previewSrc = `${window.location.origin}/${
-    activeTabAnchor ? `#${activeTabAnchor}` : ''
-  }`;
+  const activeTabSectionId = tabs.find(t => t.id === activeTab)?.sectionId ?? 'mgr-sec-hero';
+  const previewSrc = `${window.location.origin}/`;
+
+  // Send highlight message to iframe when tab changes
+  React.useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          { type: 'mgr-editor-highlight', sectionId: activeTabSectionId },
+          '*'
+        );
+      }
+    }, 600); // wait for iframe to be ready
+    return () => clearTimeout(timeout);
+  }, [activeTab, previewKey, activeTabSectionId]);
 
 
   return (
@@ -1262,7 +1273,7 @@ const LandingPageEditor: React.FC = () => {
             </div>
             <div style={{ flex:1, background:'rgba(255,255,255,.06)', borderRadius:8, padding:'4px 12px', fontSize:12, color:'rgba(255,255,255,.5)', border:'1px solid rgba(255,255,255,.08)', display:'flex', alignItems:'center', gap:8 }}>
               <Globe size={12} color="rgba(255,255,255,.4)"/>
-              <span>mgrrefrigeracao.com.br{activeTabAnchor ? ` — #${activeTabAnchor}` : ''}</span>
+              <span>mgrrefrigeracao.com.br — #{activeTabSectionId}</span>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: saving ? '#F59E0B' : '#4ADE80', fontWeight:600 }}>
               {saving ? <Loader2 size={12} className="animate-spin"/> : <div style={{ width:8, height:8, borderRadius:'50%', background:'#4ADE80' }}/>}

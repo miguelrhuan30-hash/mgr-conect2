@@ -223,6 +223,25 @@ const LandingPage: React.FC = () => {
 
   const canEdit = userProfile?.role === 'developer' || userProfile?.role === 'admin';
 
+  // Editor highlight listener
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type !== 'mgr-editor-highlight') return;
+      const id = e.data.sectionId as string;
+      // Remove previous highlight
+      document.querySelectorAll('.mgr-editor-highlight').forEach(el => {
+        el.classList.remove('mgr-editor-highlight');
+      });
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Small delay so scroll settles before highlight animates
+      setTimeout(() => el.classList.add('mgr-editor-highlight'), 200);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   // Scroll listener
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 10);
@@ -350,6 +369,22 @@ const LandingPage: React.FC = () => {
         .service-card:hover .svc-icon{background:var(--orange);color:#fff;}
         .segment-card:hover{transform:translateY(-4px);box-shadow:0 20px 48px rgba(0,0,0,.14);}
         .step-line::after{content:'';position:absolute;top:22px;left:calc(50% + 22px);width:calc(100% - 44px);height:2px;background:linear-gradient(90deg,var(--orange),var(--blue));border-radius:2px;}
+        /* ── EDITOR HIGHLIGHT ── */
+        @keyframes editorPulse{0%,100%{outline-color:#EF4444;outline-offset:-4px}50%{outline-color:#F97316;outline-offset:2px}}
+        .mgr-editor-highlight{
+          outline:3px solid #EF4444!important;
+          outline-offset:-3px;
+          animation:editorPulse 1.5s ease-in-out infinite;
+          scroll-margin-top:80px;
+          position:relative;z-index:5;
+        }
+        .mgr-editor-highlight::before{
+          content:'Editando esta seção';
+          position:absolute;top:0;left:0;z-index:9999;
+          background:#EF4444;color:#fff;font-size:11px;font-weight:700;
+          padding:4px 10px;letter-spacing:.5px;text-transform:uppercase;
+          border-radius:0 0 8px 0;font-family:system-ui;pointer-events:none;
+        }
         @media(max-width:768px){
           .desk-only{display:none!important;}
           .hamburger{display:flex!important;}
@@ -449,7 +484,7 @@ const LandingPage: React.FC = () => {
       </header>
 
       {/* ═══════════════════ HERO ═══════════════════ */}
-      <section id="home" style={{ minHeight:'100vh', position:'relative', display:'flex', flexDirection:'column', justifyContent:'center', overflow:'hidden', paddingTop:72, background:'var(--navy)' }}>
+      <section id="mgr-sec-hero" style={{ minHeight:'100vh', position:'relative', display:'flex', flexDirection:'column', justifyContent:'center', overflow:'hidden', paddingTop:72, background:'var(--navy)' }}>
         <div className="mesh" />
         <div className="grid-overlay" />
         <div className="vignette" />
@@ -498,7 +533,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ TRUST BAR ═══════════════════ */}
-      <div style={{ background:'var(--blue)', position:'relative', overflow:'hidden' }}>
+      <div id="mgr-sec-stats" style={{ background:'var(--blue)', position:'relative', overflow:'hidden' }}>
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 60% 120% at 0% 50%,rgba(255,255,255,.04),transparent 60%)' }} />
         <div className="trust-grid" style={{ position:'relative', zIndex:1, maxWidth:1280, margin:'0 auto', padding:'0 24px', display:'grid', gridTemplateColumns:'repeat(4,1fr)' }}>
           {[
@@ -519,7 +554,7 @@ const LandingPage: React.FC = () => {
       </div>
 
       {/* ═══════════════════ PAIN POINTS ═══════════════════ */}
-      <section ref={secPain.ref} style={{ padding:'96px 24px', background:'#fff' }}>
+      <section id="mgr-sec-pain" ref={secPain.ref} style={{ padding:'96px 24px', background:'#fff' }}>
         <div style={{ maxWidth:1280, margin:'0 auto' }}>
           <div style={{ textAlign:'center', maxWidth:720, margin:'0 auto 56px', ...fadeIn(secPain.visible) }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:100, background:'#FEF3C7', color:'#92400E', fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.7px', marginBottom:20 }}>
@@ -543,7 +578,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ SERVIÇOS / CICLO DE VIDA ═══════════════════ */}
-      <section id="servicos" ref={secServices.ref} style={{ padding:'96px 24px', background:'var(--gray-ice)' }}>
+      <section id="mgr-sec-services" ref={secServices.ref} style={{ padding:'96px 24px', background:'var(--gray-ice)' }}>
         <div style={{ maxWidth:1280, margin:'0 auto' }}>
           <div style={{ textAlign:'center', maxWidth:640, margin:'0 auto 56px', ...fadeIn(secServices.visible) }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:100, background:'rgba(27,94,138,.08)', color:'var(--blue)', fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.7px', marginBottom:20 }}>
@@ -570,7 +605,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ PLANO 3 PASSOS ═══════════════════ */}
-      <section ref={secPlan.ref} style={{ padding:'96px 24px', background:'#fff' }}>
+      <section id="mgr-sec-plan" ref={secPlan.ref} style={{ padding:'96px 24px', background:'#fff' }}>
         <div style={{ maxWidth:960, margin:'0 auto' }}>
           <div style={{ textAlign:'center', marginBottom:64, ...fadeIn(secPlan.visible) }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:100, background:'rgba(27,94,138,.08)', color:'var(--blue)', fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.7px', marginBottom:20 }}>
@@ -596,7 +631,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ PROVA SOCIAL ═══════════════════ */}
-      <section ref={secStats.ref} style={{ padding:'96px 24px', background:'var(--blue)', position:'relative', overflow:'hidden' }}>
+      <section id="mgr-sec-testimonial" ref={secStats.ref} style={{ padding:'96px 24px', background:'var(--blue)', position:'relative', overflow:'hidden' }}>
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 60% 80% at 80% 50%,rgba(212,121,42,.08),transparent)' }} />
         <div style={{ maxWidth:1280, margin:'0 auto', position:'relative', zIndex:1 }}>
           <div style={{ textAlign:'center', maxWidth:640, margin:'0 auto 64px' }}>
@@ -639,7 +674,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ PARCEIROS (marquee) ═══════════════════ */}
-      <section style={{ padding:'64px 0', background:'#fff', borderTop:'1px solid var(--border)', overflow:'hidden' }}>
+      <section id="mgr-sec-clients" style={{ padding:'64px 0', background:'#fff', borderTop:'1px solid var(--border)', overflow:'hidden' }}>
         <div style={{ textAlign:'center', marginBottom:40, padding:'0 24px' }}>
           <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:100, background:'rgba(27,94,138,.08)', color:'var(--blue)', fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.7px', marginBottom:16 }}>Quem confia na MGR</div>
           <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(22px,2.5vw,32px)', color:'var(--text)' }}>{content.clients?.title}</h2>
@@ -663,7 +698,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ STAKES ═══════════════════ */}
-      <section ref={secStakes.ref} style={{ padding:'96px 24px', background:'var(--navy)', position:'relative', overflow:'hidden' }}>
+      <section id="mgr-sec-stakes" ref={secStakes.ref} style={{ padding:'96px 24px', background:'var(--navy)', position:'relative', overflow:'hidden' }}>
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 50% 80% at 20% 50%,rgba(27,94,138,.2),transparent 60%)' }} />
         <div style={{ maxWidth:1280, margin:'0 auto', position:'relative', zIndex:1 }}>
           <div style={{ textAlign:'center', maxWidth:640, margin:'0 auto 64px', ...fadeIn(secStakes.visible) }}>
@@ -694,7 +729,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ MGR CONNECT ═══════════════════ */}
-      <section id="connect" ref={secConnect.ref} style={{ padding:'96px 24px', background:'var(--gray-ice)' }}>
+      <section id="mgr-sec-connect" ref={secConnect.ref} style={{ padding:'96px 24px', background:'var(--gray-ice)' }}>
         <div style={{ maxWidth:1280, margin:'0 auto' }}>
           <div className="connect-layout" style={{ display:'flex', alignItems:'center', gap:64 }}>
             {/* Visual side */}
@@ -736,7 +771,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ LEAD MAGNET ═══════════════════ */}
-      <div style={{ background:'var(--orange)', padding:'48px 24px', position:'relative', overflow:'hidden' }}>
+      <div id="mgr-sec-leadmagnet" style={{ background:'var(--orange)', padding:'48px 24px', position:'relative', overflow:'hidden' }}>
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 60% 120% at 100% 50%,rgba(255,255,255,.08),transparent)' }} />
         <div style={{ maxWidth:1280, margin:'0 auto', display:'flex', flexWrap:'wrap', alignItems:'center', justifyContent:'space-between', gap:24, position:'relative', zIndex:1 }}>
           <div style={{ flex:1, minWidth:280 }}>
@@ -754,7 +789,7 @@ const LandingPage: React.FC = () => {
       </div>
 
       {/* ═══════════════════ SEGMENTAÇÃO ═══════════════════ */}
-      <section id="setores" ref={secSegments.ref} style={{ padding:'96px 24px', background:'#fff' }}>
+      <section id="mgr-sec-setores" ref={secSegments.ref} style={{ padding:'96px 24px', background:'#fff' }}>
         <div style={{ maxWidth:1280, margin:'0 auto' }}>
           <div style={{ textAlign:'center', maxWidth:640, margin:'0 auto 56px', ...fadeIn(secSegments.visible) }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:100, background:'rgba(27,94,138,.08)', color:'var(--blue)', fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.7px', marginBottom:20 }}>Setores Atendidos</div>
@@ -785,7 +820,7 @@ const LandingPage: React.FC = () => {
 
       {/* ═══════════════════ GALERIA ═══════════════════ */}
       {galleryItems.length > 0 && (
-        <section id="galeria" style={{ padding:'96px 24px', background:'var(--navy)' }}>
+        <section id="mgr-sec-gallery" style={{ padding:'96px 24px', background:'var(--navy)' }}>
           <div style={{ maxWidth:1280, margin:'0 auto' }}>
             <div style={{ textAlign:'center', maxWidth:640, margin:'0 auto 56px' }}>
               <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:100, background:'rgba(255,255,255,.08)', color:'rgba(255,255,255,.7)', fontSize:12, fontWeight:700, textTransform:'uppercase', letterSpacing:'.7px', border:'1px solid rgba(255,255,255,.1)', marginBottom:20 }}>
@@ -811,7 +846,7 @@ const LandingPage: React.FC = () => {
       )}
 
       {/* ═══════════════════ SOBRE ═══════════════════ */}
-      <section id="sobre" style={{ padding:'96px 24px', background:'var(--gray-ice)' }}>
+      <section id="mgr-sec-about" style={{ padding:'96px 24px', background:'var(--gray-ice)' }}>
         <div style={{ maxWidth:1280, margin:'0 auto', display:'grid', gridTemplateColumns:'1fr 1fr', gap:80, alignItems:'center' }}>
           <div style={{ position:'relative' }}>
             {content.about.imageUrl ? <img src={content.about.imageUrl} alt="Sobre a MGR" style={{ width:'100%', borderRadius:24, boxShadow:'0 24px 64px rgba(27,94,138,.2)', objectFit:'cover', height:500 }}/> : (
@@ -869,7 +904,7 @@ const LandingPage: React.FC = () => {
       </section>
 
       {/* ═══════════════════ FOOTER ═══════════════════ */}
-      <footer id="contato" style={{ background:'#070D1A', paddingTop:80, paddingBottom:40 }}>
+      <footer id="mgr-sec-contact" style={{ background:'#070D1A', paddingTop:80, paddingBottom:40 }}>
         <div style={{ maxWidth:1280, margin:'0 auto', padding:'0 24px' }}>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:48, marginBottom:64 }}>
             {/* Col 1 */}
