@@ -13,6 +13,59 @@ import {
   AlertTriangle, Wifi, Activity, Zap, Building2, Download, Quote
 } from 'lucide-react';
 
+/* ── ImageUploadField ─ MUST live at module scope (Rules of Hooks) ── */
+interface ImageUploadFieldProps {
+  label: string;
+  currentUrl: string;
+  isUploading: boolean;
+  onFileChange: (file: File) => void;
+  onRemove: () => void;
+  previewHeight?: number;
+}
+const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
+  label, currentUrl, isUploading, onFileChange, onRemove, previewHeight = 140
+}) => (
+  <div>
+    <label style={{ display:'block', fontSize:13, fontWeight:600, color:'#374151', marginBottom:4 }}>{label}</label>
+    <div style={{ border:'2px dashed #D1D5DB', borderRadius:12, overflow:'hidden', position:'relative', background:'#fff', cursor:'pointer', transition:'.2s' }}
+      onMouseEnter={e=>(e.currentTarget as HTMLDivElement).style.borderColor='#1B5E8A'}
+      onMouseLeave={e=>(e.currentTarget as HTMLDivElement).style.borderColor='#D1D5DB'}>
+      <input
+        type="file" accept="image/*"
+        style={{ position:'absolute', inset:0, width:'100%', height:'100%', opacity:0, cursor:'pointer', zIndex:10 }}
+        onChange={e => { if (e.target.files?.[0]) onFileChange(e.target.files[0]); }}
+      />
+      {isUploading ? (
+        <div style={{ height: previewHeight, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, color:'#6B7280' }}>
+          <Loader2 style={{ width:32, height:32, color:'#1B5E8A', animation:'spin 1s linear infinite' }} />
+          <span style={{ fontSize:13 }}>Enviando...</span>
+        </div>
+      ) : currentUrl ? (
+        <div style={{ position:'relative' }} className="group">
+          <img src={currentUrl} alt={label} style={{ height: previewHeight, width:'100%', objectFit:'cover', display:'block' }} />
+          <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center', opacity:0, transition:'.2s' }}
+            onMouseEnter={e=>(e.currentTarget as HTMLDivElement).style.opacity='1'}
+            onMouseLeave={e=>(e.currentTarget as HTMLDivElement).style.opacity='0'}>
+            <span style={{ color:'#fff', fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:8 }}><UploadCloud size={16}/> Substituir imagem</span>
+          </div>
+        </div>
+      ) : (
+        <div style={{ height: previewHeight, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, color:'#9CA3AF' }}>
+          <UploadCloud style={{ width:40, height:40, color:'#D1D5DB' }} />
+          <span style={{ fontSize:13, fontWeight:600, color:'#6B7280' }}>Clique para fazer upload</span>
+          <span style={{ fontSize:11, color:'#9CA3AF' }}>JPG, PNG, WebP — comprimido automaticamente</span>
+        </div>
+      )}
+    </div>
+    {currentUrl && (
+      <button onClick={onRemove}
+        style={{ marginTop:4, fontSize:11, color:'#EF4444', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, padding:0 }}>
+        <Trash2 size={11}/> Remover imagem
+      </button>
+    )}
+  </div>
+);
+
 const LandingPageEditor: React.FC = () => {
   const navigate = useNavigate();
   const { userProfile } = useAuth();
@@ -352,54 +405,7 @@ const LandingPageEditor: React.FC = () => {
     }
   };
 
-  const ImageUploadField = ({
-    label, currentUrl, storagePath, onSuccess, previewHeight = 140
-  }: {
-    label: string;
-    currentUrl: string;
-    storagePath: string;
-    onSuccess: (url: string) => void;
-    previewHeight?: number;
-  }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <div className="border-2 border-dashed border-gray-300 rounded-xl overflow-hidden hover:border-brand-400 transition-colors relative bg-white">
-        <input
-          type="file" accept="image/*"
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-          onChange={e => { if (e.target.files?.[0]) uploadSectionImage(e.target.files[0], storagePath, onSuccess); }}
-        />
-        {uploadingKey === storagePath ? (
-          <div style={{ height: previewHeight }} className="flex flex-col items-center justify-center text-gray-400">
-            <Loader2 className="animate-spin w-8 h-8 mb-2 text-brand-500" />
-            <span className="text-sm">Enviando...</span>
-          </div>
-        ) : currentUrl ? (
-          <div className="relative group">
-            <img src={currentUrl} alt={label} style={{ height: previewHeight, width: '100%', objectFit: 'cover' }} />
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <span className="text-white text-sm font-medium flex items-center gap-2"><UploadCloud size={16}/> Substituir imagem</span>
-            </div>
-          </div>
-        ) : (
-          <div style={{ height: previewHeight }} className="flex flex-col items-center justify-center text-gray-400">
-            <UploadCloud className="w-10 h-10 mb-2 text-gray-300" />
-            <span className="text-sm font-medium">Clique para fazer upload</span>
-            <span className="text-xs text-gray-400 mt-1">JPG, PNG, WebP — comprimido automaticamente</span>
-          </div>
-        )}
-      </div>
-      {currentUrl && (
-        <button
-          onClick={() => onSuccess('')}
-          className="mt-1 text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
-          <Trash2 size={11}/> Remover imagem
-        </button>
-      )}
-    </div>
-  );
-
-
+  // (ImageUploadField moved to module scope — see top of file)
   if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin text-brand-500 w-8 h-8" /></div>;
   if (!content) return <div>Erro ao carregar editor.</div>;
 
@@ -534,8 +540,9 @@ const LandingPageEditor: React.FC = () => {
               <ImageUploadField
                 label="Imagem de Fundo do Hero (opcional)"
                 currentUrl={content.hero.backgroundImageUrl}
-                storagePath="hero"
-                onSuccess={url => updateField('hero', 'backgroundImageUrl', url)}
+                isUploading={uploadingKey === 'hero'}
+                onFileChange={file => uploadSectionImage(file, 'hero', url => updateField('hero', 'backgroundImageUrl', url))}
+                onRemove={() => updateField('hero', 'backgroundImageUrl', '')}
                 previewHeight={160}
               />
               <p className="text-xs text-gray-400 -mt-2">ℹ️ Deixe sem imagem para usar o gradiente premium animado.</p>
@@ -779,8 +786,9 @@ const LandingPageEditor: React.FC = () => {
                 <ImageUploadField
                   label="Foto da Seção Sobre"
                   currentUrl={content.about?.imageUrl || ''}
-                  storagePath="about"
-                  onSuccess={url => updateField('about', 'imageUrl', url)}
+                  isUploading={uploadingKey === 'about'}
+                  onFileChange={file => uploadSectionImage(file, 'about', url => updateField('about', 'imageUrl', url))}
+                  onRemove={() => updateField('about', 'imageUrl', '')}
                   previewHeight={180}
                 />
                 <div>
@@ -1113,8 +1121,9 @@ const LandingPageEditor: React.FC = () => {
               <ImageUploadField
                 label="Imagem / Screenshot do Dashboard MGR Connect"
                 currentUrl={content.mgrConnect?.imageUrl ?? ''}
-                storagePath="connect"
-                onSuccess={url=>setContent(prev=>prev?({...prev,mgrConnect:{...prev.mgrConnect!,imageUrl:url}}):prev)}
+                isUploading={uploadingKey === 'connect'}
+                onFileChange={file => uploadSectionImage(file, 'connect', url => setContent(prev => prev?({...prev,mgrConnect:{...prev.mgrConnect!,imageUrl:url}}):prev))}
+                onRemove={() => setContent(prev => prev?({...prev,mgrConnect:{...prev.mgrConnect!,imageUrl:''}}):prev)}
                 previewHeight={180}
               />
               <div className="border-t pt-4">
@@ -1196,8 +1205,9 @@ const LandingPageEditor: React.FC = () => {
                     <ImageUploadField
                       label={`Foto do Setor ${i+1} (opcional)`}
                       currentUrl={seg.imageUrl}
-                      storagePath={`segments/seg_${i}`}
-                      onSuccess={url=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],imageUrl:url};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
+                      isUploading={uploadingKey === `segments/seg_${i}`}
+                      onFileChange={file => uploadSectionImage(file, `segments/seg_${i}`, url=>{const items=[...(content.segments?.items||[])];items[i]={...items[i],imageUrl:url};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);})}
+                      onRemove={() => {const items=[...(content.segments?.items||[])];items[i]={...items[i],imageUrl:''};setContent(prev=>prev?({...prev,segments:{...prev.segments!,items}}):prev);}}
                       previewHeight={100}
                     />
                     <textarea rows={2} placeholder="Descrição" value={seg.description}
@@ -1252,8 +1262,9 @@ const LandingPageEditor: React.FC = () => {
               <ImageUploadField
                 label="Foto do Depoente (opcional)"
                 currentUrl={content.testimonial?.photoUrl ?? ''}
-                storagePath="testimonial"
-                onSuccess={url=>setContent(prev=>prev?({...prev,testimonial:{...prev.testimonial!,photoUrl:url}}):prev)}
+                isUploading={uploadingKey === 'testimonial'}
+                onFileChange={file => uploadSectionImage(file, 'testimonial', url => setContent(prev => prev?({...prev,testimonial:{...prev.testimonial!,photoUrl:url}}):prev))}
+                onRemove={() => setContent(prev => prev?({...prev,testimonial:{...prev.testimonial!,photoUrl:''}}):prev)}
                 previewHeight={100}
               />
             </div>
