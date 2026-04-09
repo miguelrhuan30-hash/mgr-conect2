@@ -461,15 +461,17 @@ const LunchManagement: React.FC = () => {
   const buildClipboardText = (): string => {
     const dayLabel = getDayOfWeekLabel(selectedDate);
     const dateBR = formatDateBR(selectedDate);
+    // Exclui pedidos de cardápios desativados — não enviar ao restaurante
+    const ativos = filteredChoicesByDate.filter(e => !e.menuEncerrado);
     let text = `📋 Pedidos ${dayLabel} · ${dateBR}:\n\n`;
-    filteredChoicesByDate.forEach(({ choice, dayKey }, i) => {
+    ativos.forEach(({ choice, dayKey }, i) => {
       const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
       const mistStr  = dc?.misturas?.map(m => m.nome).join(' + ')  || '—';
       const garnStr  = dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—';
       const tamLabel = dc?.tamanho ? TAMANHO_LABELS[dc.tamanho] || dc.tamanho : 'média';
       text += `${i + 1} ${tamLabel}: ${choice.userName}\n   🥩 ${mistStr}\n   🥗 ${garnStr}\n`;
     });
-    text += `\nTotal: ${filteredChoicesByDate.length} marmita(s)`;
+    text += `\nTotal: ${ativos.length} marmita(s)`;
     return text;
   };
 
@@ -490,7 +492,9 @@ const LunchManagement: React.FC = () => {
     });
     const dedupedLocations = Array.from(latestLocs.values());
 
-    filteredChoicesByDate.forEach(({ choice, dayKey }) => {
+    filteredChoicesByDate.forEach(({ choice, dayKey, menuEncerrado }) => {
+      // Excluir pedidos de cardápios desativados dos relativos ao restaurante
+      if (menuEncerrado) return;
       const loc = dedupedLocations.find(l => l.userId === choice.userId && l.data === selectedDate);
       if (loc?.tipo === 'fora_cidade') return;
 
@@ -522,7 +526,9 @@ const LunchManagement: React.FC = () => {
         text += `   ${i + 1} ${m.tamanho}:  ${m.userName}\n     🥩 ${m.misturas}\n     🥗 ${m.guarnicoes}\n`;
       });
     });
-    const foraEntries = filteredChoicesByDate.filter(({ choice }) => {
+    // Fora da cidade — só entre os ativos
+    const foraEntries = filteredChoicesByDate.filter(({ choice, menuEncerrado }) => {
+      if (menuEncerrado) return false;
       const loc = locations.find(l => l.userId === choice.userId && l.data === selectedDate);
       return loc?.tipo === 'fora_cidade';
     });
@@ -530,7 +536,6 @@ const LunchManagement: React.FC = () => {
       text += `\n✈️ Fora da Cidade (NÃO pedir):\n`;
       foraEntries.forEach(({ choice }) => { text += `   ❌ ${choice.userName}\n`; });
     }
-    // Totalizar marmitas por endereço
     const totalMarmitas = groupedByAddress.reduce((sum, g) => sum + g.meals.length, 0);
     text += `\n📦 Total: ${totalMarmitas} marmita(s)`;
     return text;
@@ -583,8 +588,9 @@ const LunchManagement: React.FC = () => {
         return 'Campo';
       };
 
-      // Aba 1: Pedidos
-      const pedidosData = filteredChoicesByDate.map(({ choice, dayKey, menuEncerrado }, i) => {
+      // Aba 1: Pedidos ativos (apenas cardápios ativos — enviado ao restaurante)
+      const pedidosAtivos = filteredChoicesByDate.filter(e => !e.menuEncerrado);
+      const pedidosData = pedidosAtivos.map(({ choice, dayKey }, i) => {
         const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
         const loc = getLocForUser(choice.userId);
         return {
@@ -596,12 +602,31 @@ const LunchManagement: React.FC = () => {
           'Tamanho': dc?.tamanho || 'média',
           'Tipo Localização': locTipo(loc),
           'Endereço Entrega': locLabel(loc),
-          'Status Cardápio': menuEncerrado ? '⚠️ Cardápio Desativado' : '✅ Ativo',
         };
       });
       const ws1 = XLSX.utils.json_to_sheet(pedidosData);
-      ws1['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 16 }, { wch: 36 }, { wch: 22 }];
+      ws1['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 16 }, { wch: 36 }];
       XLSX.utils.book_append_sheet(wb, ws1, 'Pedidos');
+
+      // Aba 1b: Pedidos desativados (aviso — cardápios encerrados)
+      const pedidosDesativados = filteredChoicesByDate.filter(e => e.menuEncerrado);
+      if (pedidosDesativados.length > 0) {
+        const desativadosData = pedidosDesativados.map(({ choice, dayKey }, i) => {
+          const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
+          return {
+            'Nº': i + 1,
+            'Nome': choice.userName,
+            'Setor': choice.userSector || '',
+            'Misturas': dc?.misturas?.map(m => m.nome).join(' + ') || '—',
+            'Guarnições': dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—',
+            'Tamanho': dc?.tamanho || 'média',
+            'Aviso': '⚠️ Cardápio desativado — NÃO enviar ao restaurante',
+          };
+        });
+        const wsDesativ = XLSX.utils.json_to_sheet(desativadosData);
+        wsDesativ['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 48 }];
+        XLSX.utils.book_append_sheet(wb, wsDesativ, '⚠ Cardápio Desativado');
+      }
 
       // Aba 2: Por Endereço
       const endData: Record<string, any>[] = [];
@@ -1139,20 +1164,25 @@ const LunchManagement: React.FC = () => {
                 {filteredChoicesByDate.map(({ choice, dayKey, menuEncerrado }, idx) => {
                   const dc = choice.escolhas[dayKey] as LunchDayChoice | null;
                   return (
-                    <li key={choice.id} className={`px-5 py-3 hover:bg-orange-50/30 transition-colors ${
-                      menuEncerrado ? 'border-l-4 border-amber-400 bg-amber-50/20' : ''
+                    <li key={choice.id} className={`transition-colors ${
+                      menuEncerrado
+                        ? 'border-l-4 border-red-500 bg-red-50/40'
+                        : 'px-5 py-3 hover:bg-orange-50/30'
                     }`}>
-                      <div className="flex items-start gap-3">
+                      {menuEncerrado && (
+                        <div className="flex items-center gap-2 px-5 py-2 bg-red-100 border-b border-red-200">
+                          <AlertTriangle size={13} className="text-red-600 flex-shrink-0" />
+                          <p className="text-xs font-bold text-red-700">
+                            Pedido feito em cardápio já desativado — NÃO será enviado ao restaurante
+                          </p>
+                        </div>
+                      )}
+                      <div className={`flex items-start gap-3 ${menuEncerrado ? 'px-5 py-3 opacity-70' : ''}`}>
                         <span className="text-sm font-bold text-gray-400 w-6 text-right mt-0.5">{idx + 1}.</span>
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-semibold text-gray-900">{choice.userName}</p>
-                            {menuEncerrado && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300">
-                                <AlertTriangle size={9} /> Cardápio Desativado
-                              </span>
-                            )}
-                          </div>
+                          <p className={`text-sm font-semibold ${menuEncerrado ? 'text-red-800 line-through' : 'text-gray-900'}`}>
+                            {choice.userName}
+                          </p>
                           <div className="flex flex-wrap gap-2 mt-1">
                             {dc?.misturas?.map(m => (
                               <span key={m.id} className="text-xs bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-full">🥩 {m.nome}</span>
