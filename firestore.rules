@@ -88,6 +88,16 @@ service cloud.firestore {
       allow write: if isManager();
     }
 
+    // ── Multi Landing Pages ───────────────────────────────────────────────
+    match /landing_pages/{lpId} {
+      // Public: only published pages are readable without auth
+      allow read: if resource.data.status == 'published'
+                  || (isAuthenticated() && isManager());
+      allow create: if isAuthenticated() && isManager();
+      allow update: if isAuthenticated() && isManager();
+      allow delete: if isAdmin();
+    }
+
     // ── Regra padrão: apenas autenticados ────────────────────────────────
     match /{document=**} {
       allow read, write: if isAuthenticated();

@@ -82,6 +82,13 @@ const Apresentacoes     = lazy(() => import('./components/Apresentacoes'));
 const ApresentacaoPublica = lazy(() => import('./components/ApresentacaoPublica'));
 
 // ─────────────────────────────────────────────
+// LAZY LOAD — Multi Landing Pages
+// ─────────────────────────────────────────────
+const LandingPagesManager    = lazy(() => import('./components/LandingPagesManager'));
+const LandingPageEditorMulti = lazy(() => import('./components/LandingPageEditorMulti'));
+const LandingPagePublicMulti = lazy(() => import('./components/LandingPagePublicMulti'));
+
+// ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 49: Módulo Meu Almoço
 // ─────────────────────────────────────────────
 const LunchManagement = lazy(() => import('./components/LunchManagement'));
@@ -95,6 +102,27 @@ const EspelhoMensal   = lazy(() => import('./components/EspelhoMensal'));
 const SurveyManagement = lazy(() => import('./components/SurveyManagement'));
 const SurveyResponder  = lazy(() => import('./components/SurveyResponder'));
 const SurveyDashboard  = lazy(() => import('./components/SurveyDashboard'));
+
+// ─────────────────────────────────────────────
+// COMPONENTE: LandingPagesManagerWrapper
+// Gerencia navegação interna entre lista e editor
+// ─────────────────────────────────────────────
+const LandingPagesManagerWrapper: React.FC = () => {
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+
+  if (editingId) {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <LandingPageEditorMulti lpId={editingId} onBack={() => setEditingId(null)} />
+      </Suspense>
+    );
+  }
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <LandingPagesManager onEdit={(id) => setEditingId(id)} />
+    </Suspense>
+  );
+};
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -395,6 +423,18 @@ const AppContent: React.FC = () => {
             element={hasPermission('canViewFinancials') ? <Apresentacoes /> : <Navigate to="/app" />} />
 
           {/* ════════════════════════════════════════
+              Multi Landing Pages
+          ════════════════════════════════════════ */}
+          <Route
+            path="landing-pages"
+            element={
+              hasPermission('canManageSettings')
+                ? <LandingPagesManagerWrapper />
+                : <Navigate to="/app" />
+            }
+          />
+
+          {/* ════════════════════════════════════════
               SPRINT 49 — Módulo Meu Almoço
           ════════════════════════════════════════ */}
           <Route path="gestao-almoco"
@@ -426,6 +466,7 @@ const App: React.FC = () => (
         <Routes>
           <Route path="/p/:slug" element={<ApresentacaoPublica />} />
           <Route path="/orcamentos/:id" element={<OrcamentoPublico />} />
+          <Route path="/lp/:slug" element={<LandingPagePublicMulti />} />
           <Route path="*" element={<AppContent />} />
         </Routes>
       </Suspense>

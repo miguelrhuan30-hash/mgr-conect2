@@ -1326,3 +1326,103 @@ export interface PresentationView {
   userAgent: string;
   device: 'mobile' | 'tablet' | 'desktop';
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MULTI LANDING PAGE SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type LPStatus = 'draft' | 'published' | 'archived';
+
+export interface MultiLPSection {
+  // 1. Header / Navegação
+  header: {
+    logo?: string;
+    tagline: string;
+    phone: string;
+    whatsapp: string;
+  };
+  // 2. Hero
+  hero: {
+    title: string;
+    subtitle: string;
+    backgroundImageUrl: string;
+    ctaText: string;
+    ctaLink: string;
+    badgeText?: string;
+  };
+  // 3. Problema / Dor
+  problem: {
+    title: string;
+    items: { icon: string; title: string; description: string }[];
+  };
+  // 4. Solução / Serviços
+  solution: {
+    title: string;
+    subtitle: string;
+    items: { icon: string; title: string; description: string }[];
+  };
+  // 5. Prova Social / Clientes
+  socialProof: {
+    title: string;
+    items: { name: string; logoUrl?: string; testimonial?: string }[];
+  };
+  // 6. Diferenciais
+  differentials: {
+    title: string;
+    items: { icon: string; title: string; description: string }[];
+  };
+  // 7. Ponte / Por que nós
+  bridge: {
+    title: string;
+    description: string;
+    stats: { value: string; label: string }[];
+    imageUrl?: string;
+  };
+  // 8. CTA Final
+  cta: {
+    title: string;
+    description: string;
+    buttonText: string;
+    buttonLink: string;
+    phone: string;
+    whatsapp: string;
+    email: string;
+  };
+  // 9. Rodapé
+  footer: {
+    address: string;
+    phone: string;
+    email: string;
+    instagram?: string;
+    linkedin?: string;
+    copyright: string;
+  };
+}
+
+export interface MultiLandingPage {
+  id: string;
+  name: string;           // internal label, e.g. "Câmaras Frias"
+  slug: string;           // public URL path, e.g. "camaras-frias"
+  templateId?: string;    // which template it was created from
+  status: LPStatus;
+  content: MultiLPSection;
+  primaryColor: string;   // e.g. "#1B5E8A"
+  accentColor: string;    // e.g. "#D4792A"
+  metaTitle?: string;
+  metaDescription?: string;
+  views?: number;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface LPTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;           // lucide icon name as string
+  preview?: string;       // preview image URL
+  content: MultiLPSection;
+  primaryColor: string;
+  accentColor: string;
+}
