@@ -360,15 +360,16 @@ const LunchManagement: React.FC = () => {
 
   /* ─── Derivados do menu/dia selecionados ─── */
   const selectedMenu = useMemo(() => menus.find(m => m.id === selectedMenuId) ?? null, [menus, selectedMenuId]);
-  const isWeeklyMenu = !selectedMenu?.modo || selectedMenu.modo === 'semanal';
-  // dayKey efetivo: para menu diario/fixo usa o dia da data do menu
-  const effectiveDayKey: DayKey = isWeeklyMenu ? selectedDayKey : (() => {
+  const isWeeklyMenu = useMemo(() => !selectedMenu?.modo || selectedMenu.modo === 'semanal', [selectedMenu]);
+  // dayKey efetivo como useMemo reativo — crítico para menus diários
+  const effectiveDayKey: DayKey = useMemo(() => {
+    if (!selectedMenu || isWeeklyMenu) return selectedDayKey;
     const DAY_KEY_MAP: Record<number, DayKey> = { 1:'segunda',2:'terca',3:'quarta',4:'quinta',5:'sexta' };
-    if (selectedMenu?.modo === 'diario' && selectedMenu.dataUnica) {
-      return DAY_KEY_MAP[new Date(selectedMenu.dataUnica + 'T12:00:00').getDay()] ?? 'segunda';
+    if (selectedMenu.modo === 'diario' && selectedMenu.dataUnica) {
+      return DAY_KEY_MAP[new Date(selectedMenu.dataUnica + 'T12:00:00').getDay()] ?? selectedDayKey;
     }
-    return 'segunda';
-  })();
+    return selectedDayKey;
+  }, [selectedMenu, selectedDayKey, isWeeklyMenu]);
   // Data ISO efetiva do relatório
   const selectedDate: string = useMemo(() => {
     if (!selectedMenu) return new Date().toISOString().split('T')[0];
@@ -395,9 +396,21 @@ const LunchManagement: React.FC = () => {
     const candidates: FilteredChoiceEntry[] = [];
 
     menuChoices.forEach(choice => {
-      const dc = choice.escolhas[effectiveDayKey] as LunchDayChoice | null | undefined;
-      if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
-        candidates.push({ choice, dayKey: effectiveDayKey, menu: selectedMenu, menuEncerrado: isEncerrado });
+      if (isWeeklyMenu) {
+        // Menu semanal: busca apenas o dayKey selecionado
+        const dc = choice.escolhas[effectiveDayKey] as LunchDayChoice | null | undefined;
+        if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
+          candidates.push({ choice, dayKey: effectiveDayKey, menu: selectedMenu, menuEncerrado: isEncerrado });
+        }
+      } else {
+        // Menu diário: MyLunch salva com o todayKey do momento — varrer todos os dayKeys
+        for (const dk of DAY_KEYS) {
+          const dc = choice.escolhas[dk] as LunchDayChoice | null | undefined;
+          if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
+            candidates.push({ choice, dayKey: dk, menu: selectedMenu, menuEncerrado: isEncerrado });
+            break;
+          }
+        }
       }
     });
 
@@ -411,7 +424,7 @@ const LunchManagement: React.FC = () => {
       }
     });
     return Array.from(byUser.values());
-  }, [menuChoices, selectedMenuId, selectedMenu, effectiveDayKey]);
+  }, [menuChoices, selectedMenuId, selectedMenu, effectiveDayKey, isWeeklyMenu]);
 
   // Alias retrocompatível
   const filteredChoices = filteredChoicesByDate.map(e => e.choice);
