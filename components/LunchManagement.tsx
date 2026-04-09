@@ -86,8 +86,9 @@ const LunchManagement: React.FC = () => {
   const [guarnicaoDraft, setGuarnicaoDraft] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // ── Choices ──
-  const [allChoices, setAllChoices] = useState<LunchChoice[]>([]);
+  // ── Choices para a data selecionada ──
+  const [dateChoices, setDateChoices] = useState<LunchChoice[]>([]);
+  const [loadingChoices, setLoadingChoices] = useState(false);
   // Filtro único por data
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [copied, setCopied] = useState(false);
@@ -144,13 +145,84 @@ const LunchManagement: React.FC = () => {
     });
   }, []);
 
-  /* ─── Real-time: TODOS os choices (sem orderBy para evitar falha de índice) ─── */
+  /* ─── Helper emântico: dado um menu e uma data, retorna o dayKey correto ───
+   * Retorna null se o menu não cobre a data.
+   */
+  const getMenuDayKeyForDate = (menu: LunchMenu, isoDate: string): DayKey | null => {
+    const DAY_KEY_MAP: Record<number, DayKey> = {
+      1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta',
+    };
+    if (menu.modo === 'diario') {
+      if (menu.dataUnica !== isoDate) return null;
+      const dow = new Date(isoDate + 'T12:00:00').getDay();
+      return DAY_KEY_MAP[dow] ?? null; // null se fin de semana
+    }
+    if (menu.modo === 'fixo') return null;
+    // semanal (ou sem modo = retrocompat)
+    if (!menu.weekStart || menu.weekStart.trim() === '') return null;
+    const dow = new Date(isoDate + 'T12:00:00').getDay();
+    const dayKey = DAY_KEY_MAP[dow];
+    if (!dayKey) return null; // fim de semana
+    const idx = DAY_KEYS.indexOf(dayKey);
+    const d = new Date(menu.weekStart + 'T12:00:00');
+    if (isNaN(d.getTime())) return null;
+    d.setDate(d.getDate() + idx);
+    const computed = d.toISOString().split('T')[0];
+    return computed === isoDate ? dayKey : null;
+  };
+
+  /* ─── Real-time: choices dos menus que cobrem a selectedDate ─── */
   useEffect(() => {
-    const q = query(collection(db, CollectionName.LUNCH_CHOICES));
-    return onSnapshot(q, snap => {
-      setAllChoices(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[]);
+    if (!selectedDate || menus.length === 0) {
+      setDateChoices([]);
+      return;
+    }
+    // Encontrar todos os menuIds que cobrem a data selecionada
+    const relevantMenuIds = menus
+      .filter(m => getMenuDayKeyForDate(m, selectedDate) !== null)
+      .map(m => m.id);
+
+    if (relevantMenuIds.length === 0) {
+      setDateChoices([]);
+      return;
+    }
+    setLoadingChoices(true);
+    // Firestore 'in' suporta até 30 valores
+    const chunks: string[][] = [];
+    for (let i = 0; i < relevantMenuIds.length; i += 30) {
+      chunks.push(relevantMenuIds.slice(i, i + 30));
+    }
+    const accumulated: LunchChoice[] = [];
+    const unsubs: (() => void)[] = [];
+    let loaded = 0;
+    chunks.forEach((chunk, ci) => {
+      const q = query(
+        collection(db, CollectionName.LUNCH_CHOICES),
+        where('menuId', 'in', chunk),
+      );
+      const unsub = onSnapshot(q, snap => {
+        // Substituir results deste chunk
+        const chunkResults = snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[];
+        // Rebuild accumulated: remove old chunk results, add new
+        const filtered = accumulated.filter(
+          c => !chunks[ci].includes(c.menuId),
+        );
+        filtered.push(...chunkResults);
+        accumulated.length = 0;
+        accumulated.push(...filtered);
+        loaded++;
+        if (loaded >= chunks.length) {
+          setDateChoices([...accumulated]);
+          setLoadingChoices(false);
+        }
+      }, () => {
+        loaded++;
+        if (loaded >= chunks.length) setLoadingChoices(false);
+      });
+      unsubs.push(unsub);
     });
-  }, []);
+    return () => unsubs.forEach(u => u());
+  }, [selectedDate, menus]);
 
   /* ─── Real-time: locations reativas à selectedDate ─── */
   useEffect(() => {
@@ -324,7 +396,7 @@ const LunchManagement: React.FC = () => {
     return names[d.getDay()] ?? '';
   };
 
-  /* ─── Pedidos filtrados pela selectedDate — busca em TODOS os choices ─── */
+  /* ─── Pedidos filtrados pela selectedDate ─── */
   type FilteredChoiceEntry = {
     choice: LunchChoice;
     dayKey: DayKey;
@@ -336,26 +408,19 @@ const LunchManagement: React.FC = () => {
     if (!selectedDate) return [];
     const candidates: FilteredChoiceEntry[] = [];
 
-    allChoices.forEach(choice => {
+    dateChoices.forEach(choice => {
       const menu = menus.find(m => m.id === choice.menuId) ?? null;
-
-      // Verifica todos os dayKeys para qualquer tipo de menu:
-      // - Semanal: cada dayKey tem uma data diferente (weekStart + índice)
-      // - Diário: todos os dayKeys retornam dataUnica — MyLunch salva sob o dayKey real do dia
-      // - Fixo/sem data: getChoiceDateForDay retorna null → nunca casa
-      for (const dayKey of DAY_KEYS) {
-        const dateForDay = menu ? getChoiceDateForDay(menu, dayKey) : null;
-        if (dateForDay !== selectedDate) continue;
-        const dc = choice.escolhas[dayKey] as LunchDayChoice | null | undefined;
-        if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
-          candidates.push({
-            choice,
-            dayKey,
-            menu,
-            menuEncerrado: (menu?.status ?? 'encerrado') === 'encerrado',
-          });
-          break; // já encontrou match para este choice, não duplicar
-        }
+      // Obter o dayKey correto para a data selecionada neste menu
+      const dayKey = menu ? getMenuDayKeyForDate(menu, selectedDate) : null;
+      if (!dayKey) return;
+      const dc = choice.escolhas[dayKey] as LunchDayChoice | null | undefined;
+      if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
+        candidates.push({
+          choice,
+          dayKey,
+          menu,
+          menuEncerrado: (menu?.status ?? 'encerrado') === 'encerrado',
+        });
       }
     });
 
@@ -369,9 +434,9 @@ const LunchManagement: React.FC = () => {
       }
     });
     return Array.from(byUser.values());
-  }, [allChoices, menus, selectedDate]);
+  }, [dateChoices, menus, selectedDate]);
 
-  // Alias retrocompatível para partes do código que ainda usam filteredChoices
+  // Alias retrocompatível
   const filteredChoices = filteredChoicesByDate.map(e => e.choice);
 
   /* ─── Locations split para a data selecionada ─── */
