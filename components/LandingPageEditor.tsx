@@ -66,6 +66,24 @@ const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
   </div>
 );
 
+/* ── TAB → SECTION ID MAP (module-level, safe for useEffect deps) ── */
+const TAB_SECTION_MAP: Record<string, string> = {
+  hero:        'mgr-sec-hero',
+  stats:       'mgr-sec-stats',
+  painPoints:  'mgr-sec-pain',
+  clients:     'mgr-sec-clients',
+  plan:        'mgr-sec-plan',
+  stakes:      'mgr-sec-stakes',
+  mgrConnect:  'mgr-sec-connect',
+  leadMagnet:  'mgr-sec-leadmagnet',
+  segments:    'mgr-sec-setores',
+  testimonial: 'mgr-sec-testimonial',
+  gallery:     'mgr-sec-gallery',
+  about:       'mgr-sec-about',
+  contact:     'mgr-sec-contact',
+  features:    'mgr-sec-hero',
+};
+
 const LandingPageEditor: React.FC = () => {
   const navigate = useNavigate();
   const { userProfile } = useAuth();
@@ -167,6 +185,20 @@ const LandingPageEditor: React.FC = () => {
 
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const [previewKey, setPreviewKey] = useState(0);
+
+  // ⚠️ Must be before early returns — Rules of Hooks
+  useEffect(() => {
+    const sectionId = TAB_SECTION_MAP[activeTab] ?? 'mgr-sec-hero';
+    const timeout = setTimeout(() => {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          { type: 'mgr-editor-highlight', sectionId },
+          '*'
+        );
+      }
+    }, 600);
+    return () => clearTimeout(timeout);
+  }, [activeTab, previewKey]);
 
   const handleSave = async () => {
     if (!content) return;
@@ -426,22 +458,8 @@ const LandingPageEditor: React.FC = () => {
     { id: 'features' as const, label: 'Config', icon: <Settings size={15} />, sectionId: 'mgr-sec-hero' },
   ];
 
-  const activeTabSectionId = tabs.find(t => t.id === activeTab)?.sectionId ?? 'mgr-sec-hero';
+  const activeTabSectionId = TAB_SECTION_MAP[activeTab] ?? 'mgr-sec-hero';
   const previewSrc = `${window.location.origin}/`;
-
-  // Send highlight message to iframe when tab changes
-  React.useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage(
-          { type: 'mgr-editor-highlight', sectionId: activeTabSectionId },
-          '*'
-        );
-      }
-    }, 600); // wait for iframe to be ready
-    return () => clearTimeout(timeout);
-  }, [activeTab, previewKey, activeTabSectionId]);
-
 
   return (
     <React.Fragment>
