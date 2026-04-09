@@ -27,19 +27,42 @@ export default defineConfig({
         ]
       },
       workbox: {
-        runtimeCaching: [{
-          urlPattern: ({ request }) => request.destination === 'document' || request.destination === 'script' || request.destination === 'style' || request.destination === 'image',
-          handler: 'StaleWhileRevalidate',
-          options: {
-            cacheName: 'assets-cache',
-            expiration: {
-              maxEntries: 50,
-              maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-            }
-          }
-        }]
-      }
-    })
+        // Força o novo SW a assumir controle imediatamente
+        skipWaiting: true,
+        clientsClaim: true,
+        // Limpa caches antigos automaticamente a cada deploy
+        cleanupOutdatedCaches: true,
+        // Apenas cache de assets estáticos — NÃO cachear HTML ou API
+        runtimeCaching: [
+          {
+            // Imagens e fontes: cache longo com revalidação
+            urlPattern: ({ request }) =>
+              request.destination === 'image' || request.destination === 'font',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'static-assets',
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 dias
+              },
+            },
+          },
+          {
+            // Scripts e styles: sempre buscar novo, servir cache se offline
+            urlPattern: ({ request }) =>
+              request.destination === 'script' || request.destination === 'style',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'code-cache',
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24, // 1 dia
+              },
+            },
+          },
+        ],
+      },
+    }),
   ],
   base: './',
   server: {
