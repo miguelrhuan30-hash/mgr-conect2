@@ -1138,6 +1138,36 @@ const LunchManagement: React.FC = () => {
             </div>
           )}
 
+          {/* 🔧 DEBUG PANEL — REMOVER APÓS DIAGNÓSTICO */}
+          <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 text-xs font-mono space-y-1">
+            <p className="font-bold text-yellow-800 text-sm mb-2">🔧 PAINEL DEBUG (temporário)</p>
+            <p><strong>selectedMenuId:</strong> {selectedMenuId || '(vazio)'}</p>
+            <p><strong>modo:</strong> {selectedMenu?.modo || '(null)'} | <strong>status:</strong> {selectedMenu?.status || '(null)'}</p>
+            <p><strong>dataUnica:</strong> {selectedMenu?.dataUnica || '(null)'} | <strong>weekStart:</strong> {selectedMenu?.weekStart || '(null)'}</p>
+            <p><strong>isWeeklyMenu:</strong> {String(isWeeklyMenu)} | <strong>effectiveDayKey:</strong> {effectiveDayKey} | <strong>selectedDayKey:</strong> {selectedDayKey}</p>
+            <p><strong>selectedDate:</strong> {selectedDate || '(vazio)'} | <strong>loadingChoices:</strong> {String(loadingChoices)}</p>
+            <p className="text-blue-700 text-sm"><strong>menuChoices (Firestore):</strong> {menuChoices.length} doc(s)</p>
+            <p className="text-green-700 text-sm"><strong>filteredChoicesByDate (filtrados):</strong> {filteredChoicesByDate.length} pedido(s)</p>
+            {menuChoices.length > 0 && (
+              <div className="mt-2 bg-white p-2 rounded border border-yellow-300 overflow-x-auto max-h-48 overflow-y-auto">
+                <p className="font-bold mb-1">Dados brutos dos choices:</p>
+                {menuChoices.slice(0, 5).map((c, i) => (
+                  <div key={c.id} className="p-1 bg-gray-50 rounded mb-1">
+                    <p>#{i + 1} <strong>{c.userName}</strong> (menuId: {c.menuId})</p>
+                    <p className="ml-2">escolhas keys: [{Object.keys(c.escolhas || {}).join(', ')}]</p>
+                    {Object.entries(c.escolhas || {}).map(([k, v]) => {
+                      const val = v as any;
+                      return <p key={k} className="ml-4 text-gray-600">{k}: {val ? `${val.misturas?.length ?? 0} mist, ${val.guarnicoes?.length ?? 0} guar` : 'null'}</p>;
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+            {menuChoices.length === 0 && !loadingChoices && (
+              <p className="text-red-600 font-bold">⚠️ NENHUM choice retornado do Firestore para este menuId!</p>
+            )}
+          </div>
+
           {/* Seletor de Cardápio */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
             <div>
