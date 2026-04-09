@@ -1016,6 +1016,11 @@ const LunchManagement: React.FC = () => {
                             className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium flex items-center gap-1">
                             <Pencil size={12} /> Editar Cardápio
                           </button>
+                          <button
+                            onClick={() => { setSelectedMenuId(menu.id); setActiveTab('pedidos'); }}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-orange-400 bg-orange-500 text-white hover:bg-orange-600 transition-colors font-bold flex items-center gap-1 shadow-sm">
+                            <ClipboardList size={12} /> Ver Pedidos
+                          </button>
                           <button onClick={() => toggleMenuStatus(menu.id, 'encerrado')}
                             className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors font-medium">Encerrar</button>
                         </>
@@ -1025,6 +1030,11 @@ const LunchManagement: React.FC = () => {
                           <button onClick={() => openEditMenu(menu)}
                             className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors font-medium flex items-center gap-1">
                             <Pencil size={12} /> Editar
+                          </button>
+                          <button
+                            onClick={() => { setSelectedMenuId(menu.id); setActiveTab('pedidos'); }}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors font-medium flex items-center gap-1">
+                            <ClipboardList size={12} /> Ver Pedidos
                           </button>
                           <button onClick={() => toggleMenuStatus(menu.id, 'ativo')}
                             className="text-xs px-3 py-1.5 rounded-lg border border-green-200 text-green-600 hover:bg-green-50 transition-colors font-medium">Reativar</button>
