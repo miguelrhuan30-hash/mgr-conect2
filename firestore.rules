@@ -122,7 +122,19 @@ service cloud.firestore {
         && request.resource.data.telefone.size() < 20
         && !request.resource.data.keys().hasAny(['projectId', 'contatadoPor'])
         && request.resource.data.keys().size() <= 15;
-      allow read, update, delete: if isAuthenticated();
+      // Gestores podem criar leads manualmente (origem: 'manual') pelo painel
+      allow create: if isAuthenticated() && isManager();
+      // Gestores podem mover leads no funil, salvar notas e converter
+      allow update: if isAuthenticated() && isManager();
+      allow read, delete: if isAuthenticated();
+    }
+
+    // ── Configurações do sistema (leads_config, futuras configs) ──
+    match /configs/{configId} {
+      // Qualquer autenticado pode LER (Function precisa buscar o e-mail)
+      allow read: if isAuthenticated();
+      // Somente admin pode ESCREVER (protege e-mail e configurações sensíveis)
+      allow write: if isAdmin();
     }
 
     // ── Projetos V2 ──

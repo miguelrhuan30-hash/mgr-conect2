@@ -388,15 +388,17 @@ const LandingPage: React.FC = () => {
       {/* ═══════════════════ HEADER ═══════════════════ */}
       <header style={{ position:'fixed', top:0, left:0, right:0, zIndex:1000, background:'rgba(255,255,255,.97)', borderBottom: scrolled ? '1px solid var(--border)' : '1px solid transparent', boxShadow: scrolled ? '0 2px 24px rgba(27,94,138,.1)' : 'none', backdropFilter: scrolled ? 'blur(12px)' : 'none', transition:'all .35s ease' }}>
         <div style={{ maxWidth:1280, margin:'0 auto', padding:'0 24px', height:72, display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
-          <a href="#" style={{ display:'flex', alignItems:'center', gap:10, textDecoration:'none', flexShrink:0 }}>
-            <div style={{ width:44, height:44, background:'linear-gradient(135deg,#1B5E8A,#2272a8)', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <span style={{ fontWeight:800, fontSize:13, color:'#fff', letterSpacing:'-.5px' }}>MGR</span>
-            </div>
-            <div>
-              <span style={{ display:'block', fontWeight:700, fontSize:16, color:'var(--blue)', letterSpacing:'-.3px', lineHeight:1.1 }}>MGR Refrigeração</span>
-              <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:'.6px', textTransform:'uppercase' }}>Soluções &amp; Tecnologia</span>
-            </div>
-          </a>
+          <div style={{ display:'flex', alignItems:'center', gap:16, flexShrink:0 }}>
+            <a href="#" style={{ display:'flex', alignItems:'center', gap:10, textDecoration:'none' }}>
+              <div style={{ width:44, height:44, background:'linear-gradient(135deg,#1B5E8A,#2272a8)', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <span style={{ fontWeight:800, fontSize:13, color:'#fff', letterSpacing:'-.5px' }}>MGR</span>
+              </div>
+              <div>
+                <span style={{ display:'block', fontWeight:700, fontSize:16, color:'var(--blue)', letterSpacing:'-.3px', lineHeight:1.1 }}>MGR Refrigeração</span>
+                <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:'.6px', textTransform:'uppercase' }}>Soluções &amp; Tecnologia</span>
+              </div>
+            </a>
+          </div>
 
           <nav className="desk-only" style={{ display:'flex', alignItems:'center', gap:2, flex:1, justifyContent:'center' }}>
             {['#servicos|Serviços','#setores|Setores','#sobre|Sobre','#connect|MGR Connect','#contato|Contato'].map(i => {
@@ -409,6 +411,11 @@ const LandingPage: React.FC = () => {
             <a href={`tel:${content.contact.phone}`} style={{ display:'flex', alignItems:'center', gap:6, fontWeight:600, fontSize:13, color:'var(--blue)', textDecoration:'none', padding:'8px 12px', borderRadius:8, border:'1.5px solid rgba(27,94,138,.2)' }}>
               <Phone size={14} /> {content.contact.phone}
             </a>
+            <button onClick={() => navigate('/login')} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'9px 16px', fontSize:13, fontWeight:600, color:'var(--blue)', background:'rgba(27,94,138,.06)', border:'1.5px solid rgba(27,94,138,.18)', borderRadius:8, cursor:'pointer', transition:'.2s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background='rgba(27,94,138,.12)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background='rgba(27,94,138,.06)'; }}>
+              <Shield size={14} /> Acessar Sistema
+            </button>
             <button onClick={() => setShowLeadModal(true)} className="btn-orange" style={{ padding:'10px 20px', fontSize:14 }}>
               <Calendar size={15} /> Agendar Visita
             </button>
@@ -430,6 +437,9 @@ const LandingPage: React.FC = () => {
               <a href={`tel:${content.contact.phone}`} style={{ display:'flex', alignItems:'center', gap:8, justifyContent:'center', fontWeight:600, fontSize:14, color:'var(--blue)', textDecoration:'none', padding:'11px', border:'1.5px solid rgba(27,94,138,.25)', borderRadius:8 }}>
                 <Phone size={16}/>{content.contact.phone}
               </a>
+              <button onClick={() => { setMenuOpen(false); navigate('/login'); }} style={{ display:'flex', alignItems:'center', gap:8, justifyContent:'center', fontWeight:600, fontSize:14, color:'var(--blue)', background:'rgba(27,94,138,.06)', border:'1.5px solid rgba(27,94,138,.18)', borderRadius:8, padding:'11px', cursor:'pointer' }}>
+                <Shield size={16}/> Acessar Sistema
+              </button>
               <button onClick={() => { setMenuOpen(false); setShowLeadModal(true); }} className="btn-orange" style={{ padding:'13px 20px', fontSize:15, justifyContent:'center' }}>
                 <Calendar size={16}/> Agendar Visita de Valor
               </button>

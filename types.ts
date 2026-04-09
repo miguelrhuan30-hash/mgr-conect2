@@ -1929,7 +1929,7 @@ export interface ProjectV2 {
 }
 
 // ── Lead de Projeto (captação via site/anúncios) ──
-export type LeadStatus = 'novo' | 'contatado' | 'convertido' | 'descartado';
+export type LeadStatus = 'novo' | 'contatado' | 'em_negociacao' | 'convertido' | 'descartado';
 
 export interface ProjectLead {
   id: string;
@@ -1943,7 +1943,7 @@ export interface ProjectLead {
   finalidade?: string;
   localizacao?: string;
   observacoes?: string;
-  origem: 'formulario_site' | 'anuncio_google' | 'anuncio_meta' | 'indicacao';
+  origem: 'formulario_site' | 'anuncio_google' | 'anuncio_meta' | 'indicacao' | 'manual' | 'homepage-mgr-refrigeracao';
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
@@ -1954,12 +1954,23 @@ export interface ProjectLead {
   contatadoPorNome?: string;
   motivoDescarte?: string;
   criadoEm: Timestamp;
+  ultimaAtividade?: Timestamp;
+  notas?: string;
   userAgent?: string;
+}
+
+// ── Configuração de Leads (Firestore: /configs/leads_config) ──
+export interface LeadsConfig {
+  emailNotificacao: string;
+  notificacaoAtiva: boolean;
+  atualizadoPor: string;
+  atualizadoEm: Timestamp;
 }
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   novo: 'Novo',
   contatado: 'Contatado',
+  em_negociacao: 'Em Negociação',
   convertido: 'Convertido',
   descartado: 'Descartado',
 };
@@ -1967,6 +1978,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
 export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
   novo: 'bg-violet-100 text-violet-700 border-violet-200',
   contatado: 'bg-blue-100 text-blue-700 border-blue-200',
+  em_negociacao: 'bg-amber-100 text-amber-700 border-amber-200',
   convertido: 'bg-green-100 text-green-700 border-green-200',
   descartado: 'bg-gray-100 text-gray-500 border-gray-200',
 };
