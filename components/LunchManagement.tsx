@@ -164,14 +164,24 @@ const LunchManagement: React.FC = () => {
   useEffect(() => {
     if (!selectedMenuId) { setMenuChoices([]); return; }
     setLoadingChoices(true);
+    console.log('[LUNCH DEBUG] Buscando choices para menuId:', selectedMenuId);
     const q = query(
       collection(db, CollectionName.LUNCH_CHOICES),
       where('menuId', '==', selectedMenuId),
     );
     return onSnapshot(q, snap => {
-      setMenuChoices(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[]);
+      const results = snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[];
+      console.log('[LUNCH DEBUG] Choices recebidos:', results.length, results.map(c => ({
+        id: c.id, userId: c.userId, userName: c.userName, menuId: c.menuId,
+        escolhasKeys: Object.keys(c.escolhas || {}),
+        escolhasRaw: c.escolhas,
+      })));
+      setMenuChoices(results);
       setLoadingChoices(false);
-    }, () => setLoadingChoices(false));
+    }, (err) => {
+      console.error('[LUNCH DEBUG] ERRO na query:', err);
+      setLoadingChoices(false);
+    });
   }, [selectedMenuId]);
 
   /* ─── Real-time: locations reativas ao selectedDate derivado do menu ─── */
@@ -425,6 +435,31 @@ const LunchManagement: React.FC = () => {
     });
     return Array.from(byUser.values());
   }, [menuChoices, selectedMenuId, selectedMenu, effectiveDayKey, isWeeklyMenu]);
+
+  // Debug log para rastrear problemas
+  useEffect(() => {
+    console.log('[LUNCH DEBUG] ==== Estado atual do filtro ====');
+    console.log('  selectedMenuId:', selectedMenuId);
+    console.log('  selectedMenu?.modo:', selectedMenu?.modo);
+    console.log('  selectedMenu?.status:', selectedMenu?.status);
+    console.log('  selectedMenu?.dataUnica:', selectedMenu?.dataUnica);
+    console.log('  selectedMenu?.weekStart:', selectedMenu?.weekStart);
+    console.log('  isWeeklyMenu:', isWeeklyMenu);
+    console.log('  effectiveDayKey:', effectiveDayKey);
+    console.log('  selectedDayKey:', selectedDayKey);
+    console.log('  selectedDate derivado:', selectedDate);
+    console.log('  menuChoices.length:', menuChoices.length);
+    console.log('  filteredChoicesByDate.length:', filteredChoicesByDate.length);
+    if (menuChoices.length > 0) {
+      console.log('  Primeiro choice raw:', JSON.stringify({
+        id: menuChoices[0].id,
+        menuId: menuChoices[0].menuId,
+        userName: menuChoices[0].userName,
+        escolhasKeys: Object.keys(menuChoices[0].escolhas || {}),
+        escolhas: menuChoices[0].escolhas,
+      }, null, 2));
+    }
+  }, [selectedMenuId, selectedMenu, effectiveDayKey, selectedDayKey, selectedDate, menuChoices, filteredChoicesByDate, isWeeklyMenu]);
 
   // Alias retrocompatível
   const filteredChoices = filteredChoicesByDate.map(e => e.choice);
