@@ -339,38 +339,22 @@ const LunchManagement: React.FC = () => {
     allChoices.forEach(choice => {
       const menu = menus.find(m => m.id === choice.menuId) ?? null;
 
-      // Para cardápio semanal: testar cada dayKey
-      const keysToCheck: DayKey[] = menu?.modo === 'diario' ? [] : DAY_KEYS as unknown as DayKey[];
-
-      if (menu?.modo === 'diario') {
-        // cardápio diário: só tem 'segunda' como dayKey padrão, mas a data é dataUnica
-        // O usuário faz escolha em `segunda` quando é diário
-        const dateForDay = getChoiceDateForDay(menu, 'segunda');
-        if (dateForDay === selectedDate) {
-          const dc = choice.escolhas['segunda'] as LunchDayChoice | null | undefined;
-          if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
-            candidates.push({
-              choice,
-              dayKey: 'segunda',
-              menu,
-              menuEncerrado: menu.status === 'encerrado',
-            });
-          }
-        }
-      } else {
-        // cardápio semanal ou null: testar cada dayKey
-        for (const dayKey of keysToCheck) {
-          const dateForDay = menu ? getChoiceDateForDay(menu, dayKey) : null;
-          if (dateForDay !== selectedDate) continue;
-          const dc = choice.escolhas[dayKey] as LunchDayChoice | null | undefined;
-          if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
-            candidates.push({
-              choice,
-              dayKey,
-              menu,
-              menuEncerrado: (menu?.status ?? 'encerrado') === 'encerrado',
-            });
-          }
+      // Verifica todos os dayKeys para qualquer tipo de menu:
+      // - Semanal: cada dayKey tem uma data diferente (weekStart + índice)
+      // - Diário: todos os dayKeys retornam dataUnica — MyLunch salva sob o dayKey real do dia
+      // - Fixo/sem data: getChoiceDateForDay retorna null → nunca casa
+      for (const dayKey of DAY_KEYS) {
+        const dateForDay = menu ? getChoiceDateForDay(menu, dayKey) : null;
+        if (dateForDay !== selectedDate) continue;
+        const dc = choice.escolhas[dayKey] as LunchDayChoice | null | undefined;
+        if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
+          candidates.push({
+            choice,
+            dayKey,
+            menu,
+            menuEncerrado: (menu?.status ?? 'encerrado') === 'encerrado',
+          });
+          break; // já encontrou match para este choice, não duplicar
         }
       }
     });
