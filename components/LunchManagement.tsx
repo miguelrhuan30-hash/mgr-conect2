@@ -98,7 +98,7 @@ const LunchManagement: React.FC = () => {
 
   // ── Locations ──
   const [locations, setLocations] = useState<LunchLocation[]>([]);
-  const [locDate, setLocDate] = useState(new Date().toISOString().split('T')[0]);
+  // locDate sincronizado com selectedDate (relatório unificado)
 
   // ── HQ Config ──
   const [sedeNome, setSedeNome] = useState('Sede MGR');
@@ -144,22 +144,22 @@ const LunchManagement: React.FC = () => {
     });
   }, []);
 
-  /* ─── Real-time: TODOS os choices (busca por data depois) ─── */
+  /* ─── Real-time: TODOS os choices (sem orderBy para evitar falha de índice) ─── */
   useEffect(() => {
-    const q = query(collection(db, CollectionName.LUNCH_CHOICES), orderBy('enviadoEm', 'desc'));
+    const q = query(collection(db, CollectionName.LUNCH_CHOICES));
     return onSnapshot(q, snap => {
       setAllChoices(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[]);
     });
   }, []);
 
-  /* ─── Real-time: locations ─── */
+  /* ─── Real-time: locations reativas à selectedDate ─── */
   useEffect(() => {
-    if (!locDate) return;
-    const q = query(collection(db, CollectionName.LUNCH_LOCATIONS), where('data', '==', locDate));
+    if (!selectedDate) return;
+    const q = query(collection(db, CollectionName.LUNCH_LOCATIONS), where('data', '==', selectedDate));
     return onSnapshot(q, snap => {
       setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchLocation[]);
     });
-  }, [locDate]);
+  }, [selectedDate]);
 
   /* ─── Tag helpers ─── */
   const commitMistura = () => {
@@ -1194,10 +1194,10 @@ const LunchManagement: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-4 items-end">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                <input type="date" value={locDate} onChange={e => setLocDate(e.target.value)}
+                <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none" />
               </div>
-              <div className="text-sm text-gray-500">{locations.length} registro(s) para {formatDateBR(locDate)}</div>
+              <div className="text-sm text-gray-500">{locations.length} registro(s) para {formatDateBR(selectedDate)}</div>
             </div>
           </div>
 
