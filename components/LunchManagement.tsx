@@ -86,11 +86,12 @@ const LunchManagement: React.FC = () => {
   const [guarnicaoDraft, setGuarnicaoDraft] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // ── Choices para a data selecionada ──
-  const [dateChoices, setDateChoices] = useState<LunchChoice[]>([]);
+  // ── Choices do cardápio selecionado ──
+  const [menuChoices, setMenuChoices] = useState<LunchChoice[]>([]);
   const [loadingChoices, setLoadingChoices] = useState(false);
-  // Filtro único por data
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  // Filtro por cardápio + dia
+  const [selectedMenuId, setSelectedMenuId] = useState<string>('');
+  const [selectedDayKey, setSelectedDayKey] = useState<DayKey>('segunda');
   const [copied, setCopied] = useState(false);
   const [copiedGrouped, setCopiedGrouped] = useState(false);
   const [exportingXLS, setExportingXLS] = useState(false);
@@ -145,93 +146,53 @@ const LunchManagement: React.FC = () => {
     });
   }, []);
 
-  /* ─── Helper emântico: dado um menu e uma data, retorna o dayKey correto ───
-   * Retorna null se o menu não cobre a data.
-   */
-  const getMenuDayKeyForDate = (menu: LunchMenu, isoDate: string): DayKey | null => {
-    const DAY_KEY_MAP: Record<number, DayKey> = {
-      1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta',
-    };
-    if (menu.modo === 'diario') {
-      if (menu.dataUnica !== isoDate) return null;
-      const dow = new Date(isoDate + 'T12:00:00').getDay();
-      return DAY_KEY_MAP[dow] ?? null; // null se fin de semana
-    }
-    if (menu.modo === 'fixo') return null;
-    // semanal (ou sem modo = retrocompat)
-    if (!menu.weekStart || menu.weekStart.trim() === '') return null;
-    const dow = new Date(isoDate + 'T12:00:00').getDay();
-    const dayKey = DAY_KEY_MAP[dow];
-    if (!dayKey) return null; // fim de semana
-    const idx = DAY_KEYS.indexOf(dayKey);
-    const d = new Date(menu.weekStart + 'T12:00:00');
-    if (isNaN(d.getTime())) return null;
-    d.setDate(d.getDate() + idx);
-    const computed = d.toISOString().split('T')[0];
-    return computed === isoDate ? dayKey : null;
-  };
-
-  /* ─── Real-time: choices dos menus que cobrem a selectedDate ─── */
+  /* ─── Auto-seleciona o primeiro menu ativo ao carregar ─── */
   useEffect(() => {
-    if (!selectedDate || menus.length === 0) {
-      setDateChoices([]);
-      return;
+    if (menus.length > 0 && !selectedMenuId) {
+      const ativo = menus.find(m => m.status === 'ativo') ?? menus[0];
+      setSelectedMenuId(ativo.id);
+      // Para semanal: pré-selionar o dia da semana atual
+      const DAY_KEY_MAP: Record<number, DayKey> = {
+        1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta',
+      };
+      const todayKey = DAY_KEY_MAP[new Date().getDay()] ?? 'segunda';
+      setSelectedDayKey(todayKey);
     }
-    // Encontrar todos os menuIds que cobrem a data selecionada
-    const relevantMenuIds = menus
-      .filter(m => getMenuDayKeyForDate(m, selectedDate) !== null)
-      .map(m => m.id);
+  }, [menus]);
 
-    if (relevantMenuIds.length === 0) {
-      setDateChoices([]);
-      return;
-    }
+  /* ─── Real-time: choices do cardápio selecionado (query direta por menuId) ─── */
+  useEffect(() => {
+    if (!selectedMenuId) { setMenuChoices([]); return; }
     setLoadingChoices(true);
-    // Firestore 'in' suporta até 30 valores
-    const chunks: string[][] = [];
-    for (let i = 0; i < relevantMenuIds.length; i += 30) {
-      chunks.push(relevantMenuIds.slice(i, i + 30));
-    }
-    const accumulated: LunchChoice[] = [];
-    const unsubs: (() => void)[] = [];
-    let loaded = 0;
-    chunks.forEach((chunk, ci) => {
-      const q = query(
-        collection(db, CollectionName.LUNCH_CHOICES),
-        where('menuId', 'in', chunk),
-      );
-      const unsub = onSnapshot(q, snap => {
-        // Substituir results deste chunk
-        const chunkResults = snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[];
-        // Rebuild accumulated: remove old chunk results, add new
-        const filtered = accumulated.filter(
-          c => !chunks[ci].includes(c.menuId),
-        );
-        filtered.push(...chunkResults);
-        accumulated.length = 0;
-        accumulated.push(...filtered);
-        loaded++;
-        if (loaded >= chunks.length) {
-          setDateChoices([...accumulated]);
-          setLoadingChoices(false);
-        }
-      }, () => {
-        loaded++;
-        if (loaded >= chunks.length) setLoadingChoices(false);
-      });
-      unsubs.push(unsub);
-    });
-    return () => unsubs.forEach(u => u());
-  }, [selectedDate, menus]);
+    const q = query(
+      collection(db, CollectionName.LUNCH_CHOICES),
+      where('menuId', '==', selectedMenuId),
+    );
+    return onSnapshot(q, snap => {
+      setMenuChoices(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchChoice[]);
+      setLoadingChoices(false);
+    }, () => setLoadingChoices(false));
+  }, [selectedMenuId]);
 
-  /* ─── Real-time: locations reativas à selectedDate ─── */
+  /* ─── Real-time: locations reativas ao selectedDate derivado do menu ─── */
   useEffect(() => {
-    if (!selectedDate) return;
-    const q = query(collection(db, CollectionName.LUNCH_LOCATIONS), where('data', '==', selectedDate));
+    // selectedDate é derivado do menu selecionado — calculamos aqui também
+    const menu = menus.find(m => m.id === selectedMenuId) ?? null;
+    let date = '';
+    if (menu?.modo === 'diario') date = menu.dataUnica ?? '';
+    else if (menu?.weekStart) {
+      const DAY_KEY_MAP: Record<number, DayKey> = {1:'segunda',2:'terca',3:'quarta',4:'quinta',5:'sexta'};
+      const dk = selectedDayKey;
+      const idx = DAY_KEYS.indexOf(dk);
+      const d = new Date(menu.weekStart + 'T12:00:00');
+      if (!isNaN(d.getTime())) { d.setDate(d.getDate() + idx); date = d.toISOString().split('T')[0]; }
+    }
+    if (!date) { setLocations([]); return; }
+    const q = query(collection(db, CollectionName.LUNCH_LOCATIONS), where('data', '==', date));
     return onSnapshot(q, snap => {
       setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })) as LunchLocation[]);
     });
-  }, [selectedDate]);
+  }, [selectedMenuId, selectedDayKey, menus]);
 
   /* ─── Tag helpers ─── */
   const commitMistura = () => {
@@ -390,13 +351,37 @@ const LunchManagement: React.FC = () => {
 
   /* ─── Helper: nome do dia da semana a partir de uma data ISO ─── */
   const getDayOfWeekLabel = (isoDate: string): string => {
+    if (!isoDate) return '';
     const d = new Date(isoDate + 'T12:00:00');
     if (isNaN(d.getTime())) return '';
-    const names = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const names = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
     return names[d.getDay()] ?? '';
   };
 
-  /* ─── Pedidos filtrados pela selectedDate ─── */
+  /* ─── Derivados do menu/dia selecionados ─── */
+  const selectedMenu = useMemo(() => menus.find(m => m.id === selectedMenuId) ?? null, [menus, selectedMenuId]);
+  const isWeeklyMenu = !selectedMenu?.modo || selectedMenu.modo === 'semanal';
+  // dayKey efetivo: para menu diario/fixo usa o dia da data do menu
+  const effectiveDayKey: DayKey = isWeeklyMenu ? selectedDayKey : (() => {
+    const DAY_KEY_MAP: Record<number, DayKey> = { 1:'segunda',2:'terca',3:'quarta',4:'quinta',5:'sexta' };
+    if (selectedMenu?.modo === 'diario' && selectedMenu.dataUnica) {
+      return DAY_KEY_MAP[new Date(selectedMenu.dataUnica + 'T12:00:00').getDay()] ?? 'segunda';
+    }
+    return 'segunda';
+  })();
+  // Data ISO efetiva do relatório
+  const selectedDate: string = useMemo(() => {
+    if (!selectedMenu) return new Date().toISOString().split('T')[0];
+    if (selectedMenu.modo === 'diario') return selectedMenu.dataUnica ?? '';
+    if (!isWeeklyMenu) return '';
+    const idx = DAY_KEYS.indexOf(effectiveDayKey);
+    const d = new Date((selectedMenu.weekStart || '') + 'T12:00:00');
+    if (isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + idx);
+    return d.toISOString().split('T')[0];
+  }, [selectedMenu, effectiveDayKey, isWeeklyMenu]);
+
+  /* ─── Pedidos filtrados pelo cardápio + dia selecionados ─── */
   type FilteredChoiceEntry = {
     choice: LunchChoice;
     dayKey: DayKey;
@@ -405,22 +390,14 @@ const LunchManagement: React.FC = () => {
   };
 
   const filteredChoicesByDate = useMemo((): FilteredChoiceEntry[] => {
-    if (!selectedDate) return [];
+    if (!selectedMenuId || !selectedMenu) return [];
+    const isEncerrado = selectedMenu.status === 'encerrado';
     const candidates: FilteredChoiceEntry[] = [];
 
-    dateChoices.forEach(choice => {
-      const menu = menus.find(m => m.id === choice.menuId) ?? null;
-      // Obter o dayKey correto para a data selecionada neste menu
-      const dayKey = menu ? getMenuDayKeyForDate(menu, selectedDate) : null;
-      if (!dayKey) return;
-      const dc = choice.escolhas[dayKey] as LunchDayChoice | null | undefined;
+    menuChoices.forEach(choice => {
+      const dc = choice.escolhas[effectiveDayKey] as LunchDayChoice | null | undefined;
       if (dc && ((dc.misturas?.length ?? 0) > 0 || (dc.guarnicoes?.length ?? 0) > 0)) {
-        candidates.push({
-          choice,
-          dayKey,
-          menu,
-          menuEncerrado: (menu?.status ?? 'encerrado') === 'encerrado',
-        });
+        candidates.push({ choice, dayKey: effectiveDayKey, menu: selectedMenu, menuEncerrado: isEncerrado });
       }
     });
 
@@ -434,7 +411,7 @@ const LunchManagement: React.FC = () => {
       }
     });
     return Array.from(byUser.values());
-  }, [dateChoices, menus, selectedDate]);
+  }, [menuChoices, selectedMenuId, selectedMenu, effectiveDayKey]);
 
   // Alias retrocompatível
   const filteredChoices = filteredChoicesByDate.map(e => e.choice);
@@ -1103,30 +1080,90 @@ const LunchManagement: React.FC = () => {
             </div>
           )}
 
-          {/* Filtro único por data */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-                  <Calendar size={14} className="text-orange-500" />
-                  Data do Relatório
-                </label>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={e => setSelectedDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none"
-                />
-                {selectedDate && (
-                  <p className="text-xs text-orange-600 font-semibold mt-1.5">
-                    📅 {getDayOfWeekLabel(selectedDate)} · {formatDateBR(selectedDate)}
-                  </p>
-                )}
-              </div>
-              <div className="text-sm text-gray-500 pb-1">
-                {filteredChoicesByDate.length} pedido{filteredChoicesByDate.length !== 1 ? 's' : ''} encontrado{filteredChoicesByDate.length !== 1 ? 's' : ''}
+          {/* Seletor de Cardápio */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <UtensilsCrossed size={14} className="text-orange-500" />
+                Selecionar Cardápio
+              </label>
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {menus.map(menu => {
+                  const isSelected = menu.id === selectedMenuId;
+                  const statusColor = menu.status === 'ativo'
+                    ? 'bg-green-100 text-green-700 border-green-200'
+                    : menu.status === 'rascunho'
+                    ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                    : 'bg-gray-100 text-gray-500 border-gray-200';
+                  const statusLabel = menu.status === 'ativo' ? '● Ativo' : menu.status === 'rascunho' ? '◐ Rascunho' : '○ Encerrado';
+                  const modeLabel = menu.modo === 'diario' ? '📅 Diário' : menu.modo === 'fixo' ? '📌 Fixo' : '📆 Semanal';
+                  const dateLabel = menu.modo === 'diario' && menu.dataUnica
+                    ? formatDateBR(menu.dataUnica)
+                    : menu.weekStart
+                    ? `${formatDateBR(menu.weekStart)} – ${formatDateBR(menu.weekEnd)}`
+                    : '—';
+                  return (
+                    <button key={menu.id} onClick={() => { setSelectedMenuId(menu.id); }}
+                      className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${isSelected
+                        ? 'border-orange-400 bg-orange-50 shadow-sm'
+                        : 'border-gray-200 hover:border-orange-200 hover:bg-orange-50/30'}`}>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-gray-800">{modeLabel} · {dateLabel}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}>{statusLabel}</span>
+                        </div>
+                        <span className="text-xs text-gray-400">{menu.pratos.length} prato(s)</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {/* Seletor de dia — só para menus semanais */}
+            {selectedMenu && isWeeklyMenu && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                  <Calendar size={14} className="text-orange-500" />
+                  Dia da Semana
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {DAY_KEYS.map(dk => {
+                    const idx = DAY_KEYS.indexOf(dk);
+                    const d = new Date((selectedMenu.weekStart || '') + 'T12:00:00');
+                    d.setDate(d.getDate() + idx);
+                    const iso = !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : '';
+                    const DAY_LABELS: Record<DayKey, string> = {
+                      segunda:'Seg', terca:'Ter', quarta:'Qua', quinta:'Qui', sexta:'Sex'
+                    };
+                    return (
+                      <button key={dk} onClick={() => setSelectedDayKey(dk)}
+                        className={`flex flex-col items-center px-4 py-2 rounded-xl border-2 text-sm font-bold transition-all ${
+                          selectedDayKey === dk
+                            ? 'border-orange-500 bg-orange-500 text-white'
+                            : 'border-gray-200 text-gray-600 hover:border-orange-300 hover:bg-orange-50'}`}>
+                        <span>{DAY_LABELS[dk]}</span>
+                        {iso && <span className="text-[10px] font-normal opacity-70">{formatDateBR(iso)}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Resumo do filtro ativo */}
+            {selectedMenu && (
+              <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                <p className="text-xs text-orange-600 font-semibold">
+                  📅 {selectedMenu.modo === 'diario' && selectedMenu.dataUnica
+                    ? `${getDayOfWeekLabel(selectedMenu.dataUnica)} · ${formatDateBR(selectedMenu.dataUnica)}`
+                    : selectedDate ? `${getDayOfWeekLabel(selectedDate)} · ${formatDateBR(selectedDate)}` : '—'}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {loadingChoices ? 'Carregando...' : `${filteredChoicesByDate.length} pedido${filteredChoicesByDate.length !== 1 ? 's' : ''}`}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Lista de pedidos */}
@@ -1272,9 +1309,11 @@ const LunchManagement: React.FC = () => {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="flex flex-col sm:flex-row gap-4 items-end">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data exibida</label>
+                <p className="text-sm font-semibold text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                  📅 {selectedDate ? `${getDayOfWeekLabel(selectedDate)} · ${formatDateBR(selectedDate)}` : 'Selecione um cardápio no Relatório'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">Localizações filtradas pelo cardápio/dia selecionado no Relatório</p>
               </div>
               <div className="text-sm text-gray-500">{locations.length} registro(s) para {formatDateBR(selectedDate)}</div>
             </div>
