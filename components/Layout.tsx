@@ -49,6 +49,7 @@ import {
   UserPlus,
   Calendar,
   ArrowRight,
+  Truck,
 } from 'lucide-react';
 import AlertasCentral from './AlertasCentral';
 
@@ -223,7 +224,7 @@ const Layout: React.FC = () => {
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
   const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
   const PEOPLE_ROUTES  = ['/app/usuarios', '/app/setores', '/app/locais', '/app/relatorios-ponto', '/app/espelho-mensal', '/app/pesquisas'];
-  const PROJECTS_V2_ROUTES = ['/app/projetos-v2', '/app/leads', '/app/nao-aprovados', '/app/flow-atendimento'];
+  const PROJECTS_V2_ROUTES = ['/app/projetos-v2', '/app/leads', '/app/nao-aprovados', '/app/flow-atendimento', '/app/fornecedores'];
 
   const isInOSGroup      = OS_ROUTES.some(r => location.pathname.startsWith(r));
   const isInClientGroup  = CLIENT_ROUTES.some(r => location.pathname.startsWith(r));
@@ -272,6 +273,7 @@ const Layout: React.FC = () => {
         { to: '/app/leads',         icon: UserPlus,   label: 'Leads',             visible: can('canManageProjects'), badge: leadsNovos > 0 ? leadsNovos : undefined },
         { to: '/app/nao-aprovados', icon: Target,     label: 'Não Aprovados',     visible: can('canManageProjects') },
         { to: '/app/gantt-gerencial', icon: Calendar, label: 'Gantt Gerencial',   visible: can('canManageProjects') },
+        { to: '/app/fornecedores',  icon: Truck,      label: 'Fornecedores',      visible: can('canManageProjects') },
         { to: '/editor-projetos',   icon: Briefcase,  label: 'LP Projetos (Editor)', visible: userProfile?.role === 'admin' || userProfile?.role === 'developer' },
       ],
     },

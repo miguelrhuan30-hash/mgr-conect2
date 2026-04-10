@@ -107,6 +107,7 @@ const LeadsDashboard   = lazy(() => import('./components/LeadsDashboard'));
 const ProjectUpsell    = lazy(() => import('./components/ProjectUpsell'));
 const GanttGerencial   = lazy(() => import('./components/GanttGerencial'));
 const FlowAtendimento  = lazy(() => import('./components/FlowAtendimento'));
+const Fornecedores     = lazy(() => import('./components/Fornecedores'));
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -440,6 +441,8 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageProjects') ? <ProjectUpsell /> : <Navigate to="/app" />} />
           <Route path="gantt-gerencial"
             element={hasPermission('canManageProjects') ? <GanttGerencial /> : <Navigate to="/app" />} />
+          <Route path="fornecedores"
+            element={hasPermission('canManageProjects') ? <Fornecedores /> : <Navigate to="/app" />} />
 
         </Route>{/* fim /app */}
 

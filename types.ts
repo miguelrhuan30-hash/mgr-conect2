@@ -1074,6 +1074,8 @@ const _BASE_COLLECTIONS = {
   PROJECT_ADENDOS: 'project_adendos',
   // Sprint RACI — Matriz de Responsabilidades do Flow de Atendimento
   RACI_CONFIG: 'raci_config',
+  FORNECEDORES: 'fornecedores',
+
 } as const;
 
 // ── Matriz RACI — Flow de Atendimento ────────────────────────────────────────
@@ -1943,6 +1945,32 @@ export interface ProjectV2 {
   updatedAt?: Timestamp;
 }
 
+export interface ProjectCotacao {
+  id: string;
+  projectId: string;
+  categoriaId?: string;           // ID do grupo a que pertence
+  fornecedor: string;
+  fornecedorId?: string;          // referência ao Fornecedor cadastrado
+  fornecedorContato?: string;
+  fornecedorEmail?: string;
+  fornecedorTelefone?: string;
+  itens: CotacaoItem[];
+  valorTotal: number;
+  condicoesPagamento?: string;
+  prazoEntregaGeral?: string;
+  validadeAte?: Timestamp;
+  documentoUrl?: string;
+  documentoNome?: string;
+  selecionada: boolean;
+  status?: 'aguardando_retorno' | 'recebida' | 'rascunho'; // status do processo
+  enviadoViaWhatsapp?: boolean;   // flag: foi enviado pelo fluxo WhatsApp
+  textoEnviado?: string;          // texto que foi enviado ao fornecedor
+  observacoes?: string;
+  criadoEm: Timestamp;
+  criadoPor: string;
+  criadoPorNome: string;
+}
+
 // ── Lead de Projeto (captação via site/anúncios) ──
 export type LeadStatus = 'novo' | 'contatado' | 'em_negociacao' | 'convertido' | 'descartado' | 'nao_aprovado';
 
@@ -2037,6 +2065,21 @@ export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
 };
 
 // ── Cotação de Projeto ──
+/** Fornecedor de materiais e equipamentos */
+export interface Fornecedor {
+  id: string;
+  nome: string;
+  especialidades: string[];        // ex: ['câmaras frias', 'portas rápidas', 'prateleiras']
+  responsavelNome: string;         // nome do responsável comercial
+  telefoneWhatsApp: string;        // somente dígitos: 5511999999999
+  email?: string;
+  cnpj?: string;
+  observacoes?: string;
+  ativo: boolean;
+  criadoEm: Timestamp;
+  criadoPor: string;
+}
+
 export interface CotacaoItem {
   id: string;
   descricao: string;
@@ -2045,28 +2088,6 @@ export interface CotacaoItem {
   valorUnitario: number;
   valorTotal: number;
   prazoEntrega?: string;
-}
-
-export interface ProjectCotacao {
-  id: string;
-  projectId: string;
-  categoriaId?: string;           // ID do grupo a que pertence (ex: 'camara', 'portas')
-  fornecedor: string;
-  fornecedorContato?: string;
-  fornecedorEmail?: string;
-  fornecedorTelefone?: string;
-  itens: CotacaoItem[];
-  valorTotal: number;
-  condicoesPagamento?: string;
-  prazoEntregaGeral?: string;
-  validadeAte?: Timestamp;
-  documentoUrl?: string;
-  documentoNome?: string;
-  selecionada: boolean;
-  observacoes?: string;
-  criadoEm: Timestamp;
-  criadoPor: string;
-  criadoPorNome: string;
 }
 
 /** Categoria / grupo de cotações (armazenado no próprio ProjectV2 como array) */
