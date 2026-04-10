@@ -563,11 +563,11 @@ const LandingPage: React.FC = () => {
             <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(28px,3.5vw,44px)', color:'var(--text)', lineHeight:1.15, marginBottom:0 }}>{pp.headline}</h2>
           </div>
           <div className="pain-grid" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24 }}>
-            {(pp.items || []).filter(item => item.stat || item.description || item.icon).map((item, i) => (
+            {(pp.items || []).map((item, i) => (
               <div key={i} style={{ ...fadeIn(secPain.visible, `${i*0.15}s`), background:'var(--gray-ice)', borderRadius:20, padding:36, border:'1px solid var(--border)', position:'relative', overflow:'hidden' }}>
                 <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:'linear-gradient(90deg,var(--orange),var(--blue))' }} />
                 <div style={{ width:52, height:52, borderRadius:14, background:'rgba(212,121,42,.1)', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:20, color:'var(--orange)' }}>
-                  {getIcon(item.icon, 'w-6 h-6')}
+                  {getIcon(item.icon || 'AlertTriangle', 'w-6 h-6')}
                 </div>
                 <div style={{ fontFamily:'var(--display)', fontSize:36, color:'var(--blue)', fontWeight:700, lineHeight:1, marginBottom:12 }}>{item.stat || '—'}</div>
                 <p style={{ color:'var(--muted)', lineHeight:1.7, fontSize:15 }}>{item.description || ''}</p>

@@ -69,7 +69,7 @@ const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
 /* ── TAB → SECTION ID MAP (module-level, safe for useEffect deps) ── */
 const TAB_SECTION_MAP: Record<string, string> = {
   hero:        'mgr-sec-hero',
-  stats:       'mgr-sec-stats',
+  stats:       'mgr-sec-testimonial',   // content.stats = animated counters in prova social
   painPoints:  'mgr-sec-pain',
   clients:     'mgr-sec-clients',
   plan:        'mgr-sec-plan',
@@ -82,6 +82,56 @@ const TAB_SECTION_MAP: Record<string, string> = {
   about:       'mgr-sec-about',
   contact:     'mgr-sec-contact',
   features:    'mgr-sec-hero',
+};
+
+/* ── Factory defaults for "Restaurar Padrões" ── */
+const MGR_EDITOR_DEFAULT: LandingPageContent = {
+  hero: { title: 'Sua operação nunca para.', subtitle: 'Mais de 20 anos mantendo a continuidade operacional de plantas industriais que não podem parar. Manutenção inteligente, gestão do Ciclo de Vida MGR e resposta imediata.', backgroundImageUrl: '', ctaText: 'Agendar Visita de Valor', ctaLink: '#contato' },
+  stats: [
+    { value: '+20', label: 'Anos de Expertise' },
+    { value: '+300', label: 'Projetos Entregues' },
+    { value: '+50', label: 'Contratos Ativos' },
+    { value: '24/7', label: 'Suporte Emergencial' },
+  ],
+  services: { title: 'O Ciclo de Vida MGR', items: [
+    { title: 'Visita de Valor', description: 'Diagnóstico completo com Relatório de Saúde antes de qualquer decisão de investimento.', icon: 'Eye' },
+    { title: 'Manutenção Preditiva', description: 'Antecipamos falhas com inteligência técnica de campo e análise de vibração e óleo.', icon: 'Activity' },
+    { title: 'Resposta 24/7', description: 'Especialistas de Campo com SLA de resposta garantido e frota própria disponível.', icon: 'Zap' },
+    { title: 'MGR Connect', description: 'Monitoramento remoto e gestão digital dos seus ativos de refrigeração em tempo real.', icon: 'Wifi' },
+    { title: 'Gestão do Ciclo de Vida', description: 'Planejamento estratégico para máxima vida útil e menor custo total de operação.', icon: 'BarChart3' },
+  ]},
+  clients: { title: 'Parceiros de Operação', description: 'Indústrias que confiam na MGR para nunca parar.', partners: [
+    { id:'1', name:'Halipar', logoUrl:'' }, { id:'2', name:'Sorvetão', logoUrl:'' },
+    { id:'3', name:'Dellys', logoUrl:'' }, { id:'4', name:'Indaíá Pescados', logoUrl:'' },
+  ]},
+  gallery: { title: 'Projetos em Campo', description: 'Cada projeto é uma operação que nunca mais vai parar.', items: [] },
+  about: { title: 'Engenharia que Garante Continuidade', description: 'A MGR nasceu com uma premissa: fazer refrigeração do jeito certo, do começo ao fim.', imageUrl: '', manifesto: 'Não somos apenas técnicos que consertam equipamentos. Somos parceiros de operação.', differentials: ['Equipe técnica certificada e frota própria', 'Atendimento ágil em Indaiatuba e região', 'Gestão digital de manutenção via MGR Connect', 'SLA contratual com penalidades — compromisso real'] },
+  contact: { address: 'Indaiatuba - SP e Região', phone: '(19) 3333-3333', email: 'contato@mgrrefrigeracao.com.br', whatsapp: '5519999999999', instagram: '@mgrrefrigeracao' },
+  features: { whatsappFloat: true, contactForm: true },
+  painPoints: { headline: 'Você sabe o que uma parada não planejada custa à sua operação?', items: [
+    { icon: 'PackageX', stat: 'R$ 200 mil', description: 'Uma falha de 4 horas em câmara fria pode destruir um lote inteiro de produto armazenado.' },
+    { icon: 'TrendingDown', stat: '3x mais caro', description: 'Manutenção reativa custa até 3 vezes mais do que a gestão inteligente do ciclo de vida.' },
+    { icon: 'AlertTriangle', stat: '68% das falhas', description: 'Acontecem nos piores momentos. Sem monitoramento, o risco é permanente e silencioso.' },
+  ]},
+  plan: { headline: 'Como a MGR protege sua operação', steps: [
+    { number: 1, title: 'Visita de Valor', description: 'Nosso Especialista de Campo faz um diagnóstico completo e entrega o Relatório de Saúde da sua instalação — sem compromisso.' },
+    { number: 2, title: 'Plano sob medida', description: 'Com base no diagnóstico, desenhamos a estratégia de continuidade operacional ideal para a sua realidade e orçamento.' },
+    { number: 3, title: 'Parceiro de Operação', description: 'Atuamos como extensão da sua equipe. Monitoramento, manutenção e resposta imediata — sua operação nunca para.' },
+  ], ctaText: 'Comece pela Visita de Valor' },
+  stakes: { headline: 'O que está em jogo quando a refrigeração falha', items: [
+    { icon: 'PackageX', title: 'Perda de produto e receita', description: 'Lotes inteiros comprometidos por variação térmica em câmaras e túneis sem monitoramento.' },
+    { icon: 'Gavel', title: 'Multas e não-conformidade', description: 'Auditorias da vigilância sanitária e ANVISA. Uma falha de temperatura pode comprometer a licença de operação.' },
+    { icon: 'Users', title: 'Reputação e contratos', description: 'Um único incidente pode custar um cliente-chave. A confiança leva anos para construir e horas para perder.' },
+  ], transition: 'A diferença entre risco e tranquilidade é ter um Parceiro de Operação com 20 anos de campo.' },
+  mgrConnect: { headline: 'MGR Connect: seus ativos monitorados em tempo real', description: 'Tecnologia própria desenvolvida para a realidade da refrigeração industrial brasileira.', features: ['Alertas preditivos antes da falha acontecer','Relatório de Saúde digital acessível 24/7','Histórico completo do ciclo de vida de cada ativo','Integração com equipe de campo para resposta imediata','QR Code nos equipamentos para abertura instantânea de chamados'], ctaText: 'Conheça o MGR Connect', imageUrl: '' },
+  leadMagnet: { headline: '7 Sinais de que Seu Sistema de Refrigeração Precisa de Atenção Imediata', ctaText: 'Baixar o Guia Gratuito', description: 'Material técnico desenvolvido pelos nossos Especialistas de Campo.' },
+  segments: { headline: 'Soluções para a sua operação', items: [
+    { title: 'Indústria Alimentícia', description: 'Câmaras frias, túneis de congelamento e girofreezers com controle rigoroso de temperatura.', icon: 'Factory', imageUrl: '' },
+    { title: 'Farmacêutica e Hospitalar', description: 'Controle térmico de precisão e conformidade com normas regulatórias ANVISA e ABNT.', icon: 'Pill', imageUrl: '' },
+    { title: 'Logística e Cold Storage', description: 'Continuidade da cadeia de frio do armazém à distribuição. Zero ruptura de temperatura.', icon: 'Truck', imageUrl: '' },
+    { title: 'Indústria Geral', description: 'Processos térmicos industriais, chillers, torres de resfriamento e HVAC industrial.', icon: 'Building2', imageUrl: '' },
+  ]},
+  testimonial: { quote: 'Desde que a MGR assumiu a gestão do nosso sistema, não tivemos uma única parada não planejada. O Relatório de Saúde mensal nos dá tranquilidade para focar no negócio.', name: 'Gestor de Manutenção', role: 'Gerente de Manutenção Industrial', company: 'Indústria Alimentícia — Indaiatuba/SP', photoUrl: '' },
 };
 
 const LandingPageEditor: React.FC = () => {
@@ -206,11 +256,27 @@ const LandingPageEditor: React.FC = () => {
     try {
       await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), content, { merge: true });
       setSavedAt(new Date());
-      // Reload iframe to reflect saved changes
       setPreviewKey(k => k + 1);
     } catch (error) {
-      console.error("Error saving content:", error);
-      alert("Erro ao salvar.");
+      console.error('Error saving content:', error);
+      alert('Erro ao salvar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!window.confirm('Isso vai RESTAURAR todo o conteúdo do site para os padrões de fábrica MGR. Continuar?')) return;
+    setSaving(true);
+    try {
+      await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), MGR_EDITOR_DEFAULT);
+      setContent(MGR_EDITOR_DEFAULT);
+      setSavedAt(new Date());
+      setPreviewKey(k => k + 1);
+      alert('✅ Conteúdo restaurado para os padrões MGR!');
+    } catch (error) {
+      console.error('Error resetting:', error);
+      alert('Erro ao restaurar.');
     } finally {
       setSaving(false);
     }
@@ -490,6 +556,9 @@ const LandingPageEditor: React.FC = () => {
           )}
           <button onClick={() => window.open('/', '_blank')} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:8, background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.7)', fontSize:13, cursor:'pointer' }}>
             <Globe size={14}/> Ver Site
+          </button>
+          <button onClick={handleReset} disabled={saving} title="Restaurar todos os campos para os valores padrão MGR" style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:8, background:'rgba(239,68,68,.15)', border:'1px solid rgba(239,68,68,.3)', color:'#FCA5A5', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            ↺ Restaurar Padrões
           </button>
           <button onClick={handleSave} disabled={saving} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 20px', borderRadius:8, background:'#D4792A', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', opacity: saving ? .7 : 1, transition:'.2s' }}>
             {saving ? <Loader2 className="animate-spin w-4 h-4"/> : <Save size={15}/>}
