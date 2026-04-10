@@ -571,7 +571,7 @@ const LandingPageEditor: React.FC = () => {
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
 
         {/* ── LEFT PANEL: Section Nav + Form Fields ── */}
-        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', borderRight:'1px solid #E2E8F0', background:'#fff', minHeight:0 }}>
+        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', borderRight:'1px solid #E2E8F0', background:'#fff', minHeight:0, overflow:'hidden' }}>
 
           {/* Section Navigator */}
           <div style={{ borderBottom:'1px solid #E2E8F0', padding:'12px', background:'#F8FAFC', flexShrink:0 }}>
