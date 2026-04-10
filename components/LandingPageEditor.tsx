@@ -235,6 +235,8 @@ const LandingPageEditor: React.FC = () => {
 
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const [previewKey, setPreviewKey] = useState(0);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [applyFeedback, setApplyFeedback] = useState<'idle'|'applying'|'done'>('idle');
 
   // ⚠️ Must be before early returns — Rules of Hooks
   useEffect(() => {
@@ -250,12 +252,31 @@ const LandingPageEditor: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [activeTab, previewKey]);
 
+  // Aplicar Edições: salva no Firestore + atualiza preview sem mostrar modal de confirmação
+  const handleApply = async () => {
+    if (!content) return;
+    setApplyFeedback('applying');
+    try {
+      await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), content, { merge: true });
+      setHasUnsavedChanges(false);
+      setPreviewKey(k => k + 1);
+      setApplyFeedback('done');
+      setTimeout(() => setApplyFeedback('idle'), 2500);
+    } catch (error) {
+      console.error('Error applying content:', error);
+      alert('Erro ao aplicar edições.');
+      setApplyFeedback('idle');
+    }
+  };
+
+  // Salvar Site: salva no Firestore + atualiza preview + exibe confirmação de publicação
   const handleSave = async () => {
     if (!content) return;
     setSaving(true);
     try {
       await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), content, { merge: true });
       setSavedAt(new Date());
+      setHasUnsavedChanges(false);
       setPreviewKey(k => k + 1);
     } catch (error) {
       console.error('Error saving content:', error);
@@ -272,6 +293,7 @@ const LandingPageEditor: React.FC = () => {
       await setDoc(doc(db, CollectionName.SYSTEM_SETTINGS, 'landing_page'), MGR_EDITOR_DEFAULT);
       setContent(MGR_EDITOR_DEFAULT);
       setSavedAt(new Date());
+      setHasUnsavedChanges(false);
       setPreviewKey(k => k + 1);
       alert('✅ Conteúdo restaurado para os padrões MGR!');
     } catch (error) {
@@ -284,6 +306,7 @@ const LandingPageEditor: React.FC = () => {
 
   const updateField = (section: keyof LandingPageContent, field: string, value: any) => {
     if (!content) return;
+    setHasUnsavedChanges(true);
     setContent({
       ...content,
       [section]: {
@@ -297,6 +320,7 @@ const LandingPageEditor: React.FC = () => {
   const addStat = () => {
     if (!content || !newStatValue || !newStatLabel) return;
     const currentStats = content.stats || [];
+    setHasUnsavedChanges(true);
     setContent({
       ...content,
       stats: [...currentStats, { value: newStatValue, label: newStatLabel }]
@@ -309,6 +333,7 @@ const LandingPageEditor: React.FC = () => {
     if (!content) return;
     const newStats = [...(content.stats || [])];
     newStats.splice(index, 1);
+    setHasUnsavedChanges(true);
     setContent({ ...content, stats: newStats });
   };
 
@@ -551,7 +576,7 @@ const LandingPageEditor: React.FC = () => {
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           {savedAt && !saving && (
             <span style={{ fontSize:12, color:'#4ADE80', display:'flex', alignItems:'center', gap:6 }}>
-              <CheckCircle2 size={13}/> Salvo às {savedAt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+              <CheckCircle2 size={13}/> Publicado às {savedAt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
             </span>
           )}
           <button onClick={() => window.open('/', '_blank')} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:8, background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.7)', fontSize:13, cursor:'pointer' }}>
@@ -560,18 +585,24 @@ const LandingPageEditor: React.FC = () => {
           <button onClick={handleReset} disabled={saving} title="Restaurar todos os campos para os valores padrão MGR" style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:8, background:'rgba(239,68,68,.15)', border:'1px solid rgba(239,68,68,.3)', color:'#FCA5A5', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             ↺ Restaurar Padrões
           </button>
-          <button onClick={handleSave} disabled={saving} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 20px', borderRadius:8, background:'#D4792A', border:'none', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', opacity: saving ? .7 : 1, transition:'.2s' }}>
+          <button
+            id="btn-salvar-site"
+            onClick={handleSave}
+            disabled={saving}
+            title="Salva definitivamente e publica no site real"
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 20px', borderRadius:8, background: saving ? '#60748A' : '#1B5E8A', border:'2px solid rgba(255,255,255,.15)', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', opacity: saving ? .7 : 1, transition:'.2s' }}
+          >
             {saving ? <Loader2 className="animate-spin w-4 h-4"/> : <Save size={15}/>}
-            {saving ? 'Salvando...' : 'Publicar'}
+            {saving ? 'Publicando...' : 'Salvar Site'}
           </button>
         </div>
       </div>
 
       {/* ─── SPLIT BODY ─── */}
-      <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+      <div style={{ display:'flex', flex:'1 1 0', overflow:'hidden', minHeight:0 }}>
 
         {/* ── LEFT PANEL: Section Nav + Form Fields ── */}
-        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', borderRight:'1px solid #E2E8F0', background:'#fff', minHeight:0, overflow:'hidden' }}>
+        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', borderRight:'1px solid #E2E8F0', background:'#fff', minHeight:0, overflow:'clip' }}>
 
           {/* Section Navigator */}
           <div style={{ borderBottom:'1px solid #E2E8F0', padding:'12px', background:'#F8FAFC', flexShrink:0 }}>
@@ -597,7 +628,7 @@ const LandingPageEditor: React.FC = () => {
           </div>
 
           {/* Form content — scrollable */}
-          <div style={{ flex:1, overflowY:'scroll', padding:'20px 16px', display:'flex', flexDirection:'column', gap:20, minHeight:0, scrollbarWidth:'thin', scrollbarColor:'#CBD5E1 transparent' }}>
+          <div style={{ flex:'1 1 0px', overflowY:'auto', padding:'20px 16px', display:'flex', flexDirection:'column', gap:20, minHeight:0, scrollbarWidth:'thin', scrollbarColor:'#CBD5E1 transparent' }}>
 
         {/* ── HERO SECTION ── */}
         {activeTab === 'hero' && (
@@ -1358,6 +1389,47 @@ const LandingPageEditor: React.FC = () => {
           </div>
         )}
           </div>{/* end scrollable form */}
+
+          {/* ── STICKY APPLY BUTTON ── */}
+          <div style={{
+            flexShrink:0, padding:'12px 16px',
+            borderTop: hasUnsavedChanges ? '2px solid #D4792A' : '1px solid #E2E8F0',
+            background: hasUnsavedChanges ? '#FFF7ED' : '#F8FAFC',
+            transition: 'all .3s'
+          }}>
+            {hasUnsavedChanges && (
+              <p style={{ fontSize:11, color:'#92400E', fontWeight:600, marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+                <span style={{ width:7, height:7, borderRadius:'50%', background:'#D4792A', display:'inline-block', animation:'pulse 1.5s ease-in-out infinite' }}/>
+                Você tem alterações não aplicadas no preview
+              </p>
+            )}
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button
+                id="btn-aplicar-edicoes"
+                onClick={handleApply}
+                disabled={applyFeedback === 'applying' || (!hasUnsavedChanges && applyFeedback === 'idle')}
+                style={{
+                  flex:1,
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                  padding:'10px 16px', borderRadius:10, border:'none',
+                  background: applyFeedback === 'done' ? '#16A34A' : hasUnsavedChanges ? '#D4792A' : '#94A3B8',
+                  color:'#fff', fontSize:13, fontWeight:700, cursor: hasUnsavedChanges ? 'pointer' : 'default',
+                  opacity: applyFeedback === 'applying' ? 0.7 : 1,
+                  transition: 'all .3s',
+                  boxShadow: hasUnsavedChanges ? '0 4px 12px rgba(212,121,42,.35)' : 'none'
+                }}
+              >
+                {applyFeedback === 'applying' ? (
+                  <><Loader2 size={15} style={{ animation:'spin 1s linear infinite' }}/> Aplicando...</>
+                ) : applyFeedback === 'done' ? (
+                  <><CheckCircle2 size={15}/> Preview Atualizado!</>
+                ) : (
+                  <><Monitor size={15}/> Aplicar Edições no Preview</>
+                )}
+              </button>
+            </div>
+          </div>
+
         </div>{/* end left panel */}
 
         {/* ── RIGHT PANEL: live iframe preview ── */}
@@ -1373,9 +1445,12 @@ const LandingPageEditor: React.FC = () => {
               <Globe size={12} color="rgba(255,255,255,.4)"/>
               <span>mgrrefrigeracao.com.br — #{activeTabSectionId}</span>
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: saving ? '#F59E0B' : '#4ADE80', fontWeight:600 }}>
-              {saving ? <Loader2 size={12} className="animate-spin"/> : <div style={{ width:8, height:8, borderRadius:'50%', background:'#4ADE80' }}/>}
-              {saving ? 'Salvando...' : 'Preview ao vivo'}
+            <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:600,
+              color: saving ? '#F59E0B' : hasUnsavedChanges ? '#FB923C' : '#4ADE80' }}>
+              {saving
+                ? <Loader2 size={12} className="animate-spin"/>
+                : <div style={{ width:8, height:8, borderRadius:'50%', background: hasUnsavedChanges ? '#FB923C' : '#4ADE80', transition:'.3s' }}/>}
+              {saving ? 'Publicando...' : hasUnsavedChanges ? 'Alterações pendentes — clique em Aplicar' : 'Preview sincronizado'}
             </div>
           </div>
           {/* iframe */}
@@ -1399,7 +1474,7 @@ const LandingPageEditor: React.FC = () => {
             </div>
             <div style={{ textAlign:'center', fontSize:11, color:'#94A3B8', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
               <CheckCircle2 size={12}/>
-              Clique em <strong style={{ color:'#D4792A' }}>Publicar</strong> para atualizar o preview com as suas alterações
+              Use <strong style={{ color:'#D4792A' }}>Aplicar Edições</strong> para ver no preview · depois <strong style={{ color:'#1B5E8A' }}>Salvar Site</strong> para publicar
             </div>
           </div>{/* end iframe padding wrapper */}
         </div>{/* end right panel */}
