@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { ProjectLead, LeadStatus, LeadsConfig, CollectionName } from '../types';
+import { ProjectLead, LeadStatus, LeadsConfig, CollectionName, NegotiationSubStatus } from '../types';
 import { useProject } from './useProject';
 
 const CONFIGS_DOC = 'leads_config';
@@ -154,6 +154,47 @@ export const useProjectLeads = () => {
     [currentUser, userProfile],
   );
 
+  // ── Atualizar sub-status de negociação ──
+  const atualizarSubStatus = useCallback(
+    async (leadId: string, subStatus: NegotiationSubStatus): Promise<void> => {
+      if (!currentUser) return;
+      await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
+        negotiationSubStatus: subStatus,
+        ultimaAtividade: serverTimestamp(),
+      });
+    },
+    [currentUser],
+  );
+
+  // ── Sinalizar proposta enviada ao cliente ──
+  const sinalizarPropostaEnviada = useCallback(
+    async (leadId: string): Promise<void> => {
+      if (!currentUser) return;
+      await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
+        propostaEnviadaEm: serverTimestamp(),
+        propostaEnviadaPor: currentUser.uid,
+        propostaEnviadaPorNome: userProfile?.displayName || '',
+        ultimaAtividade: serverTimestamp(),
+      });
+    },
+    [currentUser, userProfile],
+  );
+
+  // ── Marcar como Não Aprovado ──
+  const marcarNaoAprovado = useCallback(
+    async (leadId: string, motivo: string): Promise<void> => {
+      if (!currentUser) return;
+      await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
+        status: 'nao_aprovado' as LeadStatus,
+        motivoNaoAprovado: sanitize(motivo, 500),
+        ultimaAtividade: serverTimestamp(),
+        contatadoPor: currentUser.uid,
+        contatadoPorNome: userProfile?.displayName || '',
+      });
+    },
+    [currentUser, userProfile],
+  );
+
   return {
     leads,
     loading,
@@ -165,6 +206,9 @@ export const useProjectLeads = () => {
     adicionarLead,
     converterEmProjeto,
     descartarLead,
+    atualizarSubStatus,
+    sinalizarPropostaEnviada,
+    marcarNaoAprovado,
   };
 };
 

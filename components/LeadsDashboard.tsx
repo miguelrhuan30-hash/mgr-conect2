@@ -21,6 +21,7 @@ import { useProjectLeads, useLeadsConfig } from '../hooks/useProjectLeads';
 import { useAuth } from '../contexts/AuthContext';
 import {
   LeadStatus, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, PROJECT_TYPES, ProjectLead,
+  NegotiationSubStatus, NEGOTIATION_SUB_LABELS, NEGOTIATION_SUB_COLORS,
 } from '../types';
 import { format, differenceInHours, differenceInDays, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -45,6 +46,7 @@ const KANBAN_COLS: { status: LeadStatus; label: string; cor: string; corBg: stri
   { status: 'contatado',     label: 'Contatados',      cor: 'text-blue-700',   corBg: 'bg-blue-50',    corBorder: 'border-blue-200' },
   { status: 'em_negociacao', label: 'Em Negociação',   cor: 'text-amber-700',  corBg: 'bg-amber-50',   corBorder: 'border-amber-200' },
   { status: 'convertido',    label: 'Convertidos',     cor: 'text-emerald-700',corBg: 'bg-emerald-50', corBorder: 'border-emerald-200' },
+  { status: 'nao_aprovado',  label: 'Não Aprovados',   cor: 'text-red-700',    corBg: 'bg-red-50',     corBorder: 'border-red-200' },
 ];
 
 // ── Componente de Card do Kanban ──────────────────────────────────────────────
@@ -73,6 +75,7 @@ const KanbanCard: React.FC<{
     em_negociacao: 'convertido',
     convertido: null,
     descartado: null,
+    nao_aprovado: null,
   };
   const prox = proximoStatus[lead.status];
 
@@ -93,6 +96,30 @@ const KanbanCard: React.FC<{
           </span>
         )}
       </div>
+
+      {/* Badge de sub-status de negociação */}
+      {lead.status === 'em_negociacao' && lead.negotiationSubStatus && (() => {
+        const cfg = NEGOTIATION_SUB_COLORS[lead.negotiationSubStatus];
+        return (
+          <div className={`flex items-center gap-1 mb-2 px-2 py-1 rounded-lg border text-[9px] font-bold ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+            {NEGOTIATION_SUB_LABELS[lead.negotiationSubStatus]}
+          </div>
+        );
+      })()}
+
+      {/* Badge genérico para negociação sem sub-status */}
+      {lead.status === 'em_negociacao' && !lead.negotiationSubStatus && (
+        <div className="flex items-center gap-1 mb-2 px-2 py-1 rounded-lg border text-[9px] font-bold bg-amber-50 text-amber-700 border-amber-300">
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-500" />
+          Em Negociação
+        </div>
+      )}
+
+      {/* Motivo de não aprovado */}
+      {lead.status === 'nao_aprovado' && lead.motivoNaoAprovado && (
+        <p className="text-[9px] text-red-500 italic mb-2 truncate">{lead.motivoNaoAprovado}</p>
+      )}
 
       <div className="flex items-center gap-2 text-[10px] text-gray-500 mb-2 flex-wrap">
         <span className="flex items-center gap-0.5"><Phone className="w-3 h-3" />{lead.telefone}</span>
@@ -133,8 +160,10 @@ const LeadModal: React.FC<{
   onSalvarNota: (nota: string) => Promise<void>;
   onConverter: () => Promise<void>;
   onDescartar: (motivo: string) => Promise<void>;
+  onAtualizarSubStatus: (subStatus: NegotiationSubStatus) => Promise<void>;
+  onNaoAprovar: (motivo: string) => Promise<void>;
   canEdit: boolean;
-}> = ({ lead, onClose, onAtualizarStatus, onSalvarNota, onConverter, onDescartar, canEdit }) => {
+}> = ({ lead, onClose, onAtualizarStatus, onSalvarNota, onConverter, onDescartar, onAtualizarSubStatus, onNaoAprovar, canEdit }) => {
   const [nota, setNota] = useState(lead.notas || '');
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
@@ -242,6 +271,37 @@ const LeadModal: React.FC<{
             </div>
           )}
 
+          {lead.motivoNaoAprovado && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-[9px] font-bold text-red-600 uppercase mb-1">❌ Motivo — Não Aprovado</p>
+              <p className="text-sm text-gray-700">{lead.motivoNaoAprovado}</p>
+            </div>
+          )}
+
+          {/* Sub-status de Negociação */}
+          {canEdit && lead.status === 'em_negociacao' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+              <p className="text-xs font-bold text-amber-800">Status da Negociação</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['aguardando_projeto', 'cotar_material', 'material_cotado', 'aguardando_proposta'] as NegotiationSubStatus[]).map((s) => {
+                  const cfg = NEGOTIATION_SUB_COLORS[s];
+                  const ativo = lead.negotiationSubStatus === s;
+                  return (
+                    <button key={s}
+                      onClick={() => onAtualizarSubStatus(s)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
+                        ativo ? `${cfg.bg} ${cfg.text} ${cfg.border} ring-2 ring-offset-1 ring-current` : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                      {NEGOTIATION_SUB_LABELS[s]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Notas internas */}
           {canEdit && (
             <div>
@@ -265,7 +325,7 @@ const LeadModal: React.FC<{
           )}
 
           {/* Ações */}
-          {canEdit && lead.status !== 'descartado' && (
+          {canEdit && lead.status !== 'descartado' && lead.status !== 'nao_aprovado' && (
             <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
               {lead.status !== 'convertido' && (
                 <button onClick={onConverter}
@@ -285,6 +345,13 @@ const LeadModal: React.FC<{
               }}
                 className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 text-gray-500 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors">
                 <XCircle className="w-4 h-4" /> Descartar
+              </button>
+              <button onClick={() => {
+                const motivo = window.prompt('Motivo — Não Aprovado:');
+                if (motivo) { onNaoAprovar(motivo); onClose(); }
+              }}
+                className="flex items-center gap-1.5 px-4 py-2 border border-red-200 text-red-600 rounded-xl text-sm font-bold hover:bg-red-50 transition-colors">
+                <XCircle className="w-4 h-4" /> Não Aprovado
               </button>
             </div>
           )}
@@ -316,6 +383,7 @@ const KanbanView: React.FC<{
     em_negociacao: 'convertido',
     convertido: null,
     descartado: null,
+    nao_aprovado: null,
   };
 
   return (
@@ -524,7 +592,7 @@ type TabId = 'kanban' | 'lista' | 'config';
 const LeadsDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { userProfile } = useAuth();
-  const { leads, loading, leadsNovos, atualizarStatus, salvarNota, adicionarLead, converterEmProjeto, descartarLead } = useProjectLeads();
+  const { leads, loading, leadsNovos, atualizarStatus, salvarNota, adicionarLead, converterEmProjeto, descartarLead, atualizarSubStatus, marcarNaoAprovado } = useProjectLeads();
   const [tab, setTab] = useState<TabId>('kanban');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<LeadStatus | 'todos'>('todos');
@@ -637,6 +705,7 @@ const LeadsDashboard: React.FC = () => {
     { value: 'em_negociacao', label: 'Em Negociação', count: kpis.em_negociacao },
     { value: 'convertido', label: 'Convertidos', count: kpis.convertido },
     { value: 'descartado', label: 'Descartados', count: kpis.descartado },
+    { value: 'nao_aprovado', label: 'Não Aprovados', count: leads.filter((l) => l.status === 'nao_aprovado').length },
   ];
 
   if (loading) {
@@ -828,6 +897,14 @@ const LeadsDashboard: React.FC = () => {
           }}
           onConverter={() => handleConverter(leadModal.id)}
           onDescartar={(motivo) => handleDescartar(leadModal.id, motivo)}
+          onAtualizarSubStatus={async (subStatus) => {
+            await atualizarSubStatus(leadModal.id, subStatus);
+            setLeadModal((prev) => prev ? { ...prev, negotiationSubStatus: subStatus } : null);
+          }}
+          onNaoAprovar={async (motivo) => {
+            await marcarNaoAprovado(leadModal.id, motivo);
+            setLeadModal(null);
+          }}
         />
       )}
     </div>

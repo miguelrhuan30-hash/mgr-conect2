@@ -324,6 +324,37 @@ export const useProject = () => {
     [currentUser, userProfile, projects],
   );
 
+  // ── Sinalizar projeto pronto na prancheta ──
+  const sinalizarProjetoPronto = useCallback(
+    async (projectId: string): Promise<{ success: boolean; error?: string }> => {
+      if (!currentUser) return { success: false, error: 'Não autenticado' };
+
+      const project = projects.find((p) => p.id === projectId);
+      if (!project) return { success: false, error: 'Projeto não encontrado' };
+
+      // 1. Avançar fase do projeto para em_cotacao (prancheta concluída)
+      if (['lead_capturado', 'em_levantamento'].includes(project.fase)) {
+        const result = await advancePhase(projectId, 'em_cotacao', 'Prancheta concluída — projeto pronto para cotação');
+        if (!result.success) return result;
+      }
+
+      // 2. Atualizar o lead vinculado para sub-status 'aguardando_proposta'
+      if (project.leadId) {
+        try {
+          await updateDoc(doc(db, CollectionName.PROJECT_LEADS, project.leadId), {
+            negotiationSubStatus: 'aguardando_proposta',
+            ultimaAtividade: serverTimestamp(),
+          });
+        } catch {
+          // Lead pode não existir mais — não bloqueia o fluxo
+        }
+      }
+
+      return { success: true };
+    },
+    [currentUser, projects, advancePhase],
+  );
+
   return {
     projects,
     loading,
@@ -339,5 +370,6 @@ export const useProject = () => {
     savePrancheta,
     archiveAsNaoAprovado,
     reopenProject,
+    sinalizarProjetoPronto,
   };
 };

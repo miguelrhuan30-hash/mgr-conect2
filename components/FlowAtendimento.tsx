@@ -264,6 +264,11 @@ const FlowAtendimento: React.FC = () => {
   const [faseSelecionada, setFaseSelecionada] = useState<FlowFaseId>('leads');
   const [search, setSearch] = useState('');
 
+  // ── Filtros de Concluídos ────────────────────────────────────────────────────
+  const [concFilterMes, setConcFilterMes] = useState<string>('');       // 'YYYY-MM'
+  const [concFilterInicio, setConcFilterInicio] = useState<string>(''); // 'YYYY-MM-DD'
+  const [concFilterFim, setConcFilterFim] = useState<string>('');       // 'YYYY-MM-DD'
+
   // ── RACI state ─────────────────────────────────────────────────────────────
   const [raciConfig, setRaciConfig] = useState<Record<string, RaciFlowEntry>>({});
   const [setores, setSetores] = useState<Sector[]>([]);
@@ -325,8 +330,33 @@ const FlowAtendimento: React.FC = () => {
     if (!projects) return [];
     const fase = FLOW_FASES.find(f => f.id === faseSelecionada);
     if (!fase?.fases) return [];
-    return projects.filter(p => fase.fases!.includes(p.fase));
-  }, [projects, faseSelecionada]);
+    let lista = projects.filter(p => fase.fases!.includes(p.fase));
+
+    // Filtros de data apenas para Concluídos
+    if (faseSelecionada === 'historico') {
+      if (concFilterMes) {
+        const [ano, mes] = concFilterMes.split('-').map(Number);
+        lista = lista.filter(p => {
+          try {
+            const d = (p.updatedAt as any)?.toDate?.() || new Date((p.updatedAt as any)?.seconds * 1000);
+            return d.getFullYear() === ano && d.getMonth() + 1 === mes;
+          } catch { return true; }
+        });
+      } else if (concFilterInicio || concFilterFim) {
+        lista = lista.filter(p => {
+          try {
+            const d = (p.updatedAt as any)?.toDate?.() || new Date((p.updatedAt as any)?.seconds * 1000);
+            const dt = d.toISOString().slice(0, 10);
+            const ok1 = concFilterInicio ? dt >= concFilterInicio : true;
+            const ok2 = concFilterFim ? dt <= concFilterFim : true;
+            return ok1 && ok2;
+          } catch { return true; }
+        });
+      }
+    }
+
+    return lista;
+  }, [projects, faseSelecionada, concFilterMes, concFilterInicio, concFilterFim]);
 
   const faseAtual = FLOW_FASES.find(f => f.id === faseSelecionada)!;
 
@@ -460,6 +490,39 @@ const FlowAtendimento: React.FC = () => {
         {/* Loading */}
         {loading && faseSelecionada !== 'leads' && faseSelecionada !== 'nao_aprovados' && (
           <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-brand-500" /></div>
+        )}
+
+
+        {/* Filtros de data — somente na fase Concluídos */}
+        {faseSelecionada === 'historico' && !loading && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
+            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5" /> Filtrar por:
+            </span>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] font-bold text-emerald-600">Mês:</label>
+              <input type="month" value={concFilterMes}
+                onChange={e => { setConcFilterMes(e.target.value); setConcFilterInicio(''); setConcFilterFim(''); }}
+                className="border border-emerald-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-emerald-400 bg-white" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] font-bold text-emerald-600">De:</label>
+              <input type="date" value={concFilterInicio}
+                onChange={e => { setConcFilterInicio(e.target.value); setConcFilterMes(''); }}
+                className="border border-emerald-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-emerald-400 bg-white" />
+              <label className="text-[10px] font-bold text-emerald-600">Até:</label>
+              <input type="date" value={concFilterFim}
+                onChange={e => { setConcFilterFim(e.target.value); setConcFilterMes(''); }}
+                className="border border-emerald-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-emerald-400 bg-white" />
+            </div>
+            {(concFilterMes || concFilterInicio || concFilterFim) && (
+              <button onClick={() => { setConcFilterMes(''); setConcFilterInicio(''); setConcFilterFim(''); }}
+                className="flex items-center gap-1 px-2.5 py-1 border border-emerald-300 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors">
+                <XCircle className="w-3 h-3" /> Limpar
+              </button>
+            )}
+            <span className="text-[10px] text-emerald-500 ml-auto">{projetosDaFase.length} projeto(s)</span>
+          </div>
         )}
 
         {/* Fase 0 — Leads */}

@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Link2, ExternalLink, Send, Copy, Check, Plus,
-  History, RefreshCw, AlertCircle, Loader2, Trash2,
+  History, RefreshCw, AlertCircle, Loader2, Trash2, ArrowRight,
 } from 'lucide-react';
 import {
   collection, query, orderBy, onSnapshot,
@@ -24,6 +24,8 @@ import { ptBR } from 'date-fns/locale';
 
 interface Props {
   project: ProjectV2;
+  onSinalizarEnviado?: () => Promise<void>;
+  onConverterProposta?: () => Promise<void>;
 }
 
 interface Apresentacao {
@@ -44,7 +46,7 @@ const fmtDate = (ts: Timestamp | undefined | null) => {
   } catch { return '—'; }
 };
 
-const ProjectProposta: React.FC<Props> = ({ project }) => {
+const ProjectProposta: React.FC<Props> = ({ project, onSinalizarEnviado, onConverterProposta }) => {
   const { currentUser } = useAuth();
   const [apresentacoes, setApresentacoes] = useState<Apresentacao[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -53,6 +55,9 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [enviandoWhats, setEnviandoWhats] = useState(false);
+  const [enviandoProposta, setEnviandoProposta] = useState(false);
+  const [convertendoProposta, setConvertendoProposta] = useState(false);
+  const [propostaEnviada, setPropostaEnviada] = useState(false);
 
   // Carregar apresentações disponíveis
   useEffect(() => {
@@ -209,6 +214,49 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
           <p className="text-[10px] text-brand-600">
             📋 Este link pode ser compartilhado diretamente com o cliente. Não requer login.
           </p>
+        </div>
+      )}
+
+      {/* Ações de fluxo: Sinalizar Enviado + Converter */}
+      {(onSinalizarEnviado || onConverterProposta) && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 space-y-3">
+          <p className="text-sm font-extrabold text-indigo-900">Próximos Passos</p>
+          <div className="flex flex-wrap gap-2">
+            {onSinalizarEnviado && !propostaEnviada && (
+              <button
+                onClick={async () => {
+                  setEnviandoProposta(true);
+                  try { await onSinalizarEnviado(); setPropostaEnviada(true); }
+                  finally { setEnviandoProposta(false); }
+                }}
+                disabled={enviandoProposta || !linkPublico}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {enviandoProposta ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Sinalizar Enviado ao Cliente
+              </button>
+            )}
+            {propostaEnviada && (
+              <span className="flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-100 border border-blue-200 px-3 py-2 rounded-xl">
+                <Check className="w-3.5 h-3.5" /> Proposta marcada como enviada
+              </span>
+            )}
+            {onConverterProposta && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Confirmar conversão? O lead irá para Contrato.')) return;
+                  setConvertendoProposta(true);
+                  try { await onConverterProposta(); }
+                  finally { setConvertendoProposta(false); }
+                }}
+                disabled={convertendoProposta}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {convertendoProposta ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                Cliente Aceitou — Avançar para Contrato
+              </button>
+            )}
+          </div>
         </div>
       )}
 

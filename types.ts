@@ -1929,7 +1929,35 @@ export interface ProjectV2 {
 }
 
 // ── Lead de Projeto (captação via site/anúncios) ──
-export type LeadStatus = 'novo' | 'contatado' | 'em_negociacao' | 'convertido' | 'descartado';
+export type LeadStatus = 'novo' | 'contatado' | 'em_negociacao' | 'convertido' | 'descartado' | 'nao_aprovado';
+
+// ── Sub-status de Negociação (dentro do LeadStatus 'em_negociacao') ──
+export type NegotiationSubStatus =
+  | 'aguardando_projeto'     // 🔴 Vermelho — aguarda análise técnica
+  | 'cotar_material'         // 🟠 Laranja — materiais sendo cotados
+  | 'material_cotado'        // 🟢 Verde — cotação de material concluída
+  | 'aguardando_proposta';   // 🟢 Verde — aguarda criação da proposta comercial
+
+export const NEGOTIATION_SUB_LABELS: Record<NegotiationSubStatus, string> = {
+  aguardando_projeto: 'Aguardando Projeto',
+  cotar_material: 'Cotar Material',
+  material_cotado: 'Material Cotado',
+  aguardando_proposta: 'Aguardando Proposta',
+};
+
+export const NEGOTIATION_SUB_COLORS: Record<NegotiationSubStatus, { bg: string; text: string; border: string; dot: string }> = {
+  aguardando_projeto:  { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-300',     dot: 'bg-red-500' },
+  cotar_material:      { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-300',  dot: 'bg-orange-500' },
+  material_cotado:     { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', dot: 'bg-emerald-500' },
+  aguardando_proposta: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', dot: 'bg-emerald-500' },
+};
+
+export const NEGOTIATION_SUB_TRANSITIONS: Record<NegotiationSubStatus, NegotiationSubStatus[]> = {
+  aguardando_projeto:  ['cotar_material'],
+  cotar_material:      ['material_cotado'],
+  material_cotado:     ['aguardando_proposta'],
+  aguardando_proposta: [],
+};
 
 export interface ProjectLead {
   id: string;
@@ -1957,6 +1985,14 @@ export interface ProjectLead {
   ultimaAtividade?: Timestamp;
   notas?: string;
   userAgent?: string;
+  // ── Sub-status de negociação ──
+  negotiationSubStatus?: NegotiationSubStatus;
+  // ── Proposta ──
+  propostaEnviadaEm?: Timestamp;
+  propostaEnviadaPor?: string;
+  propostaEnviadaPorNome?: string;
+  // ── Não aprovado ──
+  motivoNaoAprovado?: string;
 }
 
 // ── Configuração de Leads (Firestore: /configs/leads_config) ──
@@ -1973,6 +2009,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   em_negociacao: 'Em Negociação',
   convertido: 'Convertido',
   descartado: 'Descartado',
+  nao_aprovado: 'Não Aprovado',
 };
 
 export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
@@ -1981,6 +2018,7 @@ export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
   em_negociacao: 'bg-amber-100 text-amber-700 border-amber-200',
   convertido: 'bg-green-100 text-green-700 border-green-200',
   descartado: 'bg-gray-100 text-gray-500 border-gray-200',
+  nao_aprovado: 'bg-red-100 text-red-600 border-red-200',
 };
 
 // ── Cotação de Projeto ──

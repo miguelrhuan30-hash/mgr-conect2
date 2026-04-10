@@ -24,7 +24,7 @@ const GASES = ['R-22', 'R-134a', 'R-404A', 'R-407C', 'R-410A', 'R-290', 'R-600a'
 const ISOLAMENTOS = ['EPS (Isopor)', 'PUR (Poliuretano)', 'PIR (Poliisocianurato)', 'Lã de Rocha', 'XPS', 'Outro'];
 
 const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta }) => {
-  const { savePrancheta } = useProject();
+  const { savePrancheta, sinalizarProjetoPronto } = useProject();
   const [form, setForm] = useState<ProjectV2Prancheta>({
     dimensoes: '',
     tipoEquipamento: '',
@@ -46,6 +46,8 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta }) => {
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadType, setUploadType] = useState<'foto' | 'croqui'>('foto');
+  const [savingPronto, setSavingPronto] = useState(false);
+  const [projetoPronto, setProjetoPronto] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -64,6 +66,17 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta }) => {
       setSaved(true);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleProjetoPronto = async () => {
+    setSavingPronto(true);
+    try {
+      await savePrancheta(projectId, form);
+      const result = await sinalizarProjetoPronto(projectId);
+      if (result.success) setProjetoPronto(true);
+    } finally {
+      setSavingPronto(false);
     }
   };
 
@@ -251,6 +264,32 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta }) => {
           </div>
         ) : (
           <p className="text-xs text-gray-400 text-center py-4">Nenhum croqui adicionado</p>
+        )}
+      </div>
+
+      {/* Botão Projeto Pronto */}
+      <div className={`rounded-2xl p-5 flex items-center justify-between gap-4 ${
+        projetoPronto ? 'bg-emerald-100 border border-emerald-300' : 'bg-emerald-50 border border-emerald-200'
+      }`}>
+        <div>
+          <p className="text-sm font-bold text-emerald-900">
+            {projetoPronto ? '✅ Projeto sinalizado como Pronto!' : 'Prancheta concluída?'}
+          </p>
+          <p className="text-xs text-emerald-600 mt-0.5">
+            {projetoPronto
+              ? 'O lead foi atualizado para \'Aguardando Proposta\'. O comercial será notificado.'
+              : 'Ao sinalizar, o lead avança para "Aguardando Proposta" e fica verde no funil.'}
+          </p>
+        </div>
+        {!projetoPronto && (
+          <button
+            onClick={handleProjetoPronto}
+            disabled={savingPronto || !form.finalidade?.trim()}
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 flex-shrink-0 transition-colors"
+          >
+            {savingPronto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Projeto Pronto ✅
+          </button>
         )}
       </div>
 
