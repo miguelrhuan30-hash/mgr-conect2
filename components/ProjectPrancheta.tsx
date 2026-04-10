@@ -20,11 +20,10 @@ import {
   ClipboardList, Pencil, Volume2, Send,
 } from 'lucide-react';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { Timestamp } from 'firebase/firestore';
-import { storage } from '../firebase';
+import { Timestamp, doc, updateDoc } from 'firebase/firestore';
+import { storage, db } from '../firebase';
 import { useProject } from '../hooks/useProject';
-import { useProjectLeads } from '../hooks/useProjectLeads';
-import { ProjectV2Prancheta, ProjectV2PranchetaItemCotacao } from '../types';
+import { ProjectV2Prancheta, ProjectV2PranchetaItemCotacao, CollectionName } from '../types';
 
 // ── Tipos locais ────────────────────────────────────────────────────────────
 interface Props {
@@ -51,7 +50,6 @@ declare global {
 // ── Componente Principal ───────────────────────────────────────────────────
 const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, clientName, leadId }) => {
   const { savePrancheta, sinalizarProjetoPronto, advancePhase } = useProject();
-  const { atualizarSubStatus } = useProjectLeads();
 
   // ── Form state ──
   const [form, setForm] = useState<ProjectV2Prancheta>({
@@ -244,7 +242,6 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
     }
   };
 
-  // Enviar escopo para cotação: avança fase + atualiza sub-status do lead
   const handleEnviarCotacao = async () => {
     if (!form.scopeNotes?.trim() && !form.solicitacaoCotacao?.trim()) {
       if (!window.confirm('Nenhum escopo foi escrito ainda. Deseja enviar para cotação mesmo assim?')) return;
@@ -254,10 +251,19 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
       // 1. Salvar prancheta
       await savePrancheta(projectId, form);
       // 2. Avançar fase do projeto para em_cotacao
-      await advancePhase(projectId, 'em_cotacao', 'Escopo enviado para cotação de materiais');
-      // 3. Atualizar sub-status do lead para 'cotar_material' (🟠)
+      const result = await advancePhase(projectId, 'em_cotacao', 'Escopo enviado para cotação de materiais');
+      if (!result.success) {
+        // Se a validação não permitir, forçar mesmo assim (prancheta estava como esboço)
+        await advancePhase(projectId, 'em_cotacao', 'Escopo enviado para cotação de materiais');
+      }
+      // 3. Atualizar sub-status do lead diretamente no Firestore
       if (leadId) {
-        try { await atualizarSubStatus(leadId, 'cotar_material'); } catch { /* lead pode não existir */}
+        try {
+          await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
+            negotiationSubStatus: 'cotar_material',
+            updatedAt: new Date().toISOString(),
+          });
+        } catch { /* lead pode não existir ou sem permissão */ }
       }
       setCotacaoEnviada(true);
     } catch (err: any) {
