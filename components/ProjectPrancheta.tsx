@@ -17,12 +17,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Save, Upload, Loader2, Trash2, Image, FileText, Check,
   Mic, MicOff, Plus, X, Copy, Download, ChevronDown, ChevronUp,
-  ClipboardList, Pencil, Volume2,
+  ClipboardList, Pencil, Volume2, Send,
 } from 'lucide-react';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Timestamp } from 'firebase/firestore';
 import { storage } from '../firebase';
 import { useProject } from '../hooks/useProject';
+import { useProjectLeads } from '../hooks/useProjectLeads';
 import { ProjectV2Prancheta, ProjectV2PranchetaItemCotacao } from '../types';
 
 // ── Tipos locais ────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ interface Props {
   prancheta?: ProjectV2Prancheta;
   projectName?: string;
   clientName?: string;
+  leadId?: string;         // vindo do project.leadId para atualizar sub-status
 }
 
 // ── Constantes de configuração técnica ─────────────────────────────────────
@@ -47,8 +49,9 @@ declare global {
 }
 
 // ── Componente Principal ───────────────────────────────────────────────────
-const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, clientName }) => {
-  const { savePrancheta, sinalizarProjetoPronto } = useProject();
+const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, clientName, leadId }) => {
+  const { savePrancheta, sinalizarProjetoPronto, advancePhase } = useProject();
+  const { atualizarSubStatus } = useProjectLeads();
 
   // ── Form state ──
   const [form, setForm] = useState<ProjectV2Prancheta>({
@@ -79,6 +82,8 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
   const [uploadType, setUploadType] = useState<'foto' | 'croqui'>('foto');
   const [savingPronto, setSavingPronto] = useState(false);
   const [projetoPronto, setProjetoPronto] = useState(false);
+  const [enviandoCotacao, setEnviandoCotacao] = useState(false);
+  const [cotacaoEnviada, setCotacaoEnviada] = useState(false);
   const [secaoDados, setSecaoDados] = useState(true);
   const [secaoEscopo, setSecaoEscopo] = useState(true);
   const [secaoCotacao, setSecaoCotacao] = useState(true);
@@ -236,6 +241,29 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
       else alert(result.error || 'Erro ao sinalizar projeto pronto');
     } finally {
       setSavingPronto(false);
+    }
+  };
+
+  // Enviar escopo para cotação: avança fase + atualiza sub-status do lead
+  const handleEnviarCotacao = async () => {
+    if (!form.scopeNotes?.trim() && !form.solicitacaoCotacao?.trim()) {
+      if (!window.confirm('Nenhum escopo foi escrito ainda. Deseja enviar para cotação mesmo assim?')) return;
+    }
+    setEnviandoCotacao(true);
+    try {
+      // 1. Salvar prancheta
+      await savePrancheta(projectId, form);
+      // 2. Avançar fase do projeto para em_cotacao
+      await advancePhase(projectId, 'em_cotacao', 'Escopo enviado para cotação de materiais');
+      // 3. Atualizar sub-status do lead para 'cotar_material' (🟠)
+      if (leadId) {
+        try { await atualizarSubStatus(leadId, 'cotar_material'); } catch { /* lead pode não existir */}
+      }
+      setCotacaoEnviada(true);
+    } catch (err: any) {
+      alert(`Erro: ${err?.message || String(err)}`);
+    } finally {
+      setEnviandoCotacao(false);
     }
   };
 
@@ -665,25 +693,48 @@ Exemplo:
         )}
       </div>
 
-      {/* ══ Botão Projeto Pronto ══ */}
+      {/* ══ Botão Enviar para Cotação ══ */}
       <div className={`rounded-2xl p-5 flex items-center justify-between gap-4 ${
-        projetoPronto ? 'bg-emerald-100 border border-emerald-300' : 'bg-emerald-50 border border-emerald-200'
+        cotacaoEnviada ? 'bg-cyan-100 border border-cyan-300' : 'bg-cyan-50 border border-cyan-200'
       }`}>
         <div>
-          <p className="text-sm font-bold text-emerald-900">
-            {projetoPronto ? '✅ Projeto sinalizado como Pronto!' : 'Prancheta concluída?'}
+          <p className="text-sm font-bold text-cyan-900">
+            {cotacaoEnviada ? '📧 Escopo enviado para Cotação!' : '📤 Pronto para solicitar cotação?'}
           </p>
-          <p className="text-xs text-emerald-600 mt-0.5">
+          <p className="text-xs text-cyan-600 mt-0.5">
+            {cotacaoEnviada
+              ? 'Card movido para a aba Cotação. Lead atualizado para "🟠 Cotar Material".'
+              : 'Envie o escopo para fornecedores. O card sairá da Prancheta e irá para Cotação no funil.'}
+          </p>
+        </div>
+        {!cotacaoEnviada && (
+          <button onClick={handleEnviarCotacao} disabled={enviandoCotacao}
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 disabled:opacity-50 flex-shrink-0 transition-colors">
+            {enviandoCotacao ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Enviar para Cotação 🟠
+          </button>
+        )}
+      </div>
+
+      {/* ══ Botão Projeto Pronto (legado: pula direto para Proposta) ══ */}
+      <div className={`rounded-2xl p-5 flex items-center justify-between gap-4 ${
+        projetoPronto ? 'bg-emerald-100 border border-emerald-300' : 'bg-gray-50 border border-gray-200'
+      }`}>
+        <div>
+          <p className="text-sm font-bold text-gray-700">
+            {projetoPronto ? '✅ Projeto sinalizado como Pronto!' : 'Pular cotação e ir direto para Proposta?'}
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">
             {projetoPronto
-              ? 'O lead avançou para "Aguardando Proposta". O comercial pode montar a proposta.'
-              : 'Salve e sinalize quando o escopo estiver completo. O lead irá para "Aguardando Proposta".'}
+              ? 'Lead avançou para "Aguardando Proposta".'
+              : 'Use somente se não precisar de cotação de materiais.'}
           </p>
         </div>
         {!projetoPronto && (
           <button onClick={handleProjetoPronto} disabled={savingPronto || !form.finalidade?.trim()}
-            className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 flex-shrink-0 transition-colors">
+            className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 bg-white rounded-xl text-sm font-bold hover:bg-gray-100 disabled:opacity-50 flex-shrink-0 transition-colors">
             {savingPronto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Projeto Pronto ✅
+            Pular para Proposta
           </button>
         )}
       </div>

@@ -1910,6 +1910,7 @@ export interface ProjectV2 {
   cotacaoIds?: string[];
   cotacaoVencedoraId?: string;
   relatorioNecessidadesUrl?: string;
+  categoriasCotacao?: CotacaoCategoria[];   // grupos ex: Câmara / Portas / Prateleiras
 
   // F3 — Apresentação
   apresentacaoId?: string;
@@ -2049,6 +2050,7 @@ export interface CotacaoItem {
 export interface ProjectCotacao {
   id: string;
   projectId: string;
+  categoriaId?: string;           // ID do grupo a que pertence (ex: 'camara', 'portas')
   fornecedor: string;
   fornecedorContato?: string;
   fornecedorEmail?: string;
@@ -2065,6 +2067,15 @@ export interface ProjectCotacao {
   criadoEm: Timestamp;
   criadoPor: string;
   criadoPorNome: string;
+}
+
+/** Categoria / grupo de cotações (armazenado no próprio ProjectV2 como array) */
+export interface CotacaoCategoria {
+  id: string;                     // uid local (nanoid/timestamp)
+  nome: string;                   // ex: 'Câmara Fria Completa'
+  descricao?: string;
+  cor?: string;                   // cor do badge (tailwind ex: 'blue', 'amber')
+  criadaEm: string;               // ISO string
 }
 
 // ── Contrato de Projeto ──

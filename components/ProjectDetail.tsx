@@ -514,12 +514,12 @@ const ProjectDetail: React.FC = () => {
 
           {/* Prancheta tab */}
           {activeTab === 'prancheta' && (
-            <ProjectPrancheta projectId={project.id} prancheta={project.prancheta} projectName={project.nome} clientName={project.clientName} />
+            <ProjectPrancheta projectId={project.id} prancheta={project.prancheta} projectName={project.nome} clientName={project.clientName} leadId={project.leadId} />
           )}
 
           {/* Cotação tab — Sprint 2 */}
           {activeTab === 'cotacao' && (
-            <ProjectCotacao projectId={project.id} />
+            <ProjectCotacao projectId={project.id} leadId={project.leadId} categoriasCotacao={project.categoriasCotacao} />
           )}
 
           {/* Proposta tab — Sprint 6: integração completa com Apresentações */}
