@@ -166,6 +166,7 @@ const LeadModal: React.FC<{
 }> = ({ lead, onClose, onAtualizarStatus, onSalvarNota, onConverter, onDescartar, onAtualizarSubStatus, onNaoAprovar, canEdit }) => {
   const [nota, setNota] = useState(lead.notas || '');
   const [saving, setSaving] = useState(false);
+  const [subStatusLoading, setSubStatusLoading] = useState<NegotiationSubStatus | null>(null);
   const navigate = useNavigate();
 
   const STATUS_SEQ: LeadStatus[] = ['novo', 'contatado', 'em_negociacao', 'convertido'];
@@ -175,6 +176,19 @@ const LeadModal: React.FC<{
     setSaving(true);
     await onSalvarNota(nota);
     setSaving(false);
+  };
+
+  const handleSubStatus = async (s: NegotiationSubStatus) => {
+    if (subStatusLoading) return; // evita double-click
+    setSubStatusLoading(s);
+    try {
+      await onAtualizarSubStatus(s);
+    } catch (err: any) {
+      console.error('[SubStatus] Erro:', err);
+      alert(`Erro ao atualizar status: ${err?.message || String(err)}`);
+    } finally {
+      setSubStatusLoading(null);
+    }
   };
 
   return (
@@ -286,14 +300,18 @@ const LeadModal: React.FC<{
                 {(['aguardando_projeto', 'cotar_material', 'material_cotado', 'aguardando_proposta'] as NegotiationSubStatus[]).map((s) => {
                   const cfg = NEGOTIATION_SUB_COLORS[s];
                   const ativo = lead.negotiationSubStatus === s;
+                  const carregando = subStatusLoading === s;
                   return (
                     <button key={s}
-                      onClick={() => onAtualizarSubStatus(s)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
+                      onClick={() => handleSubStatus(s)}
+                      disabled={!!subStatusLoading}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all disabled:opacity-60 ${
                         ativo ? `${cfg.bg} ${cfg.text} ${cfg.border} ring-2 ring-offset-1 ring-current` : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                      {carregando
+                        ? <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                        : <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />}
                       {NEGOTIATION_SUB_LABELS[s]}
                     </button>
                   );
@@ -898,7 +916,7 @@ const LeadsDashboard: React.FC = () => {
           onConverter={() => handleConverter(leadModal.id)}
           onDescartar={(motivo) => handleDescartar(leadModal.id, motivo)}
           onAtualizarSubStatus={async (subStatus) => {
-            await atualizarSubStatus(leadModal.id, subStatus);
+            await atualizarSubStatus(leadModal.id, subStatus, leadModal);
             setLeadModal((prev) => prev ? { ...prev, negotiationSubStatus: subStatus } : null);
           }}
           onNaoAprovar={async (motivo) => {

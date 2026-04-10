@@ -158,19 +158,20 @@ export const useProjectLeads = () => {
   // Quando 'aguardando_projeto': cria ProjectV2 vinculado (fase lead_capturado)
   // sem alterar o status do lead para 'convertido' — ele continua 'em_negociacao'
   const atualizarSubStatus = useCallback(
-    async (leadId: string, subStatus: NegotiationSubStatus): Promise<void> => {
-      if (!currentUser) return;
+    async (leadId: string, subStatus: NegotiationSubStatus, leadData?: ProjectLead): Promise<void> => {
+      if (!currentUser) throw new Error('Usuário não autenticado');
 
-      // 1. Buscar o lead atual para verificar se já tem projeto vinculado
-      const leadSnap = await getDoc(doc(db, CollectionName.PROJECT_LEADS, leadId));
-      if (!leadSnap.exists()) return;
-      const lead = { id: leadSnap.id, ...leadSnap.data() } as ProjectLead;
+      // Usar lead passado como parâmetro ou buscar do Firestore
+      let lead = leadData;
+      if (!lead) {
+        const leadSnap = await getDoc(doc(db, CollectionName.PROJECT_LEADS, leadId));
+        if (!leadSnap.exists()) throw new Error('Lead não encontrado');
+        lead = { id: leadSnap.id, ...leadSnap.data() } as ProjectLead;
+      }
 
-      let projectId = lead.projectId;
-
-      // 2. Se selecionou 'aguardando_projeto' e ainda NÃO tem projeto vinculado → criar
-      if (subStatus === 'aguardando_projeto' && !projectId) {
-        const entry = {
+      // Se selecionou 'aguardando_projeto' e ainda NÃO tem projeto vinculado → criar
+      if (subStatus === 'aguardando_projeto' && !lead.projectId) {
+        const entry: { fase: ProjectPhase; alteradoEm: any; alteradoPor: string; alteradoPorNome: string; observacao: string } = {
           fase: 'lead_capturado' as ProjectPhase,
           alteradoEm: Timestamp.now(),
           alteradoPor: currentUser.uid,
@@ -184,23 +185,23 @@ export const useProjectLeads = () => {
           clientId: '',
           clientName: lead.empresa || lead.nomeContato,
           tipoProjetoSlug: lead.tipoProjetoSlug,
-          fase: 'lead_capturado',
+          fase: 'lead_capturado' as ProjectPhase,
           leadId: leadId,
           leadData: {
             origem: lead.origem,
             nomeContato: lead.nomeContato,
             telefone: lead.telefone,
-            email: lead.email,
-            empresa: lead.empresa,
+            email: lead.email || null,
+            empresa: lead.empresa || null,
             tipoProjetoPedido: lead.tipoProjetoTexto || lead.tipoProjetoSlug,
-            medidasAproximadas: lead.medidasAproximadas,
-            finalidade: lead.finalidade,
-            localizacao: lead.localizacao,
-            observacoes: lead.observacoes,
+            medidasAproximadas: lead.medidasAproximadas || null,
+            finalidade: lead.finalidade || null,
+            localizacao: lead.localizacao || null,
+            observacoes: lead.observacoes || null,
             recebidoEm: lead.criadoEm,
-            utmSource: lead.utmSource,
-            utmMedium: lead.utmMedium,
-            utmCampaign: lead.utmCampaign,
+            utmSource: lead.utmSource || null,
+            utmMedium: lead.utmMedium || null,
+            utmCampaign: lead.utmCampaign || null,
           },
           osIds: [],
           faseHistorico: [entry],
@@ -210,18 +211,16 @@ export const useProjectLeads = () => {
           updatedAt: serverTimestamp(),
         });
 
-        projectId = docRef.id;
-
         // Vincular projectId ao lead (sem mudar status para 'convertido')
         await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
-          projectId,
+          projectId: docRef.id,
           negotiationSubStatus: subStatus,
           ultimaAtividade: serverTimestamp(),
         });
         return;
       }
 
-      // 3. Para os demais sub-status: apenas atualizar o campo
+      // Para os demais sub-status: apenas atualizar o campo
       await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
         negotiationSubStatus: subStatus,
         ultimaAtividade: serverTimestamp(),
