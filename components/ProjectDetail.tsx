@@ -243,6 +243,14 @@ const ProjectDetail: React.FC = () => {
   // Modal reabrir
   const [showReabrir, setShowReabrir] = useState(false);
   const [reabrirAbordagem, setReabrirAbordagem] = useState('');
+  // Sticky header — deve estar ANTES de qualquer return condicional
+  const [showSticky, setShowSticky] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setShowSticky(window.scrollY > 120);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const project = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
 
@@ -334,14 +342,6 @@ const ProjectDetail: React.FC = () => {
   const nextTransitions = PROJECT_TRANSITIONS[project.fase].filter((f) => f !== 'nao_aprovado');
   const canArchive = ['lead_capturado', 'em_levantamento', 'em_cotacao', 'cotacao_recebida', 'proposta_enviada', 'contrato_enviado'].includes(project.fase);
   const canReopen = project.fase === 'nao_aprovado';
-
-  // ─ Sticky header ao scroll ─
-  const [showSticky, setShowSticky] = React.useState(false);
-  React.useEffect(() => {
-    const onScroll = () => setShowSticky(window.scrollY > 120);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
 
   return (
     <div className="max-w-6xl mx-auto pb-8 space-y-5">
