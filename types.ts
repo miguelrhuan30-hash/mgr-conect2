@@ -1827,7 +1827,15 @@ export interface ProjectV2LeadData {
   utmCampaign?: string;
 }
 
+export interface ProjectV2PranchetaItemCotacao {
+  descricao: string;
+  quantidade?: string;
+  unidade?: string;
+  observacao?: string;
+}
+
 export interface ProjectV2Prancheta {
+  // ── Campos técnicos originais ──
   dimensoes?: string;
   tipoEquipamento?: string;
   capacidadeBTU?: number;
@@ -1842,6 +1850,12 @@ export interface ProjectV2Prancheta {
   observacoesTecnicas?: string;
   fotosLevantamento?: string[];
   croquis?: string[];
+  // ── Bloco de Notas Livre (Escopo e Cotação) ──
+  scopeNotes?: string;              // anotações livres do técnico (escopo de projeto)
+  solicitacaoCotacao?: string;      // texto final da solicitação de cotação gerado
+  itensCotacao?: ProjectV2PranchetaItemCotacao[];  // lista estruturada de itens
+  escopoGeradoEm?: Timestamp;       // quando o escopo foi gerado/finalizado
+  // ── Metadados ──
   preenchidoPor?: string;
   preenchidoPorNome?: string;
   preenchidoEm?: Timestamp;

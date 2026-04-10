@@ -514,7 +514,7 @@ const ProjectDetail: React.FC = () => {
 
           {/* Prancheta tab */}
           {activeTab === 'prancheta' && (
-            <ProjectPrancheta projectId={project.id} prancheta={project.prancheta} />
+            <ProjectPrancheta projectId={project.id} prancheta={project.prancheta} projectName={project.nome} clientName={project.clientName} />
           )}
 
           {/* Cotação tab — Sprint 2 */}
