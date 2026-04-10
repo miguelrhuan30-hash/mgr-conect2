@@ -112,29 +112,45 @@ const VehicleLog: React.FC = () => {
     setError(null);
 
     try {
-      let constraints: Parameters<typeof query>[1][] = [
-        orderBy('timestamp', 'desc'),
-        limit(PAGE_SIZE + 1),
-      ];
+      const temPlaca = filtroPlaca.trim().length >= 3;
+      const temData  = !!filtroData;
+      const p        = filtroPlaca.trim().toUpperCase();
 
-      // Filtro de data
-      if (filtroData) {
+      let constraints: Parameters<typeof query>[1][] = [];
+
+      // ─── Montagem de constraints válidas para o Firestore ──────────────────
+      // REGRA: quando há filtro de range (>=, <=) em um campo, o primeiro
+      // orderBy() DEVE ser nesse mesmo campo. Se for outro campo, o Firestore
+      // rejeita a query com erro de índice.
+      //
+      // Firestore também NÃO permite range em dois campos diferentes numa mesma
+      // query — por isso, quando os dois filtros estão ativos, a data é filtrada
+      // localmente após buscar os resultados filtrados por placa no servidor.
+
+      if (temPlaca) {
+        // filtro de placa no servidor → orderBy(placa) obrigatório antes de orderBy(timestamp)
+        constraints = [
+          where('placa', '>=', p),
+          where('placa', '<=', p + '\uf8ff'),
+          orderBy('placa', 'asc'),
+          orderBy('timestamp', 'desc'),
+          limit(PAGE_SIZE + 1),
+        ];
+      } else if (temData) {
+        // filtro de data no servidor → range no mesmo campo do orderBy
         const inicio = new Date(filtroData + 'T00:00:00');
         const fim    = new Date(filtroData + 'T23:59:59');
         constraints = [
-          ...constraints,
           where('timestamp', '>=', Timestamp.fromDate(inicio)),
           where('timestamp', '<=', Timestamp.fromDate(fim)),
+          orderBy('timestamp', 'desc'),
+          limit(PAGE_SIZE + 1),
         ];
-      }
-
-      // Filtro de placa (busca por prefixo)
-      if (filtroPlaca.trim().length >= 3) {
-        const p = filtroPlaca.trim().toUpperCase();
+      } else {
+        // sem filtros de servidor
         constraints = [
-          ...constraints,
-          where('placa', '>=', p),
-          where('placa', '<=', p + '\uf8ff'),
+          orderBy('timestamp', 'desc'),
+          limit(PAGE_SIZE + 1),
         ];
       }
 
@@ -147,10 +163,20 @@ const VehicleLog: React.FC = () => {
       const snap = await getDocs(q);
       const docs = snap.docs;
       const temMais = docs.length > PAGE_SIZE;
-      const itens = docs.slice(0, PAGE_SIZE).map(d => ({
+      let itens = docs.slice(0, PAGE_SIZE).map(d => ({
         id: d.id,
         ...d.data(),
       })) as VehicleCheckRecord[];
+
+      // Filtro local de data (quando combinado com placa — Firestore não suporta no servidor)
+      if (temPlaca && temData) {
+        const inicio = new Date(filtroData + 'T00:00:00');
+        const fim    = new Date(filtroData + 'T23:59:59');
+        itens = itens.filter(r => {
+          const ts = r.timestamp?.toDate?.();
+          return ts && ts >= inicio && ts <= fim;
+        });
+      }
 
       // Filtro local de usuário (nome — evita índice extra)
       const filtrados = filtroUsuario.trim()
