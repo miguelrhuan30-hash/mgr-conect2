@@ -607,11 +607,11 @@ const ConfigTab: React.FC<{ onAdicionarLead: (dados: any) => Promise<string>; is
 
 type TabId = 'kanban' | 'lista' | 'config';
 
-const LeadsDashboard: React.FC = () => {
+const LeadsDashboard: React.FC<{ initialTab?: TabId }> = ({ initialTab }) => {
   const navigate = useNavigate();
   const { userProfile } = useAuth();
   const { leads, loading, leadsNovos, atualizarStatus, salvarNota, adicionarLead, converterEmProjeto, descartarLead, atualizarSubStatus, marcarNaoAprovado } = useProjectLeads();
-  const [tab, setTab] = useState<TabId>('kanban');
+  const [tab, setTab] = useState<TabId>(initialTab || 'kanban');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<LeadStatus | 'todos'>('todos');
   const [origemFilter, setOrigemFilter] = useState<string>('todos');

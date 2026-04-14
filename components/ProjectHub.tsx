@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Briefcase, Plus, Search, Loader2, ChevronRight,
   UserPlus, XCircle, Filter, BarChart3, LayoutDashboard,
-  LayoutList, Kanban, ArrowUpDown, Download, SlidersHorizontal,
+  LayoutList, ArrowUpDown, Download, SlidersHorizontal,
   CheckCircle2, Calendar, DollarSign, Zap, AlertCircle, X, Copy,
 } from 'lucide-react';
 import { useProject } from '../hooks/useProject';
@@ -98,7 +98,7 @@ const KPICard: React.FC<{
 // ── Tipos de filtro ──
 type PhaseFilter = 'todos' | 'lead_capturado' | 'em_levantamento' | 'comercial' | 'execucao' | 'financeiro' | 'nao_aprovado';
 type SortKey = 'data_desc' | 'data_asc' | 'valor_desc' | 'valor_asc' | 'fase';
-type ViewMode = 'lista' | 'kanban' | 'dashboard';
+type ViewMode = 'lista' | 'dashboard';
 
 const PHASE_TABS: { value: PhaseFilter; label: string }[] = [
   { value: 'todos', label: 'Todos' },
@@ -120,46 +120,8 @@ const PHASE_GROUPS: Record<PhaseFilter, ProjectPhase[]> = {
   nao_aprovado: ['nao_aprovado'],
 };
 
-// ── Kanban colunas ──
-const KANBAN_COLS: { key: PhaseFilter; label: string; emoji: string; color: string }[] = [
-  { key: 'lead_capturado', label: 'Leads',       emoji: '🎯', color: 'bg-violet-50 border-violet-200' },
-  { key: 'em_levantamento', label: 'Levantamento', emoji: '📐', color: 'bg-blue-50 border-blue-200' },
-  { key: 'comercial',       label: 'Comercial',   emoji: '💼', color: 'bg-cyan-50 border-cyan-200' },
-  { key: 'execucao',        label: 'Execução',    emoji: '🔧', color: 'bg-amber-50 border-amber-200' },
-  { key: 'financeiro',      label: 'Financeiro',  emoji: '💳', color: 'bg-emerald-50 border-emerald-200' },
-];
+// Kanban removido — vive exclusivamente no FlowAtendimento
 
-// ── Card de projeto (Kanban) ──
-const KanbanCard: React.FC<{ project: ProjectV2; onClick: () => void; compact?: boolean }> = ({ project, onClick, compact }) => (
-  <button
-    onClick={onClick}
-    className="w-full text-left bg-white rounded-xl border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all group"
-  >
-    <div className={compact ? 'p-2.5' : 'p-3'}>
-      <div className="flex items-start justify-between gap-1 mb-1">
-        <p className="text-xs font-bold text-gray-900 line-clamp-2 leading-tight">{project.nome}</p>
-        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${PROJECT_PHASE_COLORS[project.fase]}`}>
-          {PROJECT_PHASE_LABELS[project.fase]?.split(' ')[0]}
-        </span>
-      </div>
-      <p className="text-[10px] text-gray-500 truncate">{project.clientName}</p>
-      {!compact && (
-        <>
-          <p className="text-[10px] text-gray-400 truncate">{tipoLabel(project.tipoProjetoSlug)}</p>
-          <div className="flex items-center justify-between mt-2">
-            {project.valorContrato ? (
-              <span className="text-[10px] font-bold text-emerald-700">{fmtCurrency(project.valorContrato)}</span>
-            ) : <span />}
-            <span className="text-[9px] text-gray-400">{fmtDate(project.createdAt)}</span>
-          </div>
-          <div className="mt-1.5">
-            <PhaseStepperMini currentPhase={project.fase} />
-          </div>
-        </>
-      )}
-    </div>
-  </button>
-);
 
 // ── Card de projeto (Lista) com Quick Advance — Sprint 13 + Template — Sprint 14 ──
 const ListCard: React.FC<{
@@ -265,6 +227,7 @@ const ProjectHub: React.FC = () => {
   const [tipoFilter, setTipoFilter] = useState('todos');
   const [sortKey, setSortKey] = useState<SortKey>('data_desc');
   const [viewMode, setViewMode] = useState<ViewMode>('lista');
+  // Kanban agora vive exclusivamente no FlowAtendimento
   const [compact, setCompact] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -429,7 +392,6 @@ const ProjectHub: React.FC = () => {
           <div className="flex rounded-xl border border-gray-200 overflow-hidden">
             {([
               { mode: 'lista',     icon: LayoutList,      title: 'Lista' },
-              { mode: 'kanban',    icon: Kanban,           title: 'Kanban' },
               { mode: 'dashboard', icon: LayoutDashboard,  title: 'Dashboard' },
             ] as { mode: ViewMode; icon: React.ElementType; title: string }[]).map(({ mode, icon: Icon, title }) => (
               <button key={mode} onClick={() => setViewMode(mode)} title={title}
@@ -468,7 +430,7 @@ const ProjectHub: React.FC = () => {
             )}
           </button>
           <button
-            onClick={() => navigate('/app/projetos-v2/novo')}
+            onClick={() => navigate('/app/flow-atendimento')}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 shadow-sm transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -596,48 +558,7 @@ const ProjectHub: React.FC = () => {
             </>
           )}
 
-          {/* ── Vista KANBAN ── */}
-          {viewMode === 'kanban' && (
-            <div className="overflow-x-auto -mx-2 px-2 pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-              <div className="flex gap-3" style={{ minWidth: `${KANBAN_COLS.length * 260}px` }}>
-                {KANBAN_COLS.map(col => {
-                  const colProjects = projects
-                    .filter(p => PHASE_GROUPS[col.key].includes(p.fase))
-                    .filter(p => !search.trim() || p.nome.toLowerCase().includes(search.toLowerCase()) || p.clientName.toLowerCase().includes(search.toLowerCase()))
-                    .filter(p => tipoFilter === 'todos' || p.tipoProjetoSlug === tipoFilter)
-                    .sort((a, b) => {
-                      const da = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-                      const db2 = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-                      return db2 - da;
-                    });
-                  return (
-                    <div key={col.key} className={`flex-shrink-0 w-60 rounded-2xl border ${col.color} flex flex-col`}>
-                      {/* Col header */}
-                      <div className="px-3 py-2.5 border-b border-current/10 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span>{col.emoji}</span>
-                          <span className="text-xs font-extrabold text-gray-700">{col.label}</span>
-                        </div>
-                        <span className="text-[10px] font-bold bg-white/70 rounded-full px-2 py-0.5 text-gray-600">
-                          {colProjects.length}
-                        </span>
-                      </div>
-                      {/* Cards */}
-                      <div className="p-2 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 380px)', minHeight: '120px' }}>
-                        {colProjects.length === 0 ? (
-                          <p className="text-[10px] text-gray-400 text-center py-6">Nenhum projeto</p>
-                        ) : colProjects.map(p => (
-                          <KanbanCard key={p.id} project={p} compact={compact}
-                            onClick={() => navigate(`/app/projetos-v2/${p.id}`)} />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-[10px] text-gray-400 text-center mt-3 md:hidden">← Deslize para ver todas as colunas →</p>
-            </div>
-          )}
+          {/* Kanban removido — agora vive exclusivamente no FlowAtendimento */}
         </>
       )}
     </div>

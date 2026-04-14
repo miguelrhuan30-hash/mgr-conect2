@@ -18,7 +18,7 @@ import {
   Archive, XCircle, ChevronRight, Search, Plus,
   Loader2, Building2, Calendar, DollarSign,
   ArrowRight, Briefcase, AlertCircle, LayoutGrid,
-  Settings, Check, Users,
+  Settings, Check, Users, LayoutList, Kanban,
 } from 'lucide-react';
 import {
   doc, getDoc, setDoc, collection, getDocs, onSnapshot, Timestamp,
@@ -215,7 +215,7 @@ const FaseProjectList: React.FC<{
   }, [projects, search]);
 
   const handleOpen = (project: ProjectV2) => {
-    navigate(fase.tabHint ? `/app/projetos-v2/${project.id}?tab=${fase.tabHint}` : `/app/projetos-v2/${project.id}`);
+    navigate(fase.tabHint ? `/app/projetos-v2/${project.id}?tab=${fase.tabHint}&from=flow` : `/app/projetos-v2/${project.id}?from=flow`);
   };
 
   return (
@@ -263,6 +263,8 @@ const FlowAtendimento: React.FC = () => {
 
   const [faseSelecionada, setFaseSelecionada] = useState<FlowFaseId>('leads');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista');
+  const [openNovoLead, setOpenNovoLead] = useState(false);
 
   // ── Filtros de Concluídos ────────────────────────────────────────────────────
   const [concFilterMes, setConcFilterMes] = useState<string>('');       // 'YYYY-MM'
@@ -384,10 +386,27 @@ const FlowAtendimento: React.FC = () => {
               )}
             </p>
           </div>
-          <button onClick={() => navigate('/app/projetos-v2/novo')}
+          <button
+            onClick={() => {
+              setFaseSelecionada('leads');
+              setOpenNovoLead(true);
+              setViewMode('lista');
+            }}
             className="flex items-center gap-1.5 px-4 py-2 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 transition-colors">
             <Plus className="w-4 h-4" /> Novo Projeto
           </button>
+
+          {/* Toggle Lista/Kanban */}
+          <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+            <button onClick={() => setViewMode('lista')} title="Lista"
+              className={`px-3 py-2 transition-colors ${viewMode === 'lista' ? 'bg-brand-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
+              <LayoutList className="w-4 h-4" />
+            </button>
+            <button onClick={() => setViewMode('kanban')} title="Kanban"
+              className={`px-3 py-2 transition-colors ${viewMode === 'kanban' ? 'bg-brand-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
+              <Kanban className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* ── Cards de fase (scroll horizontal) ── */}
@@ -526,14 +545,70 @@ const FlowAtendimento: React.FC = () => {
         )}
 
         {/* Fase 0 — Leads */}
-        {faseSelecionada === 'leads' && !loading && <LeadsDashboard />}
+        {faseSelecionada === 'leads' && !loading && (
+          <LeadsDashboard
+            initialTab={openNovoLead ? 'config' : undefined}
+            key={openNovoLead ? 'novo-lead' : 'leads'}
+          />
+        )}
 
         {/* Fase 11 — Não Aprovados */}
         {faseSelecionada === 'nao_aprovados' && !loading && <ProjectUpsell />}
 
         {/* Fases 1-10 */}
-        {faseAtual.fases && !loading && (
+        {faseAtual.fases && !loading && viewMode === 'lista' && (
           <FaseProjectList fase={faseAtual} projects={projetosDaFase} search={search} onSearch={setSearch} />
+        )}
+
+        {/* ── Modo KANBAN ── */}
+        {viewMode === 'kanban' && !loading && (
+          <div className="overflow-x-auto -mx-2 px-2 pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex gap-3" style={{ minWidth: `${FLOW_FASES.length * 240}px` }}>
+              {FLOW_FASES.filter(f => f.id !== 'leads' && f.id !== 'nao_aprovados').map(fase => {
+                const faseProjects = projects?.filter(p => fase.fases?.includes(p.fase)) || [];
+                const filtered = search.trim()
+                  ? faseProjects.filter(p => p.nome.toLowerCase().includes(search.toLowerCase()) || p.clientName.toLowerCase().includes(search.toLowerCase()))
+                  : faseProjects;
+
+                return (
+                  <div key={fase.id} className={`flex-shrink-0 w-56 rounded-2xl border flex flex-col ${fase.corBg.replace('text-', 'border-').split(' ')[0]} bg-white/50`}>
+                    {/* Column header */}
+                    <div className={`px-3 py-2.5 border-b border-current/10 flex items-center justify-between rounded-t-2xl ${fase.cor}`}>
+                      <div className="flex items-center gap-1.5">
+                        <fase.icon className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-extrabold uppercase tracking-wide">{fase.label}</span>
+                      </div>
+                      <span className="text-[10px] font-bold bg-white/20 rounded-full px-2 py-0.5">
+                        {filtered.length}
+                      </span>
+                    </div>
+                    {/* Cards */}
+                    <div className="p-2 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 340px)', minHeight: '100px' }}>
+                      {filtered.length === 0 ? (
+                        <p className="text-[9px] text-gray-400 text-center py-6">Nenhum projeto</p>
+                      ) : filtered.map(project => (
+                        <button
+                          key={project.id}
+                          onClick={() => navigate(fase.tabHint ? `/app/projetos-v2/${project.id}?tab=${fase.tabHint}&from=flow` : `/app/projetos-v2/${project.id}?from=flow`)}
+                          className="w-full text-left bg-white rounded-xl border border-gray-200 p-2.5 hover:shadow-md hover:border-gray-300 transition-all group"
+                        >
+                          <p className="text-[11px] font-bold text-gray-900 line-clamp-2 leading-tight">{project.nome}</p>
+                          <p className="text-[9px] text-gray-500 truncate mt-0.5">{project.clientName}</p>
+                          <div className="flex items-center justify-between mt-1.5">
+                            {project.valorContrato ? (
+                              <span className="text-[9px] font-bold text-emerald-700">R$ {project.valorContrato.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>
+                            ) : <span />}
+                            <span className="text-[8px] text-gray-400">{fmtDate(project.createdAt)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-gray-400 text-center mt-3 md:hidden">← Deslize para ver todas as colunas →</p>
+          </div>
         )}
       </div>
     </div>

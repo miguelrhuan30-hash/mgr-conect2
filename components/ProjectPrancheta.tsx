@@ -266,13 +266,23 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
       // 1. Salvar prancheta com estado atual (auto-save antes de avançar fase)
       await savePrancheta(projectId, form);
       setSaved(true);
-      // 2. Avançar fase do projeto para em_cotacao
-      const result = await advancePhase(projectId, 'em_cotacao', 'Prancheta concluída — card avançado para aba Cotação');
+
+      // 2. Aguardar propagação do onSnapshot (preenchidoEm precisa estar no state local
+      //    do useProject para a validação de advancePhase passar)
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // 3. Avançar fase do projeto para em_cotacao
+      let result = await advancePhase(projectId, 'em_cotacao', 'Prancheta concluída — card avançado para aba Cotação');
       if (!result.success) {
-        // Tenta forçar mesmo assim (prancheta era esboço)
-        await advancePhase(projectId, 'em_cotacao', 'Prancheta concluída — card avançado para aba Cotação');
+        // Retry com mais tempo (snapshot pode ter demorado)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        result = await advancePhase(projectId, 'em_cotacao', 'Prancheta concluída — card avançado para aba Cotação');
       }
-      // 3. Atualizar sub-status do lead
+      if (!result.success) {
+        alert(result.error || 'Erro ao avançar para cotação. Tente novamente.');
+        return;
+      }
+      // 4. Atualizar sub-status do lead
       if (leadId) {
         try {
           await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {

@@ -5,7 +5,7 @@
  * tabs de conteúdo por fase, ações de avanço e arquivamento.
  */
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, ChevronRight, ArrowRight, Loader2, AlertCircle,
   XCircle, RotateCcw, Clock, Save, Briefcase, Plus, ExternalLink, Link2, Search,
@@ -226,7 +226,10 @@ const ADVANCED_TABS: { key: TabKey; label: string; phases: ProjectPhase[] }[] = 
 const ProjectDetail: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { projects, loading, advancePhase, archiveAsNaoAprovado, reopenProject } = useProject();
+  const { projects, loading, advancePhase, savePrancheta, archiveAsNaoAprovado, reopenProject } = useProject();
+  const [searchParams] = useSearchParams();
+  const fromFlow = searchParams.get('from') === 'flow';
+  const backPath = fromFlow ? '/app/flow-atendimento' : '/app/projetos-v2';
   const { ordens, stats: osStats, vincularOS, desvincularOS } = useProjectOS(projectId ?? '');
   const { logFaseAvancada } = useProjectActivity(projectId ?? '');
   const [activeTab, setActiveTab] = useState<TabKey>('cotacao');
@@ -275,6 +278,15 @@ const ProjectDetail: React.FC = () => {
     const transitions = PROJECT_TRANSITIONS[project.fase].filter((f) => f !== 'nao_aprovado');
     if (transitions.length === 0) return;
     const nextPhase = transitions[0];
+
+    // Se está na fase de prancheta e avançando para cotação, salvar prancheta primeiro
+    if (['lead_capturado', 'em_levantamento'].includes(project.fase) && nextPhase === 'em_cotacao' && project.prancheta) {
+      try {
+        await savePrancheta(project.id, project.prancheta);
+        // Pequeno delay para garantir que o onSnapshot atualizou o preenchidoEm
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch { /* continua mesmo se falhar */ }
+    }
 
     setAdvanceLoading(true);
     setAdvanceError('');
@@ -326,7 +338,7 @@ const ProjectDetail: React.FC = () => {
       <div className="max-w-3xl mx-auto text-center py-20">
         <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
         <p className="text-gray-500 font-medium">Projeto não encontrado</p>
-        <button onClick={() => navigate('/app/projetos-v2')} className="mt-3 text-brand-600 text-sm font-bold hover:underline">
+        <button onClick={() => navigate(backPath)} className="mt-3 text-brand-600 text-sm font-bold hover:underline">
           ← Voltar para Projetos
         </button>
       </div>
@@ -346,7 +358,7 @@ const ProjectDetail: React.FC = () => {
       }`}>
         <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
           <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
-            <button onClick={() => navigate('/app/projetos-v2')}
+            <button onClick={() => navigate(backPath)}
               className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors flex-shrink-0">
               <ArrowLeft className="w-3.5 h-3.5 text-gray-500" />
             </button>
@@ -357,12 +369,23 @@ const ProjectDetail: React.FC = () => {
             {project.clientName && (
               <span className="text-xs text-gray-500 hidden md:block truncate max-w-[150px]">{project.clientName}</span>
             )}
+            {/* Botão avançar no sticky header */}
+            {nextTransitions.length > 0 && (
+              <button
+                onClick={handleAdvance}
+                disabled={advanceLoading}
+                className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 disabled:opacity-50 transition-all flex-shrink-0"
+              >
+                {advanceLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
+                {['lead_capturado', 'em_levantamento'].includes(project.fase) ? 'Avançar para Cotação' : `Avançar: ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
+              </button>
+            )}
           </div>
         </div>
       </div>
       {/* Header */}
       <div className="flex items-start gap-4">
-        <button onClick={() => navigate('/app/projetos-v2')} className="mt-1 p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
+        <button onClick={() => navigate(backPath)} className="mt-1 p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
           <ArrowLeft className="w-4 h-4 text-gray-500" />
         </button>
         <div className="flex-1 min-w-0">
@@ -402,7 +425,7 @@ const ProjectDetail: React.FC = () => {
               className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
             >
               {advanceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              Avançar para {PROJECT_PHASE_LABELS[nextTransitions[0]]}
+              {['lead_capturado', 'em_levantamento'].includes(project.fase) ? 'Avançar para Cotação' : `Avançar para ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
             </button>
           )}
         </div>
