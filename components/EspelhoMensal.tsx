@@ -170,11 +170,11 @@ const EspelhoMensal: React.FC = () => {
   };
 
   // ── Helpers para edição ──────────────────────────────────────────────────
+  /** Retorna apenas HH:mm para input type="time" — a data é fixada por editDia */
   const toLocalInput = (entry: TimeEntry | null): string => {
     if (!entry) return '';
     const d = entry.timestamp.toDate();
-    const tzOffset = d.getTimezoneOffset() * 60000;
-    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
   // ── Abrir modal de edição do dia ─────────────────────────────────────────
@@ -215,16 +215,18 @@ const EspelhoMensal: React.FC = () => {
       ];
 
       for (const s of slots) {
-        if (s.existing && s.newTime) {
+        if (!s.newTime) continue;
+        // Montar timestamp: data FIXA do dia selecionado + hora informada → nunca permite data errada
+        const newTs = new Date(`${editDia}T${s.newTime}:00`);
+        if (s.existing) {
           // Editar horário existente
-          const newTs = new Date(s.newTime);
           const oldTs = s.existing.timestamp.toDate();
           if (Math.abs(newTs.getTime() - oldTs.getTime()) > 60000) {
             await editarHorarioRegistro(s.existing.id, newTs, currentUser.uid, adminNome, editMotivo);
           }
-        } else if (!s.existing && s.newTime) {
+        } else {
           // Adicionar registro faltante
-          await adicionarRegistro(uid, s.type, new Date(s.newTime), currentUser.uid, adminNome, editMotivo);
+          await adicionarRegistro(uid, s.type, newTs, currentUser.uid, adminNome, editMotivo);
         }
         // Se existia mas input ficou vazio → não exclui automaticamente (exclusão é manual)
       }
@@ -909,7 +911,7 @@ const EspelhoMensal: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-1.5">
                           <input
-                            type="datetime-local"
+                            type="time"
                             value={editTimes[tipo]}
                             onChange={e => setEditTimes({ ...editTimes, [tipo]: e.target.value })}
                             className="flex-1 rounded-lg border-gray-300 text-sm bg-white text-gray-900"
