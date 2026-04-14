@@ -157,10 +157,20 @@ export const useProject = () => {
         };
       }
 
-      // Validar requisitos
+      // Validar requisitos — se falhar no state local, tenta com dados frescos do Firestore
+      // (race condition: savePrancheta grava preenchidoEm mas onSnapshot ainda não atualizou)
       const validator = TRANSITION_REQUIREMENTS[newPhase];
       if (validator) {
-        const result = validator(project);
+        let result = validator(project);
+        if (!result.valid) {
+          try {
+            const freshSnap = await getDoc(doc(db, CollectionName.PROJECTS_V2, projectId));
+            if (freshSnap.exists()) {
+              const fresh = { id: freshSnap.id, ...freshSnap.data() } as ProjectV2;
+              result = validator(fresh);
+            }
+          } catch { /* fallback para resultado original */ }
+        }
         if (!result.valid) return { success: false, error: result.message };
       }
 

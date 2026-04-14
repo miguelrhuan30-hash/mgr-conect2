@@ -279,20 +279,16 @@ const ProjectDetail: React.FC = () => {
     if (transitions.length === 0) return;
     const nextPhase = transitions[0];
 
-    // Se está na fase de prancheta e avançando para cotação, salvar prancheta primeiro
+    // Se está nas fases iniciais avançando para cotação, salvar prancheta primeiro
+    // (advancePhase usará getDoc internamente se o state local ainda não tiver preenchidoEm)
     if (['lead_capturado', 'em_levantamento'].includes(project.fase) && nextPhase === 'em_cotacao' && project.prancheta) {
-      try {
-        await savePrancheta(project.id, project.prancheta);
-        // Pequeno delay para garantir que o onSnapshot atualizou o preenchidoEm
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch { /* continua mesmo se falhar */ }
+      try { await savePrancheta(project.id, project.prancheta); } catch { /* continua */ }
     }
 
     setAdvanceLoading(true);
     setAdvanceError('');
     const result = await advancePhase(project.id, nextPhase);
     if (result.success) {
-      // ─ Log automático no feed de atividades — Sprint 12 ─
       await logFaseAvancada(
         PROJECT_PHASE_LABELS[project.fase] || project.fase,
         PROJECT_PHASE_LABELS[nextPhase] || nextPhase,
