@@ -207,24 +207,20 @@ const ProjectAdendoMudancasWrapper: React.FC<{ projectId: string }> = ({ project
   return <ProjectAdendoMudancas projectId={projectId} adendos={adendos} />;
 };
 
-// ── Tabs de conteúdo por fase ──
-type TabKey = 'lead' | 'prancheta' | 'cotacao' | 'proposta' | 'contrato' | 'gantt' | 'os' | 'relatorio' | 'faturamento' | 'historico' | 'atividades';
+// ── Tabs avançadas (por fase) — Lead/Prancheta/Atividades/Histórico são seções de scroll ──
+type TabKey = 'cotacao' | 'proposta' | 'contrato' | 'gantt' | 'os' | 'relatorio' | 'faturamento';
 
 const ALL_LATER_PHASES: ProjectPhase[] = ['em_planejamento', 'cronograma_aprovado', 'os_distribuidas', 'em_execucao', 'relatorio_enviado', 'em_faturamento', 'aguardando_recebimento', 'concluido'];
 const ALL_PHASES: ProjectPhase[] = ['lead_capturado', 'em_levantamento', 'em_cotacao', 'cotacao_recebida', 'proposta_enviada', 'contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES, 'nao_aprovado'];
 
-const TABS: { key: TabKey; label: string; phases: ProjectPhase[] }[] = [
-  { key: 'lead', label: '🌐 Lead', phases: ['lead_capturado'] },
-  { key: 'prancheta', label: '📐 Prancheta', phases: ALL_PHASES },
-  { key: 'cotacao', label: '💰 Cotação', phases: ['em_cotacao', 'cotacao_recebida', 'proposta_enviada', 'contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
-  { key: 'proposta', label: '🎨 Proposta', phases: ['proposta_enviada', 'contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
-  { key: 'contrato', label: '📝 Contrato', phases: ['contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
-  { key: 'gantt', label: '📅 Gantt', phases: ['contrato_assinado', ...ALL_LATER_PHASES] },
-  { key: 'os', label: '🔧 O.S.', phases: ALL_LATER_PHASES },
-  { key: 'faturamento', label: '💳 Faturamento', phases: ['em_faturamento', 'aguardando_recebimento', 'concluido'] },
-  { key: 'relatorio', label: '📋 Relatório', phases: ['relatorio_enviado', 'em_faturamento', 'aguardando_recebimento', 'concluido'] },
-  { key: 'atividades', label: '💬 Atividades', phases: ALL_PHASES },
-  { key: 'historico', label: '⏳ Histórico', phases: ALL_PHASES },
+const ADVANCED_TABS: { key: TabKey; label: string; phases: ProjectPhase[] }[] = [
+  { key: 'cotacao',     label: '💰 Cotação',   phases: ['em_cotacao', 'cotacao_recebida', 'proposta_enviada', 'contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
+  { key: 'proposta',   label: '🎨 Proposta',   phases: ['proposta_enviada', 'contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
+  { key: 'contrato',   label: '📝 Contrato',   phases: ['contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
+  { key: 'gantt',      label: '📅 Gantt',      phases: ['contrato_assinado', ...ALL_LATER_PHASES] },
+  { key: 'os',         label: '🔧 O.S.',        phases: ALL_LATER_PHASES },
+  { key: 'faturamento',label: '💳 Faturamento', phases: ['em_faturamento', 'aguardando_recebimento', 'concluido'] },
+  { key: 'relatorio',  label: '📋 Relatório',  phases: ['relatorio_enviado', 'em_faturamento', 'aguardando_recebimento', 'concluido'] },
 ];
 
 const ProjectDetail: React.FC = () => {
@@ -233,7 +229,7 @@ const ProjectDetail: React.FC = () => {
   const { projects, loading, advancePhase, archiveAsNaoAprovado, reopenProject } = useProject();
   const { ordens, stats: osStats, vincularOS, desvincularOS } = useProjectOS(projectId ?? '');
   const { logFaseAvancada } = useProjectActivity(projectId ?? '');
-  const [activeTab, setActiveTab] = useState<TabKey>('prancheta');
+  const [activeTab, setActiveTab] = useState<TabKey>('cotacao');
   const [advanceLoading, setAdvanceLoading] = useState(false);
   const [advanceError, setAdvanceError] = useState('');
   // Modal não aprovado
@@ -254,25 +250,23 @@ const ProjectDetail: React.FC = () => {
 
   const project = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
 
-  // Determinar tabs visíveis
-  const visibleTabs = useMemo(() => {
+  // Determinar tabs avançadas visíveis para a fase atual
+  const visibleAdvancedTabs = useMemo(() => {
     if (!project) return [];
-    return TABS.filter((t) => t.phases.includes(project.fase));
+    return ADVANCED_TABS.filter((t) => t.phases.includes(project.fase));
   }, [project]);
 
-  // Auto-selecionar tab baseado na fase
+  // Auto-selecionar tab avançada baseada na fase
   useEffect(() => {
     if (!project) return;
-    if (project.fase === 'lead_capturado') setActiveTab('lead');
-    else if (project.fase === 'em_levantamento') setActiveTab('prancheta');
-    else if (['em_cotacao', 'cotacao_recebida'].includes(project.fase)) setActiveTab('cotacao');
-    else if (['proposta_enviada'].includes(project.fase)) setActiveTab('proposta');
+    if (['em_cotacao', 'cotacao_recebida'].includes(project.fase)) setActiveTab('cotacao');
+    else if (project.fase === 'proposta_enviada') setActiveTab('proposta');
     else if (['contrato_enviado', 'contrato_assinado'].includes(project.fase)) setActiveTab('contrato');
     else if (['em_planejamento', 'cronograma_aprovado'].includes(project.fase)) setActiveTab('gantt');
     else if (['os_distribuidas', 'em_execucao'].includes(project.fase)) setActiveTab('os');
-    else if (['relatorio_enviado'].includes(project.fase)) setActiveTab('relatorio');
+    else if (project.fase === 'relatorio_enviado') setActiveTab('relatorio');
     else if (['em_faturamento', 'aguardando_recebimento', 'concluido'].includes(project.fase)) setActiveTab('faturamento');
-    else if (project.fase === 'nao_aprovado') setActiveTab('historico');
+    // Para fases base (lead_capturado, em_levantamento, nao_aprovado), não há tab avançada para selecionar
   }, [project?.fase]);
 
   // ── Avançar fase ──
@@ -456,158 +450,191 @@ const ProjectDetail: React.FC = () => {
         <PhaseStepper currentPhase={project.fase} />
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <div className="border-b border-gray-100 px-2 flex gap-0 overflow-x-auto scrollbar-hide scroll-smooth"
-          style={{ WebkitOverflowScrolling: 'touch' }}>
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.key}
-              id={`tab-${tab.key}`}
-              onClick={() => { setActiveTab(tab.key); document.getElementById(`tab-${tab.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
-              className={`px-3 md:px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap flex-shrink-0 ${
-                activeTab === tab.key
-                  ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      {/* ═══════════════════════════════════════════════════
+           SEÇÕES BASE — Single Page Scroll
+           Lead + Prancheta + Atividades + Histórico sempre visíveis
+      ═══════════════════════════════════════════════════ */}
+
+      {/* SEÇÃO: Lead */}
+      {project.leadData && (
+        <div id="section-lead" className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+            <span className="text-base">🌐</span>
+            <h3 className="font-bold text-gray-800 text-sm">Dados do Lead</h3>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { label: 'Contato',        value: project.leadData.nomeContato },
+                { label: 'Empresa',        value: project.leadData.empresa },
+                { label: 'Telefone',       value: project.leadData.telefone },
+                { label: 'E-mail',         value: project.leadData.email },
+                { label: 'Tipo de Projeto',value: project.leadData.tipoProjetoPedido },
+                { label: 'Medidas Aprox.', value: project.leadData.medidasAproximadas },
+                { label: 'Finalidade',     value: project.leadData.finalidade },
+                { label: 'Localização',    value: project.leadData.localizacao },
+              ].map((field) => (
+                <div key={field.label} className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{field.label}</p>
+                  <p className="text-sm text-gray-900 font-medium mt-0.5">{field.value || '—'}</p>
+                </div>
+              ))}
+            </div>
+            {project.leadData.observacoes && (
+              <div className="bg-gray-50 rounded-xl p-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Observações</p>
+                <p className="text-sm text-gray-900 mt-0.5">{project.leadData.observacoes}</p>
+              </div>
+            )}
+          </div>
         </div>
+      )}
 
+      {/* SEÇÃO: Prancheta */}
+      <div id="section-prancheta" className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+          <span className="text-base">📐</span>
+          <h3 className="font-bold text-gray-800 text-sm">Prancheta Técnica</h3>
+        </div>
         <div className="p-5">
-          {/* Lead tab */}
-          {activeTab === 'lead' && project.leadData && (
-            <div className="space-y-4">
-              <h3 className="font-bold text-gray-900 flex items-center gap-2">🌐 Dados do Lead</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { label: 'Contato', value: project.leadData.nomeContato },
-                  { label: 'Empresa', value: project.leadData.empresa },
-                  { label: 'Telefone', value: project.leadData.telefone },
-                  { label: 'E-mail', value: project.leadData.email },
-                  { label: 'Tipo de Projeto', value: project.leadData.tipoProjetoPedido },
-                  { label: 'Medidas Aprox.', value: project.leadData.medidasAproximadas },
-                  { label: 'Finalidade', value: project.leadData.finalidade },
-                  { label: 'Localização', value: project.leadData.localizacao },
-                ].map((field) => (
-                  <div key={field.label} className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{field.label}</p>
-                    <p className="text-sm text-gray-900 font-medium mt-0.5">{field.value || '—'}</p>
-                  </div>
-                ))}
-              </div>
-              {project.leadData.observacoes && (
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Observações</p>
-                  <p className="text-sm text-gray-900 mt-0.5">{project.leadData.observacoes}</p>
-                </div>
-              )}
-            </div>
-          )}
-          {activeTab === 'lead' && !project.leadData && (
-            <div className="text-center py-8 text-gray-400">
-              <p className="text-sm">Este projeto não foi criado a partir de um lead.</p>
-            </div>
-          )}
-
-          {/* Prancheta tab */}
-          {activeTab === 'prancheta' && (
-            <ProjectPrancheta projectId={project.id} prancheta={project.prancheta} projectName={project.nome} clientName={project.clientName} leadId={project.leadId} />
-          )}
-
-          {/* Cotação tab — Sprint 2 */}
-          {activeTab === 'cotacao' && (
-            <ProjectCotacao projectId={project.id} leadId={project.leadId} categoriasCotacao={project.categoriasCotacao} escopoTexto={project.prancheta?.scopeNotes} projectName={project.nome} clientName={project.clientName} />
-          )}
-
-          {/* Proposta tab — Sprint 6: integração completa com Apresentações */}
-          {activeTab === 'proposta' && (
-            <ProjectProposta project={project} />
-          )}
-
-          {/* Contrato tab — Sprint 2 */}
-          {activeTab === 'contrato' && (
-            <ProjectContrato
-              projectId={project.id}
-              projectNome={project.nome}
-              clientName={project.clientName}
-              valorTotal={project.valorContrato}
-            />
-          )}
-
-          {/* Faturamento tab — Sprint 2 */}
-          {activeTab === 'faturamento' && (
-            <ProjectFaturamento
-              projectId={project.id}
-              projectNome={project.nome}
-              clientId={project.clientId || ''}
-              clientName={project.clientName}
-              valorSugerido={project.valorContrato || 0}
-            />
-          )}
-
-          {/* Relatório tab — Sprint 8: PDF + WhatsApp */}
-          {activeTab === 'relatorio' && (
-            <ProjectRelatorio
-              projectId={project.id}
-              project={project}
-              onSave={() => {}}
-            />
-          )}
-
-          {/* Gantt tab — Sprint Gantt Completo */}
-          {activeTab === 'gantt' && (
-            <ProjectGantt projectId={project.id} />
-          )}
-
-          {/* O.S. tab — Sprint B (Distribuição com sugestões do Gantt) + Sprint E3 (Adendos) */}
-          {activeTab === 'os' && (
-            <div className="space-y-6">
-              <ProjectOSDistribuicao project={project} />
-              <div className="border-t border-gray-200 pt-6">
-                <ProjectAdendoMudancasWrapper projectId={project.id} />
-              </div>
-            </div>
-          )}
-
-          {/* Atividades tab — Sprint 12 */}
-          {activeTab === 'atividades' && (
-            <ProjectActivity projectId={projectId ?? ''} />
-          )}
-
-          {/* Historico tab */}
-          {activeTab === 'historico' && (
-            <div className="space-y-4">
-              {project.naoAprovadoData && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-                  <p className="font-bold text-red-700 text-sm">⚠️ Projeto Não Aprovado</p>
-                  <p className="text-xs text-red-600">
-                    <strong>Motivo:</strong> {project.naoAprovadoData.motivoTexto}
-                    {project.naoAprovadoData.detalhes && ` — ${project.naoAprovadoData.detalhes}`}
-                  </p>
-                  <p className="text-[10px] text-red-500">
-                    Parou na fase: {PROJECT_PHASE_LABELS[project.naoAprovadoData.faseParou]}
-                  </p>
-                  {project.naoAprovadoData.tentativasReabertura && project.naoAprovadoData.tentativasReabertura.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-red-200">
-                      <p className="text-[10px] font-bold text-red-600 uppercase tracking-wide mb-1">Tentativas de Reabertura</p>
-                      {project.naoAprovadoData.tentativasReabertura.map((t, i) => (
-                        <div key={i} className="text-xs text-red-600 mb-1">
-                          <span className="font-medium">{t.porNome}</span>: {t.novaAbordagem}
-                          {t.descontoOferecido && ` (desconto: ${t.descontoOferecido})`}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              <PhaseHistory history={project.faseHistorico} />
-            </div>
-          )}
+          <ProjectPrancheta
+            projectId={project.id}
+            prancheta={project.prancheta}
+            projectName={project.nome}
+            clientName={project.clientName}
+            leadId={project.leadId}
+          />
         </div>
       </div>
+
+      {/* SEÇÃO: Atividades */}
+      <div id="section-atividades" className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+          <span className="text-base">💬</span>
+          <h3 className="font-bold text-gray-800 text-sm">Atividades e Comentários</h3>
+        </div>
+        <div className="p-5">
+          <ProjectActivity projectId={projectId ?? ''} />
+        </div>
+      </div>
+
+      {/* SEÇÃO: Histórico de Fases */}
+      <div id="section-historico" className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+          <span className="text-base">⏳</span>
+          <h3 className="font-bold text-gray-800 text-sm">Histórico de Fases</h3>
+        </div>
+        <div className="p-5 space-y-4">
+          {project.naoAprovadoData && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+              <p className="font-bold text-red-700 text-sm">⚠️ Projeto Não Aprovado</p>
+              <p className="text-xs text-red-600">
+                <strong>Motivo:</strong> {project.naoAprovadoData.motivoTexto}
+                {project.naoAprovadoData.detalhes && ` — ${project.naoAprovadoData.detalhes}`}
+              </p>
+              <p className="text-[10px] text-red-500">
+                Parou na fase: {PROJECT_PHASE_LABELS[project.naoAprovadoData.faseParou]}
+              </p>
+              {project.naoAprovadoData.tentativasReabertura && project.naoAprovadoData.tentativasReabertura.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-red-200">
+                  <p className="text-[10px] font-bold text-red-600 uppercase tracking-wide mb-1">Tentativas de Reabertura</p>
+                  {project.naoAprovadoData.tentativasReabertura.map((t, i) => (
+                    <div key={i} className="text-xs text-red-600 mb-1">
+                      <span className="font-medium">{t.porNome}</span>: {t.novaAbordagem}
+                      {t.descontoOferecido && ` (desconto: ${t.descontoOferecido})`}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <PhaseHistory history={project.faseHistorico} />
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════
+           TABS AVANÇADAS — apenas quando disponíveis para a fase atual
+      ═══════════════════════════════════════════════════ */}
+
+      {visibleAdvancedTabs.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          {/* Barra de tabs avançadas */}
+          <div className="border-b border-gray-100 px-2 flex gap-0 overflow-x-auto scroll-smooth"
+            style={{ WebkitOverflowScrolling: 'touch' }}>
+            {visibleAdvancedTabs.map((tab) => (
+              <button
+                key={tab.key}
+                id={`tab-${tab.key}`}
+                onClick={() => { setActiveTab(tab.key); document.getElementById(`tab-${tab.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
+                className={`px-3 md:px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap flex-shrink-0 ${
+                  activeTab === tab.key
+                    ? 'border-brand-600 text-brand-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="p-5">
+            {/* Cotação */}
+            {activeTab === 'cotacao' && (
+              <ProjectCotacao projectId={project.id} leadId={project.leadId} categoriasCotacao={project.categoriasCotacao} escopoTexto={project.prancheta?.scopeNotes} projectName={project.nome} clientName={project.clientName} />
+            )}
+
+            {/* Proposta */}
+            {activeTab === 'proposta' && (
+              <ProjectProposta project={project} />
+            )}
+
+            {/* Contrato */}
+            {activeTab === 'contrato' && (
+              <ProjectContrato
+                projectId={project.id}
+                projectNome={project.nome}
+                clientName={project.clientName}
+                valorTotal={project.valorContrato}
+              />
+            )}
+
+            {/* Faturamento */}
+            {activeTab === 'faturamento' && (
+              <ProjectFaturamento
+                projectId={project.id}
+                projectNome={project.nome}
+                clientId={project.clientId || ''}
+                clientName={project.clientName}
+                valorSugerido={project.valorContrato || 0}
+              />
+            )}
+
+            {/* Relatório */}
+            {activeTab === 'relatorio' && (
+              <ProjectRelatorio
+                projectId={project.id}
+                project={project}
+                onSave={() => {}}
+              />
+            )}
+
+            {/* Gantt */}
+            {activeTab === 'gantt' && (
+              <ProjectGantt projectId={project.id} />
+            )}
+
+            {/* O.S. */}
+            {activeTab === 'os' && (
+              <div className="space-y-6">
+                <ProjectOSDistribuicao project={project} />
+                <div className="border-t border-gray-200 pt-6">
+                  <ProjectAdendoMudancasWrapper projectId={project.id} />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Modal: Não Aprovado */}
       {showNaoAprovado && (
