@@ -85,7 +85,7 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
   const [secaoDados, setSecaoDados] = useState(true);
   const [secaoEscopo, setSecaoEscopo] = useState(true);
   const [secaoCotacao, setSecaoCotacao] = useState(true);
-  const [secaoFotos, setSecaoFotos] = useState(false);
+  const [secaoFotos, setSecaoFotos] = useState(true);
   const [copiedScope, setCopiedScope] = useState(false);
 
   // ── Transcrição de áudio (Web Speech API) ──
@@ -346,7 +346,7 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
     <div className="space-y-4">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur-sm py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center">
             <Pencil className="w-5 h-5 text-white" />
@@ -366,6 +366,81 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
         </button>
       </div>
 
+      {/* ══ SEÇÃO 4: Fotos e Croquis ══ */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <button onClick={() => setSecaoFotos(!secaoFotos)}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-indigo-100 rounded-lg flex items-center justify-center">
+              <Image className="w-3.5 h-3.5 text-indigo-600" />
+            </div>
+            <span className="text-sm font-bold text-gray-800">Fotos e Croquis</span>
+            {((form.fotosLevantamento?.length ?? 0) + (form.croquis?.length ?? 0)) > 0 && (
+              <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold">
+                {(form.fotosLevantamento?.length ?? 0) + (form.croquis?.length ?? 0)} arquivo(s)
+              </span>
+            )}
+          </div>
+          {secaoFotos ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </button>
+
+        {secaoFotos && (
+          <div className="px-5 pb-5 space-y-5 border-t border-gray-100 pt-4">
+            {/* Fotos */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-gray-600 flex items-center gap-1.5"><Image className="w-3.5 h-3.5" /> Fotos de Levantamento</p>
+                <button onClick={() => { setUploadType('foto'); fileRef.current?.click(); }} disabled={uploading}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100">
+                  {uploading && uploadType === 'foto' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                  Adicionar Foto
+                </button>
+              </div>
+              {(form.fotosLevantamento?.length ?? 0) > 0 ? (
+                <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                  {form.fotosLevantamento!.map((url, i) => (
+                    <div key={i} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-square bg-white">
+                      <img src={url} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
+                      <button onClick={() => removeFile('foto', i)}
+                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-gray-400 text-center py-4">Nenhuma foto adicionada</p>}
+            </div>
+
+            {/* Croquis */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-gray-600 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Croquis / Desenhos / PDFs</p>
+                <button onClick={() => { setUploadType('croqui'); fileRef.current?.click(); }} disabled={uploading}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100">
+                  {uploading && uploadType === 'croqui' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                  Upload
+                </button>
+              </div>
+              {(form.croquis?.length ?? 0) > 0 ? (
+                <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                  {form.croquis!.map((url, i) => (
+                    <div key={i} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-square bg-white">
+                      {url.endsWith('.pdf')
+                        ? <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50"><FileText className="w-8 h-8 text-gray-400" /><span className="text-[9px] text-gray-400 mt-1">PDF</span></div>
+                        : <img src={url} alt={`Croqui ${i + 1}`} className="w-full h-full object-cover" />}
+                      <button onClick={() => removeFile('croqui', i)}
+                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-xs text-gray-400 text-center py-4">Nenhum croqui adicionado</p>}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ══ SEÇÃO 1: Dados Técnicos ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
         <button onClick={() => setSecaoDados(!secaoDados)}
@@ -383,7 +458,7 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
         </button>
 
         {secaoDados && (
-          <div className="px-5 pb-5 space-y-4 border-t border-gray-100">
+          <div className="px-5 pb-5 space-y-4 border-t border-gray-100 pt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
               <Field label="Finalidade *" value={form.finalidade || ''} onChange={(v) => update('finalidade', v)} placeholder="Ex: Armazenamento de perecíveis" />
               <Field label="Localização" value={form.localizacao || ''} onChange={(v) => update('localizacao', v)} placeholder="Ex: Indaiatuba, SP" />
@@ -499,13 +574,6 @@ Exemplo:
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none focus:ring-2 focus:ring-gray-400 outline-none"
               />
             </div>
-
-            {/* Botão gerar escopo */}
-            <button onClick={gerarEscopo}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors w-full justify-center">
-              <ClipboardList className="w-4 h-4" />
-              ✨ Gerar Escopo para Cotação
-            </button>
           </div>
         )}
       </div>
@@ -584,120 +652,50 @@ Exemplo:
                 Adicione os materiais e equipamentos que precisam de cotação.
               </p>
             )}
+          </div>
+        )}
+      </div>
 
-            {/* Escopo Gerado */}
-            {form.solicitacaoCotacao && (
-              <div className="bg-gray-900 rounded-2xl overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-                  <p className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                    Escopo Gerado — Pronto para Envio
-                  </p>
-                  <div className="flex gap-2">
-                    <button onClick={copiarEscopo}
-                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                        copiedScope ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      }`}>
-                      {copiedScope ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      {copiedScope ? 'Copiado!' : 'Copiar'}
-                    </button>
-                    <button onClick={downloadEscopo}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors">
-                      <Download className="w-3 h-3" /> .txt
-                    </button>
-                  </div>
-                </div>
-                <pre className="px-4 py-4 text-[11px] text-gray-100 font-mono whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
-                  {form.solicitacaoCotacao}
-                </pre>
-              </div>
-            )}
+      {/* ══ Botão Gerar Escopo (independente — abaixo de todos os dados e itens) ══ */}
+      <button onClick={gerarEscopo}
+        className="flex items-center gap-2 px-4 py-3.5 bg-blue-600 text-white rounded-2xl text-sm font-bold hover:bg-blue-700 transition-all w-full justify-center shadow-sm hover:shadow-md active:scale-[0.98]">
+        <ClipboardList className="w-5 h-5" />
+        ✨ Gerar Escopo para Cotação
+      </button>
 
-            {/* Botão Regenerar */}
-            {form.solicitacaoCotacao && (
-              <button onClick={gerarEscopo}
-                className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-50 transition-colors">
-                <ClipboardList className="w-3.5 h-3.5" /> Regenerar Escopo
+      {/* ══ Escopo Gerado (externo às seções colapsáveis) ══ */}
+      {form.solicitacaoCotacao && (
+        <div className="bg-gray-900 rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+            <p className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              Escopo Gerado — Pronto para Envio
+            </p>
+            <div className="flex gap-2">
+              <button onClick={copiarEscopo}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                  copiedScope ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}>
+                {copiedScope ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copiedScope ? 'Copiado!' : 'Copiar'}
               </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ══ SEÇÃO 4: Fotos e Croquis ══ */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <button onClick={() => setSecaoFotos(!secaoFotos)}
-          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-indigo-100 rounded-lg flex items-center justify-center">
-              <Image className="w-3.5 h-3.5 text-indigo-600" />
-            </div>
-            <span className="text-sm font-bold text-gray-800">Fotos e Croquis</span>
-            {((form.fotosLevantamento?.length ?? 0) + (form.croquis?.length ?? 0)) > 0 && (
-              <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold">
-                {(form.fotosLevantamento?.length ?? 0) + (form.croquis?.length ?? 0)} arquivo(s)
-              </span>
-            )}
-          </div>
-          {secaoFotos ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-        </button>
-
-        {secaoFotos && (
-          <div className="px-5 pb-5 space-y-5 border-t border-gray-100 pt-4">
-            {/* Fotos */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-gray-600 flex items-center gap-1.5"><Image className="w-3.5 h-3.5" /> Fotos de Levantamento</p>
-                <button onClick={() => { setUploadType('foto'); fileRef.current?.click(); }} disabled={uploading}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100">
-                  {uploading && uploadType === 'foto' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                  Adicionar Foto
-                </button>
-              </div>
-              {(form.fotosLevantamento?.length ?? 0) > 0 ? (
-                <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                  {form.fotosLevantamento!.map((url, i) => (
-                    <div key={i} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-square bg-white">
-                      <img src={url} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
-                      <button onClick={() => removeFile('foto', i)}
-                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="text-xs text-gray-400 text-center py-4">Nenhuma foto adicionada</p>}
-            </div>
-
-            {/* Croquis */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-gray-600 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Croquis / Desenhos / PDFs</p>
-                <button onClick={() => { setUploadType('croqui'); fileRef.current?.click(); }} disabled={uploading}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100">
-                  {uploading && uploadType === 'croqui' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                  Upload
-                </button>
-              </div>
-              {(form.croquis?.length ?? 0) > 0 ? (
-                <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                  {form.croquis!.map((url, i) => (
-                    <div key={i} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-square bg-white">
-                      {url.endsWith('.pdf')
-                        ? <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50"><FileText className="w-8 h-8 text-gray-400" /><span className="text-[9px] text-gray-400 mt-1">PDF</span></div>
-                        : <img src={url} alt={`Croqui ${i + 1}`} className="w-full h-full object-cover" />}
-                      <button onClick={() => removeFile('croqui', i)}
-                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="text-xs text-gray-400 text-center py-4">Nenhum croqui adicionado</p>}
+              <button onClick={downloadEscopo}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors">
+                <Download className="w-3 h-3" /> .txt
+              </button>
+              <button onClick={gerarEscopo}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-blue-700 text-blue-100 hover:bg-blue-600 transition-colors">
+                <ClipboardList className="w-3 h-3" /> Regenerar
+              </button>
             </div>
           </div>
-        )}
-      </div>
+          <pre className="px-4 py-4 text-[11px] text-gray-100 font-mono whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
+            {form.solicitacaoCotacao}
+          </pre>
+        </div>
+      )}
+
+
 
       {/* ══ Botão Enviar para Cotação ══ */}
       <div className={`rounded-2xl p-5 flex items-center justify-between gap-4 ${
