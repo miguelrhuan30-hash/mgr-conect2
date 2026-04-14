@@ -155,7 +155,9 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
   }, []);
 
   // ── Gerador de Escopo ───────────────────────────────────────────────────
-  const gerarEscopo = () => {
+  // Gera o texto, atualiza o form E já salva no Firestore automaticamente.
+  // Assim o usuário não precisa clicar em "Salvar" após gerar.
+  const gerarEscopo = async () => {
     const linhas: string[] = [];
     const today = new Date().toLocaleDateString('pt-BR');
 
@@ -214,9 +216,22 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
     linhas.push('═'.repeat(60));
 
     const texto = linhas.join('\n');
-    update('solicitacaoCotacao', texto);
-    update('escopoGeradoEm', Timestamp.now() as any);
+    const escopoGeradoEm = Timestamp.now();
+
+    // Atualiza state local
+    const formAtualizado = { ...form, solicitacaoCotacao: texto, escopoGeradoEm: escopoGeradoEm as any };
+    setForm(formAtualizado);
     setSecaoCotacao(true);
+    setSaved(false);
+
+    // Auto-salva imediatamente com o escopo gerado — sem precisar clicar em Salvar
+    setSaving(true);
+    try {
+      await savePrancheta(projectId, formAtualizado);
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Salvar ──────────────────────────────────────────────────────────────
@@ -244,19 +259,20 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
 
   const handleEnviarCotacao = async () => {
     if (!form.scopeNotes?.trim() && !form.solicitacaoCotacao?.trim()) {
-      if (!window.confirm('Nenhum escopo foi escrito ainda. Deseja enviar para cotação mesmo assim?')) return;
+      if (!window.confirm('Nenhum escopo foi preenchido ainda. Deseja avançar para a aba Cotação mesmo assim?')) return;
     }
     setEnviandoCotacao(true);
     try {
-      // 1. Salvar prancheta
+      // 1. Salvar prancheta com estado atual (auto-save antes de avançar fase)
       await savePrancheta(projectId, form);
+      setSaved(true);
       // 2. Avançar fase do projeto para em_cotacao
-      const result = await advancePhase(projectId, 'em_cotacao', 'Escopo enviado para cotação de materiais');
+      const result = await advancePhase(projectId, 'em_cotacao', 'Prancheta concluída — card avançado para aba Cotação');
       if (!result.success) {
-        // Se a validação não permitir, forçar mesmo assim (prancheta estava como esboço)
-        await advancePhase(projectId, 'em_cotacao', 'Escopo enviado para cotação de materiais');
+        // Tenta forçar mesmo assim (prancheta era esboço)
+        await advancePhase(projectId, 'em_cotacao', 'Prancheta concluída — card avançado para aba Cotação');
       }
-      // 3. Atualizar sub-status do lead diretamente no Firestore
+      // 3. Atualizar sub-status do lead
       if (leadId) {
         try {
           await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
@@ -697,25 +713,25 @@ Exemplo:
 
 
 
-      {/* ══ Botão Enviar para Cotação ══ */}
+      {/* ══ Botão Avançar para Cotação ══ */}
       <div className={`rounded-2xl p-5 flex items-center justify-between gap-4 ${
         cotacaoEnviada ? 'bg-cyan-100 border border-cyan-300' : 'bg-cyan-50 border border-cyan-200'
       }`}>
         <div>
           <p className="text-sm font-bold text-cyan-900">
-            {cotacaoEnviada ? '📧 Escopo enviado para Cotação!' : '📤 Pronto para solicitar cotação?'}
+            {cotacaoEnviada ? '🚀 Card avançado para a aba Cotação!' : '📂 Prancheta concluída?'}
           </p>
           <p className="text-xs text-cyan-600 mt-0.5">
             {cotacaoEnviada
-              ? 'Card movido para a aba Cotação. Lead atualizado para "🟠 Cotar Material".'
-              : 'Envie o escopo para fornecedores. O card sairá da Prancheta e irá para Cotação no funil.'}
+              ? 'Prancheta salva. Vá para a aba Cotação para registrar fornecedores e solicitar cotações.'
+              : 'Salva a prancheta e avança o card para a etapa de Cotação. A solicitação de cotação à fornecedores é feita diretamente na aba Cotação.'}
           </p>
         </div>
         {!cotacaoEnviada && (
           <button onClick={handleEnviarCotacao} disabled={enviandoCotacao}
             className="flex items-center gap-1.5 px-5 py-2.5 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 disabled:opacity-50 flex-shrink-0 transition-colors">
             {enviandoCotacao ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Enviar para Cotação 🟠
+            Avançar para Cotação
           </button>
         )}
       </div>
