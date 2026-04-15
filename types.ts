@@ -342,6 +342,62 @@ export interface IntelNote {
   createdAt: Timestamp;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// INTEL WORKSPACE v2 — Strategic Linking System (Sprint IW-01)
+// Módulo autônomo, sem dependência de API Gemini.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type IntelToolId = 'eisenhower' | 'ishikawa' | 'canvas' | 'bpmn' | 'roadmap';
+
+export type EisenhowerSlot  = 'do' | 'plan' | 'dele' | 'elim';
+export type IshikawaSlot    = 'metodo' | 'mao_de_obra' | 'maquina' | 'material' | 'meio' | 'medicao';
+export type CanvasSlot      = 'parceiros' | 'atividades' | 'recursos' | 'proposta'
+                            | 'relacionamento' | 'canais' | 'clientes' | 'custos' | 'receitas';
+export type BpmnSlot        = 'lane_comercial' | 'lane_tecnico' | 'lane_admin' | 'lane_financeiro';
+export type RoadmapSlot     = 'q1' | 'q2' | 'q3' | 'q4' | 'backlog';
+
+export type IntelSlotKey =
+  | EisenhowerSlot | IshikawaSlot | CanvasSlot | BpmnSlot | RoadmapSlot;
+
+/** Unidade atômica de informação — o que vira [[link]] */
+export interface IntelItem {
+  id: string;
+  text: string;              // Conteúdo do link (max 500 chars)
+  toolId: IntelToolId;       // Ferramenta onde foi criado
+  slotKey: IntelSlotKey;     // Slot específico de origem
+  deleted?: boolean;         // Soft-delete (preserva backlinks)
+  createdBy: string;
+  createdByName: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+/** Registro de referência entre itens — bidirecional */
+export interface IntelLink {
+  id: string;
+  sourceItemId: string;        // ID do IntelItem referenciado
+  sourceItemText: string;      // Texto denormalizado para display
+  targetToolId: IntelToolId;   // Ferramenta onde a referência existe
+  targetSlotKey: IntelSlotKey; // Slot onde aparece o [[link]]
+  createdBy: string;
+  createdAt: Timestamp;
+}
+
+/** Estado persistido de uma ferramenta no Firestore */
+export interface IntelToolState {
+  toolId: IntelToolId;
+  slots: Partial<Record<IntelSlotKey, string>>; // texto raw (pode ter [[refs]])
+  updatedAt: Timestamp;
+  updatedBy: string;
+}
+
+/** Token resultado do parser de [[...]] */
+export interface ParsedLinkToken {
+  type: 'text' | 'link';
+  content: string;             // texto puro ou innerText do link
+  resolvedItem?: IntelItem;    // undefined = link não encontrado
+}
+
 // ─── Sprint Emergencial: Diagnóstico de Erro Estruturado ─────────────────────
 // Equivalente ao que aparece no console/DevTools do navegador
 export interface ErrorDetail {
@@ -1075,6 +1131,10 @@ const _BASE_COLLECTIONS = {
   // Sprint RACI — Matriz de Responsabilidades do Flow de Atendimento
   RACI_CONFIG: 'raci_config',
   FORNECEDORES: 'fornecedores',
+  // Intel Workspace v2 — Strategic Linking System (Sprint IW-01)
+  INTEL_ITEMS:      'intel_items',
+  INTEL_LINKS:      'intel_links',
+  INTEL_TOOL_STATE: 'intel_tool_state',
 
 } as const;
 

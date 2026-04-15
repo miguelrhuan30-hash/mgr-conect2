@@ -32,7 +32,7 @@ const LandingPageEditor= lazy(() => import('./components/LandingPageEditor'));
 const SystemLogs       = lazy(() => import('./components/SystemLogs'));
 const TechnicianStats  = lazy(() => import('./components/TechnicianStats'));
 const CampaignManagement=lazy(() => import('./components/CampaignManagement'));
-const IntelModule      = lazy(() => import('./components/IntelModule'));
+const IntelWorkspace   = lazy(() => import('./components/IntelWorkspace'));
 const IntelGuard       = lazy(() => import('./components/IntelGuard'));
 
 // ─────────────────────────────────────────────
@@ -339,8 +339,6 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageSectors') ? <SectorManagement /> : <Navigate to="/app" />} />
           <Route path="locais"
             element={hasPermission('canManageUsers') ? <WorkLocations /> : <Navigate to="/app" />} />
-          <Route path="inteligencia"
-            element={<IntelGuard><IntelModule /></IntelGuard>} />
 
           {/* ════════════════════════════════════════
               SPRINT 30 — Ativos de Clientes
@@ -443,6 +441,12 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageProjects') ? <GanttGerencial /> : <Navigate to="/app" />} />
           <Route path="fornecedores"
             element={hasPermission('canManageProjects') ? <Fornecedores /> : <Navigate to="/app" />} />
+
+          {/* ════════════════════════════════════════
+              SPRINT IW-01 — Intel Workspace v2
+          ════════════════════════════════════════ */}
+          <Route path="inteligencia"
+            element={<IntelGuard><IntelWorkspace /></IntelGuard>} />
 
         </Route>{/* fim /app */}
 

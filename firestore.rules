@@ -201,6 +201,40 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && isManager();
     }
 
+    // ── Intel Workspace v2 (Sprint IW-01) ────────────────────────────────────
+    function isIntelAuthorized() {
+      let role = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return role in ['admin', 'developer', 'intel_admin', 'intel_analyst', 'intel_viewer'];
+    }
+    function isIntelReadOnly() {
+      let role = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return role == 'intel_viewer';
+    }
+
+    match /intel_items/{itemId} {
+      allow read: if isAuthenticated() && isIntelAuthorized();
+      allow create: if isAuthenticated() && isIntelAuthorized() && !isIntelReadOnly()
+        && request.resource.data.text.size() <= 500
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAuthenticated() && isIntelAuthorized() && !isIntelReadOnly()
+        && request.resource.data.text.size() <= 500;
+      allow delete: if isAuthenticated() && isIntelAuthorized() && !isIntelReadOnly();
+    }
+
+    match /intel_links/{linkId} {
+      allow read: if isAuthenticated() && isIntelAuthorized();
+      allow create: if isAuthenticated() && isIntelAuthorized() && !isIntelReadOnly()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if false; // Links são imutáveis — delete e recrie
+      allow delete: if isAuthenticated() && isIntelAuthorized() && !isIntelReadOnly();
+    }
+
+    match /intel_tool_state/{toolId} {
+      allow read: if isAuthenticated() && isIntelAuthorized();
+      allow write: if isAuthenticated() && isIntelAuthorized() && !isIntelReadOnly()
+        && toolId in ['eisenhower', 'ishikawa', 'canvas', 'bpmn', 'roadmap'];
+    }
+
     // ── Regra padrão: apenas autenticados ────────────────────────────────
     match /{document=**} {
       allow read, write: if isAuthenticated();
