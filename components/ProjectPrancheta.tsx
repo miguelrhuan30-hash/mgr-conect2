@@ -55,7 +55,7 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
   const [form, setForm] = useState<ProjectV2Prancheta>({
     dimensoes: '',
     tipoEquipamento: '',
-    capacidadeBTU: undefined,
+    capacidadeBTU: null as any,
     voltagem: '',
     tipoGas: '',
     isolamento: '',
@@ -486,7 +486,7 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
               <div>
                 <label className="text-xs font-bold text-gray-600 block mb-1">Capacidade (BTU)</label>
                 <input type="number" value={form.capacidadeBTU || ''} placeholder="Ex: 60000"
-                  onChange={(e) => update('capacidadeBTU', e.target.value ? Number(e.target.value) : undefined)}
+                  onChange={(e) => update('capacidadeBTU', e.target.value ? Number(e.target.value) : null as any)}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
               </div>
               <SelectField label="Voltagem" value={form.voltagem || ''} onChange={(v) => update('voltagem', v)} options={VOLTAGENS} />

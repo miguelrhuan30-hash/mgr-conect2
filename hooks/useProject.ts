@@ -16,6 +16,19 @@ import {
   ProjectLead, CollectionName, PROJECT_TRANSITIONS, PROJECT_PHASE_LABELS,
 } from '../types';
 
+// ── Sanitiza prancheta: remove campos undefined antes de gravar no Firestore ──
+// Firestore não aceita undefined — campos opcionais ausentes devem ser null ou omitidos.
+function sanitizePrancheta(data: ProjectV2Prancheta): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+    // campos undefined são simplesmente omitidos — Firestore usará null ou o valor anterior
+  }
+  return result;
+}
+
 // ── Validações de requisitos por fase destino ──
 const TRANSITION_REQUIREMENTS: Partial<
   Record<ProjectPhase, (p: ProjectV2) => { valid: boolean; message?: string }>
@@ -250,9 +263,11 @@ export const useProject = () => {
   const savePrancheta = useCallback(
     async (projectId: string, data: ProjectV2Prancheta): Promise<void> => {
       if (!currentUser) return;
+      // sanitizePrancheta remove todos os campos undefined — o Firestore rejeita undefined.
+      const sanitized = sanitizePrancheta(data);
       await updateDoc(doc(db, CollectionName.PROJECTS_V2, projectId), {
         prancheta: {
-          ...data,
+          ...sanitized,
           preenchidoPor: currentUser.uid,
           preenchidoPorNome: userProfile?.displayName || '',
           preenchidoEm: Timestamp.now(),
