@@ -235,6 +235,26 @@ service cloud.firestore {
         && toolId in ['eisenhower', 'ishikawa', 'canvas', 'bpmn', 'roadmap'];
     }
 
+    // ── Sprint IW-02: Multi-Análise Ishikawa ─────────────────────────────────
+    match /hub_ishikawa_analyses/{analysisId} {
+      allow read: if isAuthenticated() && isIntelAuthorized();
+      allow create: if isAuthenticated()
+        && isIntelAuthorized()
+        && !isIntelReadOnly()
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() >= 3
+        && request.resource.data.nome.size() <= 120
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.deleted == false;
+      allow update: if isAuthenticated()
+        && isIntelAuthorized()
+        && !isIntelReadOnly()
+        && !request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasAny(['createdBy', 'createdAt', 'createdByName']);
+      allow delete: if false;
+    }
+
     // ── Regra padrão: apenas autenticados ────────────────────────────────
     match /{document=**} {
       allow read, write: if isAuthenticated();

@@ -391,6 +391,22 @@ export interface IntelToolState {
   updatedBy: string;
 }
 
+// ── Sprint IW-02: Multi-Análise Ishikawa ────────────────────────────────────
+/** Uma análise Ishikawa nomeada e persistida individualmente no Firestore */
+export interface IshikawaAnalysis {
+  id: string;
+  nome: string;                                     // Ex: "Alta taxa de retrabalho técnico"
+  problema: string;                                 // Cabeça do peixe — campo central
+  slots: Partial<Record<IshikawaSlot, string>>;     // Os 6Ms (metodo, mao_de_obra, etc.)
+  deleted: boolean;                                 // Soft-delete (preserva histórico)
+  createdBy: string;                                // UID do autor
+  createdByName: string;                            // Nome denormalizado
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  updatedBy: string;                                // UID do último editor
+}
+
+
 /** Token resultado do parser de [[...]] */
 export interface ParsedLinkToken {
   type: 'text' | 'link';
@@ -1132,9 +1148,11 @@ const _BASE_COLLECTIONS = {
   RACI_CONFIG: 'raci_config',
   FORNECEDORES: 'fornecedores',
   // Intel Workspace v2 — Strategic Linking System (Sprint IW-01)
-  INTEL_ITEMS:      'intel_items',
-  INTEL_LINKS:      'intel_links',
-  INTEL_TOOL_STATE: 'intel_tool_state',
+  INTEL_ITEMS:        'intel_items',
+  INTEL_LINKS:        'intel_links',
+  INTEL_TOOL_STATE:   'intel_tool_state',
+  // Sprint IW-02 — Multi-Análise Ishikawa
+  ISHIKAWA_ANALYSES:  'hub_ishikawa_analyses',
 
 } as const;
 

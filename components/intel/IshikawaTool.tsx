@@ -1,10 +1,13 @@
 /**
- * components/intel/IshikawaTool.tsx — Intel Workspace v2 (Sprint IW-01)
- * Diagrama de Ishikawa (Espinha de Peixe): 6 causas editáveis com [[linking]].
+ * components/intel/IshikawaTool.tsx — Intel Workspace v2 (Sprint IW-02)
+ * Multi-Análise: Lista de casos → Editor individual por análise.
+ * Substituiu o modelo single-doc pelo sistema de cards nomeados.
  */
 import React, { useState } from 'react';
-import { Loader2, Edit3, Check, AlertTriangle } from 'lucide-react';
-import { IntelToolState, IntelItem, IntelToolId, IshikawaSlot, IntelSlotKey } from '../../types';
+import { Loader2, Edit3, Check, AlertTriangle, ArrowLeft, Fish } from 'lucide-react';
+import { IntelItem, IntelToolId, IshikawaSlot, IshikawaAnalysis } from '../../types';
+import { useIshikawaAnalyses } from '../../hooks/useIshikawaAnalyses';
+import IshikawaAnalysisList from './IshikawaAnalysisList';
 import LinkRenderer from './LinkRenderer';
 
 interface CausaConfig {
@@ -18,40 +21,67 @@ interface CausaConfig {
 }
 
 const CAUSAS: CausaConfig[] = [
-  { key: 'metodo',      label: 'Método',       emoji: '📐', color: 'bg-blue-50',   border: 'border-blue-200',   header: 'bg-blue-500 text-white',   placeholder: 'Processos, procedimentos, padrões inadequados...' },
-  { key: 'mao_de_obra', label: 'Mão de Obra',  emoji: '👥', color: 'bg-green-50',  border: 'border-green-200',  header: 'bg-green-500 text-white',  placeholder: 'Treinamento, habilidades, motivação da equipe...' },
-  { key: 'maquina',     label: 'Máquina',      emoji: '⚙️', color: 'bg-slate-50',  border: 'border-slate-200',  header: 'bg-slate-500 text-white',  placeholder: 'Ferramentas, equipamentos, manutenção...' },
-  { key: 'material',    label: 'Material',     emoji: '📦', color: 'bg-orange-50', border: 'border-orange-200', header: 'bg-orange-500 text-white', placeholder: 'Insumos, qualidade de materiais, fornecedores...' },
-  { key: 'meio',        label: 'Meio Ambiente', emoji: '🌍', color: 'bg-teal-50',   border: 'border-teal-200',   header: 'bg-teal-500 text-white',   placeholder: 'Condições físicas, temperatura, ambiente de trabalho...' },
-  { key: 'medicao',     label: 'Medição',      emoji: '📊', color: 'bg-purple-50', border: 'border-purple-200', header: 'bg-purple-500 text-white', placeholder: 'Indicadores, métricas, métodos de acompanhamento...' },
+  { key: 'metodo',      label: 'Método',        emoji: '📐', color: 'bg-blue-50',   border: 'border-blue-200',   header: 'bg-blue-500 text-white',   placeholder: 'Processos, procedimentos, padrões inadequados...' },
+  { key: 'mao_de_obra', label: 'Mão de Obra',   emoji: '👥', color: 'bg-green-50',  border: 'border-green-200',  header: 'bg-green-500 text-white',  placeholder: 'Treinamento, habilidades, motivação da equipe...' },
+  { key: 'maquina',     label: 'Máquina',        emoji: '⚙️', color: 'bg-slate-50',  border: 'border-slate-200',  header: 'bg-slate-500 text-white',  placeholder: 'Ferramentas, equipamentos, manutenção...' },
+  { key: 'material',    label: 'Material',       emoji: '📦', color: 'bg-orange-50', border: 'border-orange-200', header: 'bg-orange-500 text-white', placeholder: 'Insumos, qualidade de materiais, fornecedores...' },
+  { key: 'meio',        label: 'Meio Ambiente',  emoji: '🌍', color: 'bg-teal-50',   border: 'border-teal-200',   header: 'bg-teal-500 text-white',   placeholder: 'Condições físicas, temperatura, ambiente de trabalho...' },
+  { key: 'medicao',     label: 'Medição',        emoji: '📊', color: 'bg-purple-50', border: 'border-purple-200', header: 'bg-purple-500 text-white', placeholder: 'Indicadores, métricas, métodos de acompanhamento...' },
 ];
 
+// ── Props da ferramenta (inalteradas externamente) ──────────────────────────
 interface IshikawaToolProps {
-  toolState: IntelToolState | null;
+  toolState: any;         // não utilizado nesta versão (legado mantido para compatibilidade)
   loading: boolean;
   allItems: IntelItem[];
-  onSaveSlot: (slotKey: IntelSlotKey, text: string) => void;
+  onSaveSlot: (slotKey: any, text: string) => void; // legado — não utilizado
   onNavigate: (toolId: IntelToolId) => void;
 }
 
-const IshikawaTool: React.FC<IshikawaToolProps> = ({
-  toolState, loading, allItems, onSaveSlot, onNavigate,
+// ── Editor de uma análise específica ────────────────────────────────────────
+interface EditorProps {
+  analysis: IshikawaAnalysis;
+  allItems: IntelItem[];
+  onNavigate: (toolId: IntelToolId) => void;
+  onBack: () => void;
+  updateSlot: (id: string, slot: IshikawaSlot, text: string) => void;
+  updateProblema: (id: string, text: string) => void;
+}
+
+const IshikawaEditor: React.FC<EditorProps> = ({
+  analysis, allItems, onNavigate, onBack, updateSlot, updateProblema,
 }) => {
-  const [drafts, setDrafts] = useState<Partial<Record<IshikawaSlot, string>>>({});
+  const [drafts, setDrafts] = useState<Partial<Record<IshikawaSlot | 'problema', string>>>({});
   const [editingSlot, setEditingSlot] = useState<IshikawaSlot | null>(null);
-  const [problema, setProblema] = useState(toolState?.slots['metodo' as IshikawaSlot] ?? '');
+  const [editingProblema, setEditingProblema] = useState(false);
 
-  const getValue = (key: IshikawaSlot): string =>
-    drafts[key] ?? toolState?.slots[key] ?? '';
+  const getSlotValue = (key: IshikawaSlot): string =>
+    drafts[key] ?? analysis.slots[key] ?? '';
 
-  if (loading) return (
-    <div className="flex justify-center py-24">
-      <Loader2 className="animate-spin text-red-600 w-10 h-10" />
-    </div>
-  );
+  const getProblemaValue = (): string =>
+    drafts['problema'] ?? analysis.problema ?? '';
 
   return (
     <div className="space-y-4">
+
+      {/* Header do editor: breadcrumb + voltar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          id="btn-voltar-lista-ishikawa"
+          onClick={onBack}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-gray-200 hover:border-red-200"
+        >
+          <ArrowLeft size={14} />
+          Análises
+        </button>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Fish size={16} className="text-red-600 flex-shrink-0" />
+          <span className="text-sm font-extrabold text-gray-800 truncate">
+            {analysis.nome}
+          </span>
+        </div>
+      </div>
+
       {/* Cabeça do peixe — Problema/Efeito */}
       <div className="bg-red-600 rounded-2xl p-5 text-white shadow-lg shadow-red-600/20">
         <div className="flex items-center gap-3 mb-3">
@@ -61,22 +91,46 @@ const IshikawaTool: React.FC<IshikawaToolProps> = ({
             <p className="text-[10px] opacity-80">Qual é o problema que você quer analisar?</p>
           </div>
         </div>
-        <input
-          value={toolState?.slots['medicao' as IshikawaSlot] ?? problema}
-          onChange={e => {
-            setProblema(e.target.value);
-            onSaveSlot('medicao', e.target.value);
-          }}
-          placeholder="Descreva o problema central que está sendo investigado..."
-          className="w-full bg-white/20 border border-white/30 rounded-xl px-4 py-2.5 text-sm font-medium placeholder:text-white/50 focus:outline-none focus:bg-white/30 text-white"
-        />
+        {editingProblema ? (
+          <div className="space-y-1">
+            <textarea
+              autoFocus
+              value={getProblemaValue()}
+              onChange={e => {
+                const v = e.target.value;
+                setDrafts(d => ({ ...d, problema: v }));
+                updateProblema(analysis.id, v);
+              }}
+              onBlur={() => setEditingProblema(false)}
+              onKeyDown={e => { if (e.key === 'Escape') setEditingProblema(false); }}
+              rows={3}
+              maxLength={500}
+              placeholder="Descreva o problema central que está sendo investigado..."
+              className="w-full bg-white/20 border border-white/30 rounded-xl px-4 py-2.5 text-sm font-medium placeholder:text-white/50 focus:outline-none focus:bg-white/30 text-white resize-none"
+            />
+            <p className="text-[9px] opacity-60 text-right">ESC para fechar • auto-salvo</p>
+          </div>
+        ) : (
+          <div
+            className="w-full bg-white/20 border border-white/30 rounded-xl px-4 py-2.5 text-sm font-medium cursor-text min-h-[44px] hover:bg-white/25 transition-colors"
+            onClick={() => setEditingProblema(true)}
+          >
+            {getProblemaValue() ? (
+              <span>{getProblemaValue()}</span>
+            ) : (
+              <span className="text-white/50 italic flex items-center gap-1.5">
+                <Edit3 size={12} /> Clique para descrever o problema central...
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 6 Causas em grid 2×3 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {CAUSAS.map(causa => {
           const isEditing = editingSlot === causa.key;
-          const value = getValue(causa.key);
+          const value = getSlotValue(causa.key);
 
           return (
             <div key={causa.key} className={`rounded-2xl border-2 overflow-hidden transition-shadow hover:shadow-md ${causa.border}`}>
@@ -106,7 +160,7 @@ const IshikawaTool: React.FC<IshikawaToolProps> = ({
                       onChange={e => {
                         const v = e.target.value;
                         setDrafts(d => ({ ...d, [causa.key]: v }));
-                        onSaveSlot(causa.key, v);
+                        updateSlot(analysis.id, causa.key, v);
                       }}
                       onKeyDown={e => { if (e.key === 'Escape') setEditingSlot(null); }}
                       placeholder={`${causa.placeholder}\n\nUse [[item]] para linkar com outra ferramenta.`}
@@ -139,6 +193,57 @@ const IshikawaTool: React.FC<IshikawaToolProps> = ({
         🐟 Diagrama de Ishikawa (6M) — Use <code className="bg-gray-100 px-1 rounded font-mono">[[causa]]</code> para linkar com Eisenhower, Canvas ou Roadmap
       </p>
     </div>
+  );
+};
+
+// ── Componente raiz — roteamento lista ↔ editor ─────────────────────────────
+const IshikawaTool: React.FC<IshikawaToolProps> = ({
+  allItems, onNavigate,
+}) => {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const {
+    analyses, loading,
+    createAnalysis, updateSlot, updateProblema,
+    renameAnalysis, deleteAnalysis,
+  } = useIshikawaAnalyses();
+
+  // Encontra análise selecionada (inclui dados fresh do hook)
+  const selectedAnalysis = selectedId
+    ? analyses.find(a => a.id === selectedId) ?? null
+    : null;
+
+  if (loading && analyses.length === 0) {
+    return (
+      <div className="flex justify-center py-24">
+        <Loader2 className="animate-spin text-red-600 w-10 h-10" />
+      </div>
+    );
+  }
+
+  // ── Modo Editor ──────────────────────────────────────────────────────────
+  if (selectedId && selectedAnalysis) {
+    return (
+      <IshikawaEditor
+        analysis={selectedAnalysis}
+        allItems={allItems}
+        onNavigate={onNavigate}
+        onBack={() => setSelectedId(null)}
+        updateSlot={updateSlot}
+        updateProblema={updateProblema}
+      />
+    );
+  }
+
+  // ── Modo Lista ───────────────────────────────────────────────────────────
+  return (
+    <IshikawaAnalysisList
+      analyses={analyses}
+      loading={loading}
+      onSelect={setSelectedId}
+      onCreate={createAnalysis}
+      onRename={renameAnalysis}
+      onDelete={deleteAnalysis}
+    />
   );
 };
 
