@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   UserPlus, Ruler, Calculator, Presentation, FileSignature,
   CalendarDays, Wrench, HardHat, FileText, CreditCard,
-  Archive, XCircle, ChevronRight, Search, Plus,
+  Archive, XCircle, ChevronRight, Search, Plus, ArrowLeft,
   Loader2, Building2, Calendar, DollarSign,
   ArrowRight, Briefcase, AlertCircle, LayoutGrid,
   Settings, Check, Users, LayoutList, Kanban,
@@ -28,6 +28,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useProject } from '../hooks/useProject';
 import LeadsDashboard from './LeadsDashboard';
 import ProjectUpsell from './ProjectUpsell';
+import ProjectPrancheta from './ProjectPrancheta';
 import {
   ProjectV2, ProjectPhase, Sector,
   PROJECT_PHASE_LABELS, PROJECT_PHASE_COLORS,
@@ -206,8 +207,12 @@ const RaciSetorBadge: React.FC<{
 // ── Lista de projetos por fase ─────────────────────────────────────────────────
 
 const FaseProjectList: React.FC<{
-  fase: FlowFase; projects: ProjectV2[]; search: string; onSearch: (v: string) => void;
-}> = ({ fase, projects, search, onSearch }) => {
+  fase: FlowFase;
+  projects: ProjectV2[];
+  search: string;
+  onSearch: (v: string) => void;
+  onSelectInline?: (projectId: string) => void; // inline mode: só para fase prancheta
+}> = ({ fase, projects, search, onSearch, onSelectInline }) => {
   const navigate = useNavigate();
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -215,7 +220,13 @@ const FaseProjectList: React.FC<{
   }, [projects, search]);
 
   const handleOpen = (project: ProjectV2) => {
-    navigate(fase.tabHint ? `/app/projetos-v2/${project.id}?tab=${fase.tabHint}&from=flow` : `/app/projetos-v2/${project.id}?from=flow`);
+    if (onSelectInline) {
+      onSelectInline(project.id); // abre inline (fase prancheta)
+    } else {
+      navigate(fase.tabHint
+        ? `/app/projetos-v2/${project.id}?tab=${fase.tabHint}&from=flow`
+        : `/app/projetos-v2/${project.id}?from=flow`);
+    }
   };
 
   return (
@@ -226,10 +237,12 @@ const FaseProjectList: React.FC<{
           <input value={search} onChange={e => onSearch(e.target.value)} placeholder={`Buscar em ${fase.label}...`}
             className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-400 outline-none" />
         </div>
-        <button onClick={() => navigate('/app/projetos-v2')}
-          className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-          <LayoutGrid className="w-3.5 h-3.5" /> Ver todos
-        </button>
+        {!onSelectInline && (
+          <button onClick={() => navigate('/app/projetos-v2')}
+            className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+            <LayoutGrid className="w-3.5 h-3.5" /> Ver todos
+          </button>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -247,7 +260,9 @@ const FaseProjectList: React.FC<{
       )}
       {filtered.length > 0 && (
         <p className="text-[10px] text-gray-400 text-center">
-          💡 Clique em um projeto para abrir a fase <strong>{fase.label}</strong> e executar as atividades.
+          {onSelectInline
+            ? '📄 Clique para abrir a Prancheta Técnica do projeto.'
+            : `💡 Clique em um projeto para abrir a fase ${fase.label} e executar as atividades.`}
         </p>
       )}
     </div>
@@ -265,6 +280,8 @@ const FlowAtendimento: React.FC = () => {
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista');
   const [openNovoLead, setOpenNovoLead] = useState(false);
+  // Prancheta inline: abre o editor abaixo dos cards do flow sem navegar
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   // ── Filtros de Concluídos ────────────────────────────────────────────────────
   const [concFilterMes, setConcFilterMes] = useState<string>('');       // 'YYYY-MM'
@@ -362,7 +379,17 @@ const FlowAtendimento: React.FC = () => {
 
   const faseAtual = FLOW_FASES.find(f => f.id === faseSelecionada)!;
 
-  const handleFaseChange = (id: FlowFaseId) => { setFaseSelecionada(id); setSearch(''); };
+  // Projeto selecionado para modo inline da Prancheta
+  const selectedProject = useMemo(
+    () => (selectedProjectId ? projects?.find(p => p.id === selectedProjectId) ?? null : null),
+    [selectedProjectId, projects]
+  );
+
+  const handleFaseChange = (id: FlowFaseId) => {
+    setFaseSelecionada(id);
+    setSearch('');
+    setSelectedProjectId(null); // fecha prancheta inline ao trocar de fase
+  };
 
   return (
     <div className="space-y-0 -m-4 sm:-m-6 lg:-m-8 min-h-screen bg-gray-50">
@@ -552,11 +579,51 @@ const FlowAtendimento: React.FC = () => {
           />
         )}
 
-        {/* Fase 11 — Não Aprovados */}
+        {/* Fase 11 — Nao Aprovados */}
         {faseSelecionada === 'nao_aprovados' && !loading && <ProjectUpsell />}
 
-        {/* Fases 1-10 */}
-        {faseAtual.fases && !loading && viewMode === 'lista' && (
+        {/* Fase 1 — Prancheta: modo inline (lista de projetos -> editor embarcado) */}
+        {faseSelecionada === 'prancheta' && !loading && !selectedProjectId && (
+          <FaseProjectList
+            fase={faseAtual}
+            projects={projetosDaFase}
+            search={search}
+            onSearch={setSearch}
+            onSelectInline={setSelectedProjectId}
+          />
+        )}
+        {faseSelecionada === 'prancheta' && !loading && selectedProjectId && selectedProject && (
+          <div className="space-y-4">
+            {/* Breadcrumb */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                id="btn-voltar-lista-prancheta"
+                onClick={() => setSelectedProjectId(null)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl border border-gray-200 hover:border-blue-200 transition-all"
+              >
+                <ArrowLeft className="w-4 h-4" /> Prancheta
+              </button>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Ruler className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span className="text-sm font-extrabold text-gray-800 truncate">{selectedProject.nome}</span>
+                <span className="text-xs text-gray-400 hidden md:block">· {selectedProject.clientName}</span>
+              </div>
+            </div>
+            {/* Prancheta embarcada */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-5">
+              <ProjectPrancheta
+                projectId={selectedProject.id}
+                prancheta={selectedProject.prancheta}
+                projectName={selectedProject.nome}
+                clientName={selectedProject.clientName}
+                leadId={selectedProject.leadId}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Fases 2-10 (todas as demais) */}
+        {faseSelecionada !== 'prancheta' && faseAtual.fases && !loading && viewMode === 'lista' && (
           <FaseProjectList fase={faseAtual} projects={projetosDaFase} search={search} onSearch={setSearch} />
         )}
 

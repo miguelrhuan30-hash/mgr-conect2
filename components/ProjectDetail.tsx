@@ -279,10 +279,10 @@ const ProjectDetail: React.FC = () => {
     if (transitions.length === 0) return;
     const nextPhase = transitions[0];
 
-    // Se está nas fases iniciais avançando para cotação, salvar prancheta primeiro
-    // (advancePhase usará getDoc internamente se o state local ainda não tiver preenchidoEm)
-    if (['lead_capturado', 'em_levantamento'].includes(project.fase) && nextPhase === 'em_cotacao' && project.prancheta) {
-      try { await savePrancheta(project.id, project.prancheta); } catch { /* continua */ }
+    // FIX: Sempre salva prancheta para fases iniciais (garante preenchidoEm mesmo se prancheta estava vazia)
+    // A guarda '&& project.prancheta' foi removida — ela impedia a gravação de preenchidoEm em projetos novos.
+    if (['lead_capturado', 'em_levantamento'].includes(project.fase) && nextPhase === 'em_cotacao') {
+      try { await savePrancheta(project.id, project.prancheta ?? {} as any); } catch { /* continua */ }
     }
 
     setAdvanceLoading(true);
@@ -297,6 +297,9 @@ const ProjectDetail: React.FC = () => {
     setAdvanceLoading(false);
     if (!result.success) setAdvanceError(result.error || 'Erro ao avançar');
   };
+
+  // Fases iniciais: o botão de avançar fica DENTRO da Prancheta (evita race condition e dados perdidos)
+  const isInitialPhase = ['lead_capturado', 'em_levantamento'].includes(project?.fase ?? '');
 
   // ── Arquivar como não aprovado ──
   const handleNaoAprovado = async () => {
@@ -365,15 +368,15 @@ const ProjectDetail: React.FC = () => {
             {project.clientName && (
               <span className="text-xs text-gray-500 hidden md:block truncate max-w-[150px]">{project.clientName}</span>
             )}
-            {/* Botão avançar no sticky header */}
-            {nextTransitions.length > 0 && (
+            {/* Botão avançar no sticky header — oculto nas fases iniciais (use o botão da Prancheta) */}
+            {nextTransitions.length > 0 && !isInitialPhase && (
               <button
                 onClick={handleAdvance}
                 disabled={advanceLoading}
                 className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 disabled:opacity-50 transition-all flex-shrink-0"
               >
                 {advanceLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-                {['lead_capturado', 'em_levantamento'].includes(project.fase) ? 'Avançar para Cotação' : `Avançar: ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
+                {`Avançar: ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
               </button>
             )}
           </div>
@@ -414,14 +417,15 @@ const ProjectDetail: React.FC = () => {
               Reabrir Projeto
             </button>
           )}
-          {nextTransitions.length > 0 && (
+          {/* Botão avançar no header — oculto nas fases iniciais (use o botão dentro da Prancheta Técnica) */}
+          {nextTransitions.length > 0 && !isInitialPhase && (
             <button
               onClick={handleAdvance}
               disabled={advanceLoading}
               className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
             >
               {advanceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {['lead_capturado', 'em_levantamento'].includes(project.fase) ? 'Avançar para Cotação' : `Avançar para ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
+              {`Avançar para ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
             </button>
           )}
         </div>
@@ -468,6 +472,17 @@ const ProjectDetail: React.FC = () => {
       <div className="bg-white rounded-2xl border border-gray-200 p-4">
         <PhaseStepper currentPhase={project.fase} />
       </div>
+
+      {/* ── Dica contextual nas fases iniciais ── */}
+      {isInitialPhase && (
+        <div className="flex items-center gap-2.5 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 text-blue-500" />
+          <span>
+            Preencha a <strong>Prancheta Técnica</strong> abaixo e clique em{' '}
+            <strong>Avançar para Cotação</strong> para mover este projeto para a próxima fase.
+          </span>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════
            SEÇÕES BASE — Single Page Scroll
