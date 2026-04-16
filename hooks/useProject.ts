@@ -363,18 +363,6 @@ export const useProject = () => {
         if (!result.success) return result;
       }
 
-      // 2. Atualizar o lead vinculado para sub-status 'aguardando_proposta'
-      if (project.leadId) {
-        try {
-          await updateDoc(doc(db, CollectionName.PROJECT_LEADS, project.leadId), {
-            negotiationSubStatus: 'aguardando_proposta',
-            ultimaAtividade: serverTimestamp(),
-          });
-        } catch {
-          // Lead pode não existir mais — não bloqueia o fluxo
-        }
-      }
-
       return { success: true };
     },
     [currentUser, projects, advancePhase],

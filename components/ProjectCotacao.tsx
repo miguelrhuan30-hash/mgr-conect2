@@ -20,11 +20,8 @@ import {
 import { useProjectCotacao } from '../hooks/useProjectCotacao';
 import { useFornecedores } from '../hooks/useFornecedores';
 import { useProject } from '../hooks/useProject';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import type { CotacaoItem, CotacaoCategoria, Fornecedor } from '../types';
 import type { ProjectCotacao as ProjectCotacaoType } from '../types';
-import { CollectionName } from '../types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -703,14 +700,6 @@ const ProjectCotacao: React.FC<Props> = ({ projectId, leadId, categoriasCotacao:
     setSalvandoRecebidas(true);
     try {
       await advancePhase(projectId, 'cotacao_recebida', 'Cotações recebidas — prontas para análise');
-      if (leadId) {
-        try {
-          await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
-            negotiationSubStatus: 'material_cotado',
-            updatedAt: new Date().toISOString(),
-          });
-        } catch { /* lead pode não existir */ }
-      }
       setCotacoesRecebidas(true);
     } catch (err: any) { alert(`Erro: ${err?.message || String(err)}`); }
     finally { setSalvandoRecebidas(false); }

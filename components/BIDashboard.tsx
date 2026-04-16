@@ -11,6 +11,7 @@ import { Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LABELS, Collection
 import { BarChart3, Loader2, TrendingUp, Clock, CheckCircle2, AlertTriangle, Zap, RefreshCcw, Lightbulb, ChevronRight, Wrench, Tag, Users, Shield, ChevronDown } from 'lucide-react';
 import { format, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import LeadsAnalyticsWidget from './LeadsAnalyticsWidget';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const msToHours = (ms: number) => Math.round(ms / 3600000 * 10) / 10;
@@ -522,6 +523,9 @@ const BIDashboard: React.FC = () => {
                 <div className="flex justify-center py-20"><Loader2 className="animate-spin text-brand-600 w-10 h-10" /></div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="lg:col-span-2">
+                        <LeadsAnalyticsWidget />
+                    </div>
                     <RaciMatrizWidget />
                     <SLAWidget tasks={tasks} />
                     <EfficiencyWidget tasks={tasks} />

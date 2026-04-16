@@ -20,10 +20,10 @@ import {
   ClipboardList, Pencil, Volume2, Send,
 } from 'lucide-react';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { Timestamp, doc, updateDoc } from 'firebase/firestore';
-import { storage, db } from '../firebase';
+import { Timestamp } from 'firebase/firestore';
+import { storage } from '../firebase';
 import { useProject } from '../hooks/useProject';
-import { ProjectV2Prancheta, ProjectV2PranchetaItemCotacao, CollectionName } from '../types';
+import { ProjectV2Prancheta, ProjectV2PranchetaItemCotacao } from '../types';
 
 // ── Tipos locais ────────────────────────────────────────────────────────────
 interface Props {
@@ -272,15 +272,6 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
       if (!result.success) {
         alert(result.error || 'Erro ao avançar para cotação. Tente novamente.');
         return;
-      }
-      // 3. Atualizar sub-status do lead
-      if (leadId) {
-        try {
-          await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
-            negotiationSubStatus: 'cotar_material',
-            updatedAt: new Date().toISOString(),
-          });
-        } catch { /* lead pode não existir ou sem permissão */ }
       }
       setCotacaoEnviada(true);
     } catch (err: any) {
