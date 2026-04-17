@@ -256,24 +256,29 @@ const LeadModal: React.FC<{
   const [saving, setSaving] = useState(false);
   const [iniciando, setIniciando] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleSalvarNota = async () => {
     setSaving(true);
-    await onSalvarNota(nota);
-    setSaving(false);
+    try { await onSalvarNota(nota); } catch { /* silencioso */ } finally { setSaving(false); }
   };
 
   const handleIniciarContato = async () => {
     setIniciando(true);
-    await onIniciarContato();
-    setIniciando(false);
+    try { await onIniciarContato(); } catch { /* silencioso */ } finally { setIniciando(false); }
   };
 
   const handleEnviarPrancheta = async () => {
     setEnviando(true);
-    await onEnviarParaPrancheta();
-    setEnviando(false);
+    setErroEnvio(null);
+    try {
+      await onEnviarParaPrancheta();
+    } catch (err: any) {
+      setErroEnvio(err?.message || 'Erro ao enviar para Prancheta. Tente novamente.');
+    } finally {
+      setEnviando(false);
+    }
   };
 
   // Cor do header por status
@@ -493,8 +498,13 @@ const LeadModal: React.FC<{
                 {enviando
                   ? <Loader2 className="w-4 h-4 animate-spin" />
                   : <ArrowRight className="w-4 h-4" />}
-                Enviar para Prancheta →
+                {enviando ? 'Criando projeto...' : 'Enviar para Prancheta →'}
               </button>
+              {erroEnvio && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-medium">
+                  ⚠️ {erroEnvio}
+                </div>
+              )}
               <p className="text-[10px] text-gray-400 text-center">
                 O lead entrará na Fase 1 — Prancheta para levantamento técnico pelo gestor
               </p>
