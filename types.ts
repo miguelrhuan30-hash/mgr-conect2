@@ -1859,7 +1859,7 @@ export const NAO_APROVADO_MOTIVOS = [
 
 // ── Transições permitidas (máquina de estados) ──
 export const PROJECT_TRANSITIONS: Record<ProjectPhase, ProjectPhase[]> = {
-  lead_capturado:         ['em_levantamento', 'nao_aprovado'],
+  lead_capturado:         ['em_levantamento', 'em_cotacao', 'nao_aprovado'],
   em_levantamento:        ['em_cotacao', 'nao_aprovado'],
   em_cotacao:             ['cotacao_recebida', 'nao_aprovado'],
   cotacao_recebida:       ['proposta_enviada', 'em_cotacao', 'nao_aprovado'],

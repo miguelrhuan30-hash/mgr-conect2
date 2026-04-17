@@ -245,25 +245,44 @@ const FunilVisualLeads: React.FC<{
 const LeadModal: React.FC<{
   lead: ProjectLead;
   onClose: () => void;
-  onAtualizarStatus: (status: LeadStatus) => Promise<void>;
+  onIniciarContato: () => Promise<void>;
   onSalvarNota: (nota: string) => Promise<void>;
-  onConverter: () => Promise<void>;
+  onEnviarParaPrancheta: () => Promise<void>;
   onDescartar: (motivo: string) => Promise<void>;
   onNaoAprovar: (motivo: string) => Promise<void>;
   canEdit: boolean;
-}> = ({ lead, onClose, onAtualizarStatus, onSalvarNota, onConverter, onDescartar, onNaoAprovar, canEdit }) => {
+}> = ({ lead, onClose, onIniciarContato, onSalvarNota, onEnviarParaPrancheta, onDescartar, onNaoAprovar, canEdit }) => {
   const [nota, setNota] = useState(lead.notas || '');
   const [saving, setSaving] = useState(false);
+  const [iniciando, setIniciando] = useState(false);
+  const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
-
-  const STATUS_SEQ: LeadStatus[] = ['novo', 'contatado', 'convertido'];
-  const statusIdx = STATUS_SEQ.indexOf(lead.status as any);
 
   const handleSalvarNota = async () => {
     setSaving(true);
     await onSalvarNota(nota);
     setSaving(false);
   };
+
+  const handleIniciarContato = async () => {
+    setIniciando(true);
+    await onIniciarContato();
+    setIniciando(false);
+  };
+
+  const handleEnviarPrancheta = async () => {
+    setEnviando(true);
+    await onEnviarParaPrancheta();
+    setEnviando(false);
+  };
+
+  // Cor do header por status
+  const headerGradient =
+    lead.status === 'contatado' ? 'from-blue-600 to-blue-700' :
+    lead.status === 'convertido' ? 'from-emerald-600 to-emerald-700' :
+    lead.status === 'descartado' ? 'from-gray-500 to-gray-600' :
+    lead.status === 'nao_aprovado' ? 'from-red-600 to-red-700' :
+    'from-violet-600 to-violet-700';
 
   return (
     <div
@@ -274,9 +293,9 @@ const LeadModal: React.FC<{
         className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-violet-600 to-violet-700 px-6 py-5 rounded-t-2xl">
-          <div className="flex items-start justify-between">
+        {/* ── Header ── */}
+        <div className={`bg-gradient-to-r ${headerGradient} px-6 py-5 rounded-t-2xl`}>
+          <div className="flex items-start justify-between mb-3">
             <div>
               <h2 className="text-lg font-extrabold text-white">{lead.nomeContato}</h2>
               {lead.empresa && <p className="text-xs text-white/70">{lead.empresa}</p>}
@@ -289,32 +308,39 @@ const LeadModal: React.FC<{
             </button>
           </div>
 
-          {/* Pipeline visual */}
-          <div className="flex items-center gap-1 mt-4 overflow-x-auto pb-1">
-            {STATUS_SEQ.map((s, i) => (
-              <React.Fragment key={s}>
-                <button
-                  onClick={() => canEdit && lead.status !== s && onAtualizarStatus(s)}
-                  className={`text-[9px] font-bold px-2.5 py-1 rounded-full transition-all whitespace-nowrap ${
-                    lead.status === s
-                      ? 'bg-white text-violet-700 shadow-sm'
-                      : i < statusIdx
-                        ? 'bg-white/30 text-white cursor-pointer hover:bg-white/40'
-                        : 'bg-white/10 text-white/50 cursor-pointer hover:bg-white/20'
-                  }`}
-                >
-                  {LEAD_STATUS_LABELS[s]}
-                </button>
-                {i < STATUS_SEQ.length - 1 && (
-                  <ArrowRight className="w-3 h-3 text-white/30 flex-shrink-0" />
-                )}
-              </React.Fragment>
-            ))}
+          {/* Indicador de etapa — somente visual, não clicável */}
+          <div className="flex items-center gap-1.5">
+            {/* Etapa 1 — Novo */}
+            <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-extrabold ${
+              lead.status === 'novo' ? 'bg-white text-violet-700' : 'bg-white/20 text-white'
+            }`}>
+              {(lead.status === 'contatado' || lead.status === 'convertido') && (
+                <CheckCircle2 className="w-3 h-3 text-emerald-300" />
+              )}
+              Novo
+            </div>
+            <ArrowRight className="w-3 h-3 text-white/40 flex-shrink-0" />
+            {/* Etapa 2 — Contatado */}
+            <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-extrabold ${
+              lead.status === 'contatado' ? 'bg-white text-blue-700' : 'bg-white/20 text-white'
+            }`}>
+              {lead.status === 'convertido' && (
+                <CheckCircle2 className="w-3 h-3 text-emerald-300" />
+              )}
+              Contatado
+            </div>
+            <ArrowRight className="w-3 h-3 text-white/40 flex-shrink-0" />
+            {/* Etapa 3 — Prancheta (destino) */}
+            <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-extrabold ${
+              lead.status === 'convertido' ? 'bg-white text-emerald-700' : 'bg-white/20 text-white/50'
+            }`}>
+              Prancheta
+            </div>
           </div>
         </div>
 
-        <div className="p-6 space-y-5">
-          {/* Dados de contato */}
+        <div className="p-6 space-y-4">
+          {/* ── Dados de contato ── */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-gray-50 rounded-xl p-3">
               <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Telefone</p>
@@ -352,27 +378,20 @@ const LeadModal: React.FC<{
             )}
           </div>
 
-          {/* Badges */}
+          {/* Badges de origem e data */}
           <div className="flex flex-wrap gap-2">
             <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${LEAD_STATUS_COLORS[lead.status]}`}>
               {LEAD_STATUS_LABELS[lead.status]}
             </span>
             <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
-              {(
-                {
-                  formulario_site: '🌐 Site',
-                  anuncio_meta: '📘 Meta',
-                  anuncio_google: '🔍 Google',
-                  manual: '✋ Manual',
-                  'homepage-mgr-refrigeracao': '🏠 Homepage',
-                } as any
-              )[(lead as any).origem] || (lead as any).origem}
+              {({ formulario_site: '🌐 Site', anuncio_meta: '📘 Meta', anuncio_google: '🔍 Google', manual: '✋ Manual', 'homepage-mgr-refrigeracao': '🏠 Homepage' } as any)[(lead as any).origem] || (lead as any).origem}
             </span>
             <span className="text-[10px] text-gray-400 flex items-center gap-1">
               <Clock className="w-3 h-3" />{fmtDate(lead.criadoEm)}
             </span>
           </div>
 
+          {/* Mensagem original do cliente */}
           {lead.observacoes && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
               <p className="text-[9px] font-bold text-blue-500 uppercase mb-1">Mensagem do Cliente</p>
@@ -387,13 +406,13 @@ const LeadModal: React.FC<{
             </div>
           )}
 
+          {/* Motivos de encerramento */}
           {lead.motivoDescarte && (
             <div className="bg-red-50 border border-red-100 rounded-xl p-3">
               <p className="text-[9px] font-bold text-red-500 uppercase mb-1">Motivo do Descarte</p>
               <p className="text-sm text-gray-700">{lead.motivoDescarte}</p>
             </div>
           )}
-
           {lead.motivoNaoAprovado && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3">
               <p className="text-[9px] font-bold text-red-600 uppercase mb-1">❌ Motivo — Não Aprovado</p>
@@ -401,68 +420,118 @@ const LeadModal: React.FC<{
             </div>
           )}
 
-          {/* Notas internas */}
-          {canEdit && (
-            <div>
-              <label className="text-xs font-bold text-gray-600 flex items-center gap-1 mb-2">
-                <MessageSquare className="w-3.5 h-3.5" /> Notas Internas
-              </label>
-              <textarea
-                value={nota}
-                onChange={(e) => setNota(e.target.value)}
-                rows={3}
-                maxLength={1000}
-                placeholder="Anotações sobre este lead (negociação, necessidades, próximos passos)..."
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none focus:ring-2 focus:ring-violet-400 outline-none"
-              />
+          {/* ── AÇÃO: STATUS NOVO — botão de iniciar contato ── */}
+          {canEdit && lead.status === 'novo' && (
+            <div className="space-y-3 pt-1 border-t border-gray-100">
+              <p className="text-xs text-gray-500">
+                Após ligar ou entrar em contato com o cliente, registre o contato para avançar o lead.
+              </p>
               <button
-                onClick={handleSalvarNota}
-                disabled={saving}
-                className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 text-white rounded-lg text-xs font-bold hover:bg-gray-900 disabled:opacity-50 transition-colors"
+                onClick={handleIniciarContato}
+                disabled={iniciando}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 text-white rounded-xl text-sm font-extrabold hover:bg-violet-700 disabled:opacity-50 transition-colors shadow-sm"
               >
-                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                Salvar Nota
+                {iniciando
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Phone className="w-4 h-4" />}
+                Iniciar Contato Primário
               </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { const m = window.prompt('Motivo do descarte:'); if (m) { onDescartar(m); onClose(); } }}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-500 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors"
+                >
+                  <XCircle className="w-3.5 h-3.5" /> Descartar
+                </button>
+                <button
+                  onClick={() => { const m = window.prompt('Motivo — Não Aprovado:'); if (m) { onNaoAprovar(m); onClose(); } }}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-red-200 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors"
+                >
+                  <XCircle className="w-3.5 h-3.5" /> Não Aprovado
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Ações */}
-          {canEdit && lead.status !== 'descartado' && lead.status !== 'nao_aprovado' && (
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-              {lead.status !== 'convertido' && (
+          {/* ── AÇÃO: STATUS CONTATADO — anotações + enviar para prancheta ── */}
+          {canEdit && lead.status === 'contatado' && (
+            <div className="space-y-3 pt-1 border-t border-gray-100">
+              {/* Campo de anotações do contato — vai para a Prancheta */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <label className="text-xs font-extrabold text-amber-800 flex items-center gap-1.5 mb-2">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Anotações do Contato — Necessidades do Cliente
+                </label>
+                <p className="text-[10px] text-amber-600 mb-2">
+                  Descreva livremente o que o cliente precisa, dimensões, finalidade, observações técnicas.
+                  Estas anotações irão para a Prancheta do gestor técnico.
+                </p>
+                <textarea
+                  value={nota}
+                  onChange={(e) => setNota(e.target.value)}
+                  rows={5}
+                  maxLength={2000}
+                  placeholder="Ex: Cliente precisa de câmara fria para armazenamento de laticínios, aprox. 20m², temperatura -5°C a -10°C, localização no fundo do galpão. Urgência: 2 meses. Já tem estrutura elétrica trifásica..."
+                  className="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm resize-none focus:ring-2 focus:ring-amber-400 outline-none bg-white"
+                />
                 <button
-                  onClick={onConverter}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors"
+                  onClick={handleSalvarNota}
+                  disabled={saving}
+                  className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-amber-700 text-white rounded-lg text-xs font-bold hover:bg-amber-800 disabled:opacity-50 transition-colors"
                 >
-                  <ArrowRight className="w-4 h-4" /> Converter em Projeto
+                  {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  Salvar Anotações
                 </button>
-              )}
-              {lead.status === 'convertido' && lead.projectId && (
+              </div>
+
+              {/* Botão principal: Enviar para Prancheta */}
+              <button
+                onClick={handleEnviarPrancheta}
+                disabled={enviando}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-emerald-600 text-white rounded-xl text-sm font-extrabold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
+              >
+                {enviando
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <ArrowRight className="w-4 h-4" />}
+                Enviar para Prancheta →
+              </button>
+              <p className="text-[10px] text-gray-400 text-center">
+                O lead entrará na Fase 1 — Prancheta para levantamento técnico pelo gestor
+              </p>
+
+              <div className="flex gap-2">
                 <button
-                  onClick={() => navigate(`/app/projetos-v2/${lead.projectId}`)}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 transition-colors"
+                  onClick={() => { const m = window.prompt('Motivo do descarte:'); if (m) { onDescartar(m); onClose(); } }}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-500 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors"
                 >
-                  <Briefcase className="w-4 h-4" /> Ver Projeto
+                  <XCircle className="w-3.5 h-3.5" /> Descartar
                 </button>
-              )}
-              <button
-                onClick={() => {
-                  const motivo = window.prompt('Motivo do descarte:');
-                  if (motivo) { onDescartar(motivo); onClose(); }
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 text-gray-500 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors"
-              >
-                <XCircle className="w-4 h-4" /> Descartar
-              </button>
-              <button
-                onClick={() => {
-                  const motivo = window.prompt('Motivo — Não Aprovado:');
-                  if (motivo) { onNaoAprovar(motivo); onClose(); }
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 border border-red-200 text-red-600 rounded-xl text-sm font-bold hover:bg-red-50 transition-colors"
-              >
-                <XCircle className="w-4 h-4" /> Não Aprovado
-              </button>
+                <button
+                  onClick={() => { const m = window.prompt('Motivo — Não Aprovado:'); if (m) { onNaoAprovar(m); onClose(); } }}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-red-200 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors"
+                >
+                  <XCircle className="w-3.5 h-3.5" /> Não Aprovado
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── STATUS CONVERTIDO — só mostra link pro projeto ── */}
+          {lead.status === 'convertido' && (
+            <div className="pt-2 border-t border-gray-100">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                <p className="text-sm font-bold text-emerald-800">Lead convertido em projeto!</p>
+                <p className="text-xs text-emerald-600 mb-3">Este lead está agora na Prancheta aguardando levantamento técnico.</p>
+                {lead.projectId && (
+                  <button
+                    onClick={() => navigate(`/app/projetos-v2/${lead.projectId}`)}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors mx-auto"
+                  >
+                    <Briefcase className="w-4 h-4" /> Ver Projeto na Prancheta
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -692,7 +761,7 @@ const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ initialTab, onNavigateT
   const { userProfile } = useAuth();
   const {
     leads, loading, leadsNovos,
-    marcarContatado, atualizarStatus, salvarNota,
+    marcarContatado, salvarNota,
     adicionarLead, converterEmProjeto, descartarLead, marcarNaoAprovado,
   } = useProjectLeads();
 
@@ -795,15 +864,15 @@ const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ initialTab, onNavigateT
           lead={leadModal}
           onClose={() => setLeadModal(null)}
           canEdit={canEdit}
-          onAtualizarStatus={async (status) => {
-            await atualizarStatus(leadModal.id, status);
-            setLeadModal((prev) => (prev ? { ...prev, status } : null));
+          onIniciarContato={async () => {
+            await marcarContatado(leadModal.id);
+            setLeadModal((prev) => (prev ? { ...prev, status: 'contatado' } : null));
           }}
           onSalvarNota={async (nota) => {
             await salvarNota(leadModal.id, nota);
             setLeadModal((prev) => (prev ? { ...prev, notas: nota } : null));
           }}
-          onConverter={() => handleConverter(leadModal.id)}
+          onEnviarParaPrancheta={() => handleConverter(leadModal.id)}
           onDescartar={(motivo) => descartarLead(leadModal.id, motivo)}
           onNaoAprovar={async (motivo) => {
             await marcarNaoAprovado(leadModal.id, motivo);
