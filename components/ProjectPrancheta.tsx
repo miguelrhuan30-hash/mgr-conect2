@@ -17,13 +17,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Save, Upload, Loader2, Trash2, Image, FileText, Check,
   Mic, MicOff, Plus, X, Copy, Download, ChevronDown, ChevronUp,
-  ClipboardList, Pencil, Volume2, Send,
+  ClipboardList, Pencil, Volume2, Send, Paperclip,
 } from 'lucide-react';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Timestamp } from 'firebase/firestore';
 import { storage } from '../firebase';
 import { useProject } from '../hooks/useProject';
-import { ProjectV2Prancheta, ProjectV2PranchetaItemCotacao } from '../types';
+import { ProjectV2Prancheta, ProjectV2PranchetaItemCotacao, ArquivoContato } from '../types';
 
 // ── Tipos locais ────────────────────────────────────────────────────────────
 interface Props {
@@ -32,6 +32,7 @@ interface Props {
   projectName?: string;
   clientName?: string;
   leadId?: string;         // vindo do project.leadId para atualizar sub-status
+  arquivosContato?: ArquivoContato[];  // arquivos enviados pelo cliente durante o contato
 }
 
 // ── Constantes de configuração técnica ─────────────────────────────────────
@@ -48,7 +49,7 @@ declare global {
 }
 
 // ── Componente Principal ───────────────────────────────────────────────────
-const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, clientName, leadId }) => {
+const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, clientName, leadId, arquivosContato }) => {
   const { savePrancheta, sinalizarProjetoPronto, advancePhase } = useProject();
 
   // ── Form state ──
@@ -373,6 +374,45 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
           {saving ? 'Salvando...' : saved ? 'Salvo ✓' : 'Salvar'}
         </button>
       </div>
+
+      {/* ══ SEÇÃO 0: Documentos do Cliente (do contato inicial) ══ */}
+      {arquivosContato && arquivosContato.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-blue-100">
+            <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Paperclip className="w-3.5 h-3.5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-extrabold text-blue-800">Documentos Recebidos do Cliente</p>
+              <p className="text-[10px] text-blue-500">Arquivos enviados durante o contato comercial</p>
+            </div>
+            <span className="ml-auto text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+              {arquivosContato.length} arquivo{arquivosContato.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="px-5 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {arquivosContato.map((arq, i) => (
+                <a
+                  key={i}
+                  href={arq.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 px-3 py-2.5 bg-white border border-blue-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-colors group"
+                >
+                  {arq.tipo === 'foto'
+                    ? <Image className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    : arq.tipo === 'pdf'
+                      ? <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+                      : <Upload className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+                  <span className="text-xs text-gray-700 truncate flex-1 group-hover:text-blue-700">{arq.nome}</span>
+                  <Download className="w-3 h-3 text-gray-300 group-hover:text-blue-400 flex-shrink-0" />
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ SEÇÃO 4: Fotos e Croquis ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">

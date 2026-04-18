@@ -537,6 +537,7 @@ const ProjectDetail: React.FC = () => {
             projectName={project.nome}
             clientName={project.clientName}
             leadId={project.leadId}
+            arquivosContato={project.leadData?.arquivosContato ?? undefined}
           />
         </div>
       </div>

@@ -6,7 +6,10 @@
       "Bash(npx.cmd tsc:*)",
       "Bash(cmd.exe /c \"npx tsc --noEmit 2>&1\")",
       "Bash(cmd.exe /c \"npx tsc --noEmit\")",
-      "Bash(cmd.exe /c \"npx vite build 2>&1\")"
+      "Bash(cmd.exe /c \"npx vite build 2>&1\")",
+      "Bash(dir \"C:\\\\Users\\\\Cliente\\\\Desktop\\\\mgr docs\\\\obsidian mgr\" /b)",
+      "Bash(dir \"C:\\\\Users\\\\Cliente\\\\Desktop\\\\mgr docs\\\\obsidian mgr\\\\04-erp-mgrconnect\" /b)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

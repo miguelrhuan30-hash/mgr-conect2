@@ -8,17 +8,18 @@
  * Após converter o lead, ele vai para a Fase 1 (Prancheta) e aparece
  * no FunilConversao. Analytics detalhados ficam no BIDashboard.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   UserPlus, Phone, Mail, MapPin, CheckCircle2, XCircle, ArrowRight,
   Clock, Settings, Plus, MessageSquare, Save, ToggleLeft, ToggleRight,
-  Briefcase, X, ChevronDown, Loader2, Send,
+  Briefcase, X, ChevronDown, Loader2, Send, Paperclip, FileText, Image as ImageIcon,
+  ExternalLink, Trash2,
 } from 'lucide-react';
 import { useProjectLeads, useLeadsConfig } from '../hooks/useProjectLeads';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  LeadStatus, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, PROJECT_TYPES, ProjectLead,
+  LeadStatus, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, PROJECT_TYPES, ProjectLead, ArquivoContato,
 } from '../types';
 import { format, differenceInHours, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -242,6 +243,24 @@ const FunilVisualLeads: React.FC<{
 
 // ── Modal de Detalhes do Lead ──────────────────────────────────────────────────
 
+// ── Mini-lista de arquivos do lead ────────────────────────────────────────────
+const ArquivoItem: React.FC<{ arquivo: ArquivoContato }> = ({ arquivo }) => (
+  <a
+    href={arquivo.url}
+    target="_blank"
+    rel="noreferrer"
+    className="flex items-center gap-2 px-2.5 py-2 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+  >
+    {arquivo.tipo === 'foto'
+      ? <ImageIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+      : arquivo.tipo === 'pdf'
+        ? <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+        : <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+    <span className="text-xs text-gray-700 truncate flex-1 group-hover:text-blue-700">{arquivo.nome}</span>
+    <ExternalLink className="w-3 h-3 text-gray-300 group-hover:text-blue-400 flex-shrink-0" />
+  </a>
+);
+
 const LeadModal: React.FC<{
   lead: ProjectLead;
   onClose: () => void;
@@ -250,13 +269,18 @@ const LeadModal: React.FC<{
   onEnviarParaPrancheta: () => Promise<void>;
   onDescartar: (motivo: string) => Promise<void>;
   onNaoAprovar: (motivo: string) => Promise<void>;
+  onUploadArquivo?: (file: File) => Promise<void>;
   canEdit: boolean;
-}> = ({ lead, onClose, onIniciarContato, onSalvarNota, onEnviarParaPrancheta, onDescartar, onNaoAprovar, canEdit }) => {
+}> = ({ lead, onClose, onIniciarContato, onSalvarNota, onEnviarParaPrancheta, onDescartar, onNaoAprovar, onUploadArquivo, canEdit }) => {
   const [nota, setNota] = useState(lead.notas || '');
   const [saving, setSaving] = useState(false);
   const [iniciando, setIniciando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadErro, setUploadErro] = useState<string | null>(null);
+  const [arquivos, setArquivos] = useState<ArquivoContato[]>(lead.arquivosContato || []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   const handleSalvarNota = async () => {
@@ -278,6 +302,32 @@ const LeadModal: React.FC<{
       setErroEnvio(err?.message || 'Erro ao enviar para Prancheta. Tente novamente.');
     } finally {
       setEnviando(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onUploadArquivo) return;
+    // Limpa o input para permitir re-selecionar o mesmo arquivo
+    e.target.value = '';
+    // Validação de tamanho (10 MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadErro('Arquivo muito grande. Máximo 10 MB.');
+      return;
+    }
+    setUploadErro(null);
+    setUploadProgress(0);
+    try {
+      await onUploadArquivo(file);
+      // Adiciona otimisticamente à lista local
+      setArquivos((prev) => [
+        ...prev,
+        { url: '#', nome: file.name, tipo: file.type.startsWith('image/') ? 'foto' : file.type === 'application/pdf' ? 'pdf' : 'outro' },
+      ]);
+    } catch (err: any) {
+      setUploadErro(err?.message || 'Erro no upload. Tente novamente.');
+    } finally {
+      setUploadProgress(null);
     }
   };
 
@@ -487,6 +537,49 @@ const LeadModal: React.FC<{
                   {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                   Salvar Anotações
                 </button>
+              </div>
+
+              {/* ── Documentos do cliente ── */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-extrabold text-gray-700 flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-gray-500" />
+                    Documentos do Cliente
+                  </p>
+                  {onUploadArquivo && (
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadProgress !== null}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {uploadProgress !== null
+                        ? <><Loader2 className="w-3 h-3 animate-spin" />{uploadProgress}%</>
+                        : <><Paperclip className="w-3 h-3" />Anexar</>}
+                    </button>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+                <p className="text-[10px] text-gray-400 mb-2">
+                  PDFs, fotos ou documentos enviados pelo cliente. Ficam disponíveis na Prancheta.
+                </p>
+                {arquivos.length === 0 ? (
+                  <p className="text-[10px] text-gray-400 italic py-1">Nenhum documento anexado ainda.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {arquivos.map((arq, i) => (
+                      <ArquivoItem key={i} arquivo={arq} />
+                    ))}
+                  </div>
+                )}
+                {uploadErro && (
+                  <p className="mt-1.5 text-[10px] text-red-600 font-medium">⚠️ {uploadErro}</p>
+                )}
               </div>
 
               {/* Botão principal: Enviar para Prancheta */}
@@ -773,6 +866,7 @@ const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ initialTab, onNavigateT
     leads, loading, leadsNovos,
     marcarContatado, salvarNota,
     adicionarLead, converterEmProjeto, descartarLead, marcarNaoAprovado,
+    uploadArquivoContato,
   } = useProjectLeads();
 
   // Mapeia tabs antigas para novas (backward compat)
@@ -883,6 +977,7 @@ const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ initialTab, onNavigateT
             setLeadModal((prev) => (prev ? { ...prev, notas: nota } : null));
           }}
           onEnviarParaPrancheta={() => handleConverter(leadModal.id)}
+          onUploadArquivo={canEdit ? (file) => uploadArquivoContato(leadModal.id, file) : undefined}
           onDescartar={(motivo) => descartarLead(leadModal.id, motivo)}
           onNaoAprovar={async (motivo) => {
             await marcarNaoAprovado(leadModal.id, motivo);

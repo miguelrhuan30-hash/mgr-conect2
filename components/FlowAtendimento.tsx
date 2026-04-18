@@ -632,6 +632,7 @@ const FlowAtendimento: React.FC = () => {
                 projectName={selectedProject.nome}
                 clientName={selectedProject.clientName}
                 leadId={selectedProject.leadId}
+                arquivosContato={selectedProject.leadData?.arquivosContato ?? undefined}
               />
             </div>
           </div>

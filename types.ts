@@ -1905,6 +1905,8 @@ export interface ProjectV2LeadData {
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
+  // ── Arquivos enviados pelo cliente no contato inicial ──
+  arquivosContato?: ArquivoContato[];
 }
 
 export interface ProjectV2PranchetaItemCotacao {
@@ -2049,6 +2051,14 @@ export interface ProjectCotacao {
   criadoPorNome: string;
 }
 
+// ── Arquivo anexado ao lead no contato inicial ──
+export interface ArquivoContato {
+  url: string;
+  nome: string;
+  tipo: 'foto' | 'pdf' | 'outro';
+  uploadEm?: Timestamp | string;
+}
+
 // ── Lead de Projeto (captação via site/anúncios) ──
 export type LeadStatus = 'novo' | 'contatado' | 'em_negociacao' | 'convertido' | 'descartado' | 'nao_aprovado';
 
@@ -2091,6 +2101,8 @@ export interface ProjectLead {
     em_negociacao?: Timestamp;
     convertido?: Timestamp;
   };
+  // ── Arquivos enviados pelo cliente durante o contato ──
+  arquivosContato?: ArquivoContato[];
 }
 
 // ── Configuração de Leads (Firestore: /configs/leads_config) ──

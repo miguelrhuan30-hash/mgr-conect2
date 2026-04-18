@@ -8,9 +8,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   collection, query, orderBy, onSnapshot, updateDoc,
-  addDoc, doc, serverTimestamp, getDoc, setDoc,
+  addDoc, doc, serverTimestamp, getDoc, setDoc, arrayUnion, Timestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { ProjectLead, LeadStatus, LeadsConfig, CollectionName } from '../types';
 import { useProject } from './useProject';
@@ -170,6 +171,43 @@ export const useProjectLeads = () => {
     [currentUser, userProfile],
   );
 
+  // ── Upload de arquivo durante o contato ──
+  const uploadArquivoContato = useCallback(
+    async (
+      leadId: string,
+      file: File,
+      onProgress?: (pct: number) => void,
+    ): Promise<void> => {
+      if (!currentUser) throw new Error('Não autenticado');
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+      const tipo: 'foto' | 'pdf' | 'outro' =
+        ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) ? 'foto' :
+        ext === 'pdf' ? 'pdf' : 'outro';
+      const path = `leads/${leadId}/${Date.now()}_${file.name}`;
+      const sRef = storageRef(storage, path);
+      const task = uploadBytesResumable(sRef, file);
+      await new Promise<void>((resolve, reject) => {
+        task.on(
+          'state_changed',
+          (snap) => onProgress && onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+          reject,
+          resolve,
+        );
+      });
+      const url = await getDownloadURL(sRef);
+      await updateDoc(doc(db, CollectionName.PROJECT_LEADS, leadId), {
+        arquivosContato: arrayUnion({
+          url,
+          nome: file.name,
+          tipo,
+          uploadEm: Timestamp.now(),
+        }),
+        ultimaAtividade: serverTimestamp(),
+      });
+    },
+    [currentUser],
+  );
+
   // ── Marcar como Não Aprovado ──
   const marcarNaoAprovado = useCallback(
     async (leadId: string, motivo: string): Promise<void> => {
@@ -198,6 +236,7 @@ export const useProjectLeads = () => {
     descartarLead,
     sinalizarPropostaEnviada,
     marcarNaoAprovado,
+    uploadArquivoContato,
   };
 };
 
