@@ -1916,6 +1916,20 @@ export interface ProjectV2PranchetaItemCotacao {
   observacao?: string;
 }
 
+// ── Plano de Execução (serviços + fases + mão de obra) ──────────────────────
+export interface FaseExecucaoPrancheta {
+  id: string;
+  nome: string;
+  diasExecucao: number;   // duração estimada em dias corridos
+}
+
+export interface ServicoExecucaoPrancheta {
+  id: string;
+  nome: string;           // ex: "Câmara Fria", "Sistema de Refrigeração"
+  fases: FaseExecucaoPrancheta[];
+  valorMaoDeObra: number; // valor total da mão de obra deste serviço (R$)
+}
+
 export interface ProjectV2Prancheta {
   // ── Campos técnicos originais ──
   dimensoes?: string;
@@ -1937,6 +1951,8 @@ export interface ProjectV2Prancheta {
   solicitacaoCotacao?: string;      // texto final da solicitação de cotação gerado
   itensCotacao?: ProjectV2PranchetaItemCotacao[];  // lista estruturada de itens
   escopoGeradoEm?: Timestamp;       // quando o escopo foi gerado/finalizado
+  // ── Plano de Execução ──
+  servicosExecucao?: ServicoExecucaoPrancheta[];  // serviços com fases e mão de obra
   // ── Metadados ──
   preenchidoPor?: string;
   preenchidoPorNome?: string;
