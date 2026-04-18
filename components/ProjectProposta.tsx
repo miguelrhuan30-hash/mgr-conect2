@@ -1,51 +1,53 @@
 /**
  * components/ProjectProposta.tsx
  *
- * Módulo completo de Proposta Comercial — fluxo inline no Flow de Atendimento:
- *  1. Valores auto-calculados (materiais das cotações selecionadas + MO do plano de execução)
- *  2. Formulário da proposta (condições, prazo, validade, observações ao cliente)
- *  3. Geração de mensagem WhatsApp formatada com todos os dados
- *  4. Vinculação opcional a apresentação do módulo de Apresentações
- *  5. Status: rascunho → enviado → aprovado | revisão
- *  6. Aprovação: avança para Contrato
- *  7. Revisão: volta para Cotação ou Prancheta para ajustes
+ * Módulo completo de Proposta Comercial — fluxo inline no Flow de Atendimento.
+ *
+ * Passo 1 — 🎨 Apresentação em Slides
+ *   Cria uma apresentação no módulo de Apresentações pré-preenchida com dados
+ *   do projeto (cliente, título, cronograma, valores). Abre o editor em nova aba.
+ *
+ * Passo 2 — 📄 Documento PDF
+ *   Upload do PDF final da proposta para o Firebase Storage.
+ *
+ * Passo 3 — 📱 Envio ao Cliente
+ *   Texto editável simples (sem detalhes financeiros no corpo) com link dos
+ *   slides e do PDF. Envia via WhatsApp ou copia.
+ *
+ * Passo 4 — ✅ Aprovação / Revisão
+ *   Aprovação → avança para Contrato.
+ *   Revisão → volta para Cotação ou Prancheta.
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Save, Check, Loader2, Send, Copy, ExternalLink, Link2,
   MessageCircle, ArrowRight, ArrowLeft, RefreshCw, AlertCircle,
-  DollarSign, Calendar, FileText, ChevronDown, ChevronUp,
-  Plus, History, X,
+  ChevronDown, ChevronUp, Upload, FileText, Play, Plus,
+  Presentation as PresentIcon, X, Trash2, Eye,
 } from 'lucide-react';
 import {
-  collection, query, orderBy, onSnapshot,
-  doc, updateDoc, arrayUnion, serverTimestamp, Timestamp,
+  collection, query, orderBy, onSnapshot, addDoc,
+  doc, updateDoc, arrayUnion, serverTimestamp, getDocs, where, Timestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
 import { useProject } from '../hooks/useProject';
-import { useProjectCotacao } from '../hooks/useProjectCotacao';
 import {
   CollectionName, ProjectV2, ProjectPhase,
   PropostaDados, PropostaStatus, ProjectV2PropostaVersao,
+  CoverData, OverviewData, DeliverablesData, TimelineData, ClosingData,
+  SlideData, PresentationTema,
 } from '../types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import ProjectPropostaDoc from './ProjectPropostaDoc';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
   project: ProjectV2;
-  // Legacy callbacks do ProjectDetail (mantidos para compatibilidade, não usados no inline)
   onSinalizarEnviado?: () => Promise<void>;
   onConverterProposta?: () => Promise<void>;
-}
-
-interface Apresentacao {
-  id: string;
-  title?: string;
-  nome?: string;
-  slug?: string;
-  clienteNome?: string;
-  updatedAt?: Timestamp;
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
@@ -60,255 +62,351 @@ const fmtDate = (ts: any) => {
   } catch { return '—'; }
 };
 
-const fmtDateBr = (iso: string) => {
-  try { return format(new Date(iso + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }); }
-  catch { return iso; }
+const STATUS_CONFIG: Record<PropostaStatus, { label: string; color: string; dot: string }> = {
+  rascunho: { label: 'Rascunho',           color: 'bg-gray-100 text-gray-600 border-gray-200',          dot: 'bg-gray-400'    },
+  enviado:  { label: 'Enviado ao Cliente', color: 'bg-blue-100 text-blue-700 border-blue-200',          dot: 'bg-blue-500'    },
+  aprovado: { label: 'Aprovado ✓',         color: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  revisao:  { label: 'Em Revisão',         color: 'bg-amber-100 text-amber-700 border-amber-200',       dot: 'bg-amber-500'   },
 };
 
-const STATUS_CONFIG: Record<PropostaStatus, { label: string; color: string; dot: string }> = {
-  rascunho: { label: 'Rascunho',             color: 'bg-gray-100 text-gray-600 border-gray-200',       dot: 'bg-gray-400'    },
-  enviado:  { label: 'Enviado ao Cliente',   color: 'bg-blue-100 text-blue-700 border-blue-200',       dot: 'bg-blue-500'    },
-  aprovado: { label: 'Aprovado ✓',           color: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
-  revisao:  { label: 'Revisão Solicitada',   color: 'bg-amber-100 text-amber-700 border-amber-200',    dot: 'bg-amber-500'   },
-};
+// ── Gera slug único para a apresentação ───────────────────────────────────────
+async function generateSlug(): Promise<string> {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const rand = Array.from(crypto.getRandomValues(new Uint8Array(6)))
+      .map(b => chars[b % chars.length]).join('');
+    const slug = `mgr-${rand}`;
+    const q = query(collection(db, CollectionName.PRESENTATIONS), where('slug', '==', slug));
+    const snap = await getDocs(q);
+    if (snap.empty) return slug;
+  }
+  return `mgr-${Date.now().toString(36)}`;
+}
+
+// ── Monta slides pré-preenchidos com dados do projeto ─────────────────────────
+function buildSlidesFromProject(project: ProjectV2): SlideData[] {
+  const servicos = project.prancheta?.servicosExecucao || [];
+  const totalDias = servicos.reduce(
+    (s, srv) => s + srv.fases.reduce((a, f) => a + (f.diasExecucao || 0), 0), 0,
+  );
+  const totalMdo = servicos.reduce((s, srv) => s + (srv.valorMaoDeObra || 0), 0);
+
+  // Slide Cronograma — usa as fases do primeiro serviço (ou todos se só 1)
+  const fasesCrono = servicos.length === 1
+    ? servicos[0].fases.map(f => ({
+        id: f.id,
+        nome: f.nome,
+        prazo: `${f.diasExecucao} dia${f.diasExecucao !== 1 ? 's' : ''}`,
+        descricao: '',
+      }))
+    : servicos.map(srv => ({
+        id: srv.id,
+        nome: srv.nome,
+        prazo: `${srv.fases.reduce((a, f) => a + (f.diasExecucao || 0), 0)} dias`,
+        descricao: '',
+      }));
+
+  // Slide Entregas — um item por serviço
+  const entregas = servicos.length > 0
+    ? servicos.map(srv => ({ id: srv.id, categoria: srv.nome, descricao: 'A definir' }))
+    : [{ id: '1', categoria: 'Exemplo', descricao: 'Descrição da entrega' }];
+
+  return [
+    {
+      type: 'cover', order: 0, visible: true,
+      data: {
+        titulo: project.nome,
+        subtitulo: 'Proposta Comercial',
+        clienteNome: project.clientName,
+        dataValidade: '',
+        usarLogoMGR: true,
+      } as CoverData,
+    },
+    {
+      type: 'overview', order: 1, visible: true,
+      data: {
+        descricao: project.descricao || project.prancheta?.observacoesTecnicas || '',
+        localizacao: project.leadData?.localizacao || '',
+        temperatura: '',
+        finalidade: project.leadData?.finalidade || '',
+        metragem: project.prancheta?.metragem || '',
+      } as OverviewData,
+    },
+    {
+      type: 'deliverables', order: 2, visible: true,
+      data: { items: entregas } as DeliverablesData,
+    },
+    {
+      type: 'timeline', order: 3, visible: true,
+      data: {
+        fases: fasesCrono.length > 0
+          ? fasesCrono
+          : [
+              { id: '1', nome: 'Fase 1', prazo: '—', descricao: '' },
+              { id: '2', nome: 'Fase 2', prazo: '—', descricao: '' },
+            ],
+        totalDias: totalDias > 0 ? `${totalDias} dias corridos` : '',
+      } as TimelineData,
+    },
+    {
+      // Slide de encerramento — CTA direciona para o PDF com valores e condições
+      type: 'closing', order: 4, visible: true,
+      data: {
+        textoCTA: 'Ver proposta comercial completa (PDF)',
+        textoFechamento: 'Agradecemos a confiança e estamos à disposição para esclarecer qualquer dúvida sobre a solução apresentada.',
+        exibirContato: true,
+      } as ClosingData,
+    },
+  ];
+}
 
 // ── Componente Principal ──────────────────────────────────────────────────────
 const ProjectProposta: React.FC<Props> = ({ project }) => {
+  const { currentUser, userProfile } = useAuth();
   const { projects, advancePhase, updateProject } = useProject();
-  const { cotacoes } = useProjectCotacao(project.id);
 
-  // ── Valores auto-calculados da prancheta + cotações ──
-  const totalMateriaisAuto = useMemo(
-    () => cotacoes.filter(c => c.selecionada).reduce((s, c) => s + c.valorTotal, 0),
-    [cotacoes],
-  );
-  const totalMdoAuto = useMemo(
-    () => (project.prancheta?.servicosExecucao || []).reduce(
-      (s, srv) => s + (srv.valorMaoDeObra || 0), 0,
-    ),
-    [project.prancheta?.servicosExecucao],
-  );
-  const totalDiasAuto = useMemo(
-    () => (project.prancheta?.servicosExecucao || []).reduce(
-      (s, srv) => s + srv.fases.reduce((a, f) => a + (f.diasExecucao || 0), 0), 0,
-    ),
-    [project.prancheta?.servicosExecucao],
-  );
+  // Fase atual em tempo real
+  const projectAtual = projects?.find(p => p.id === project.id);
+  const faseAtual = projectAtual?.fase || project.fase;
 
-  // ── Estado do formulário — pré-preenchido com dados salvos ou auto-calculados ──
+  // Dados da proposta salvos
   const [dados, setDados] = useState<PropostaDados>({
-    valorMateriais: 0,
-    valorMaoDeObra: 0,
-    desconto: 0,
-    valorTotal: 0,
-    condicoesPagamento: '',
-    prazoExecucao: '',
-    validadeAte: '',
-    observacoesCliente: '',
-    status: 'rascunho',
+    valorMateriais: 0, valorMaoDeObra: 0, desconto: 0, valorTotal: 0,
+    condicoesPagamento: '', prazoExecucao: '', validadeAte: '',
+    observacoesCliente: '', status: 'rascunho',
     ...project.propostaDados,
   });
 
-  // Preenche com auto-valores quando carregam (apenas se não houver dados salvos)
+  // Link da apresentação
+  const [apresentacaoInfo, setApresentacaoInfo] = useState<{
+    id: string; slug?: string; projetoTitulo?: string; clienteNome?: string; pdfUrl?: string | null;
+  } | null>(null);
+
   useEffect(() => {
-    if (!project.propostaDados && (totalMateriaisAuto > 0 || totalMdoAuto > 0)) {
-      setDados(prev => ({
-        ...prev,
-        valorMateriais: totalMateriaisAuto,
-        valorMaoDeObra: totalMdoAuto,
-        valorTotal: totalMateriaisAuto + totalMdoAuto,
-        prazoExecucao: totalDiasAuto > 0 ? `${totalDiasAuto} dias corridos` : prev.prazoExecucao,
-      }));
-    }
-  }, [totalMateriaisAuto, totalMdoAuto, totalDiasAuto, project.propostaDados]);
+    if (!project.apresentacaoId) return;
+    const unsub = onSnapshot(
+      doc(db, CollectionName.PRESENTATIONS, project.apresentacaoId),
+      snap => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setApresentacaoInfo({ id: snap.id, slug: d.slug, projetoTitulo: d.projetoTitulo, clienteNome: d.clienteNome, pdfUrl: d.pdfUrl });
+        }
+      },
+    );
+    return () => unsub();
+  }, [project.apresentacaoId]);
 
-  const calcTotal = (mat: number, mdo: number, desc: number) =>
-    Math.round((mat + mdo) * (1 - (desc || 0) / 100) * 100) / 100;
+  const linkSlides = useMemo(() => {
+    if (!apresentacaoInfo) return null;
+    const base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
+    return apresentacaoInfo.slug
+      ? `${window.location.origin}/#/apresentacao/${apresentacaoInfo.slug}`
+      : null;
+  }, [apresentacaoInfo]);
 
-  const updateDados = (field: keyof PropostaDados, value: any) => {
-    setDados(prev => {
-      const next = { ...prev, [field]: value };
-      if (['valorMateriais', 'valorMaoDeObra', 'desconto'].includes(field as string)) {
-        next.valorTotal = calcTotal(
-          Number(next.valorMateriais || 0),
-          Number(next.valorMaoDeObra || 0),
-          Number(next.desconto || 0),
-        );
-      }
-      return next;
-    });
-    setSavedLocal(false);
-  };
+  const pdfUrl = apresentacaoInfo?.pdfUrl || dados.pdfUrl || null;
 
-  // ── UI state ──────────────────────────────────────────────────────────────
-  const [savedLocal, setSavedLocal] = useState(false);
+  // ── Estado UI ──────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
-  const [secaoValores, setSecaoValores] = useState(true);
+  const [savedLocal, setSavedLocal] = useState(false);
+  const [criandoApres, setCriandoApres] = useState(false);
+  const [secaoSlides, setSecaoSlides] = useState(true);
+  const [secaoPdf, setSecaoPdf] = useState(true);
+  const [secaoDoc, setSecaoDoc] = useState(true);
   const [secaoEnvio, setSecaoEnvio] = useState(true);
-  const [secaoApresentacao, setSecaoApresentacao] = useState(false);
+  const [secaoAprovacao, setSecaoAprovacao] = useState(true);
+
+  // Upload PDF
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState('');
+  const [pdfExternalUrl, setPdfExternalUrl] = useState(dados.pdfUrl || '');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Mensagem
+  const [mensagem, setMensagem] = useState('');
+  const [telefoneWa, setTelefoneWa] = useState(
+    (project.leadData?.telefone || '').replace(/\D/g, ''),
+  );
   const [copied, setCopied] = useState(false);
   const [avancandoContrato, setAvancandoContrato] = useState(false);
   const [contratoAvancado, setContratoAvancado] = useState(false);
   const [voltando, setVoltando] = useState(false);
   const [showVoltarOpcoes, setShowVoltarOpcoes] = useState(false);
   const [revisaoMotivo, setRevisaoMotivo] = useState('');
-  const [telefoneWa, setTelefoneWa] = useState(
-    (project.leadData?.telefone || '').replace(/\D/g, ''),
-  );
 
-  // Apresentações (carregadas ao abrir a seção)
-  const [apresentacoes, setApresentacoes] = useState<Apresentacao[]>([]);
-  const [loadingApres, setLoadingApres] = useState(false);
-  const [selectedApresId, setSelectedApresId] = useState(project.apresentacaoId || '');
-  const [savingApres, setSavingApres] = useState(false);
-  const [apResSaved, setApResSaved] = useState(false);
+  // Link do documento de proposta HTML (cláusulas)
+  const propostaDocLink = useMemo(() => {
+    const slug = project.propostaDocumento?.slug;
+    const status = project.propostaDocumento?.status;
+    if (!slug || status === 'rascunho') return '';
+    return `${window.location.origin}/#/proposta/${slug}`;
+  }, [project.propostaDocumento?.slug, project.propostaDocumento?.status]);
 
+  // Gera mensagem default
+  const gerarMensagemDefault = useCallback(() => {
+    const linhas: string[] = [
+      `Olá${project.clientName ? `, *${project.clientName}*` : ''}! 👋`,
+      '',
+      `Segue sua proposta comercial para o projeto *${project.nome}*.`,
+      '',
+    ];
+    if (linkSlides) {
+      linhas.push(`🎨 *Apresentação completa:*`);
+      linhas.push(linkSlides);
+      linhas.push('');
+    }
+    if (propostaDocLink) {
+      linhas.push(`📋 *Documento comercial (cláusulas + aceite):*`);
+      linhas.push(propostaDocLink);
+      linhas.push('');
+    }
+    if (pdfUrl) {
+      linhas.push(`📄 *Documento PDF:*`);
+      linhas.push(pdfUrl);
+      linhas.push('');
+    }
+    linhas.push('Ficamos à disposição para qualquer dúvida. Aguardamos sua aprovação! 🙏');
+    return linhas.join('\n');
+  }, [project.clientName, project.nome, linkSlides, propostaDocLink, pdfUrl]);
+
+  // Atualiza mensagem quando links mudam (só se ainda não foi editada manualmente)
+  const mensagemEditada = useRef(false);
   useEffect(() => {
-    if (!secaoApresentacao) return;
-    setLoadingApres(true);
-    const q = query(collection(db, CollectionName.PRESENTATIONS), orderBy('updatedAt', 'desc'));
-    const unsub = onSnapshot(q, snap => {
-      setApresentacoes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Apresentacao)));
-      setLoadingApres(false);
-    }, () => setLoadingApres(false));
-    return () => unsub();
-  }, [secaoApresentacao]);
+    if (!mensagemEditada.current) {
+      setMensagem(gerarMensagemDefault());
+    }
+  }, [gerarMensagemDefault]);
 
-  const apresentacaoVinculada = apresentacoes.find(
-    a => a.id === (project.apresentacaoId || selectedApresId),
-  );
-  const linkApresentacao = apresentacaoVinculada?.slug
-    ? `${window.location.origin}/#/apresentacao/${apresentacaoVinculada.slug}`
-    : apresentacaoVinculada
-    ? `${window.location.origin}/#/apresentacao/${apresentacaoVinculada.id}`
-    : null;
+  // ── Criar apresentação pré-preenchida ──────────────────────────────────────
+  const handleCriarApresentacao = async () => {
+    if (!currentUser) return;
+    setCriandoApres(true);
+    try {
+      const slug = await generateSlug();
+      const slides = buildSlidesFromProject(project);
+      const docRef = await addDoc(collection(db, CollectionName.PRESENTATIONS), {
+        slug,
+        clienteNome: project.clientName,
+        projetoTitulo: project.nome,
+        responsavel: userProfile?.displayName || '',
+        responsavelEmail: '',
+        responsavelTelefone: '',
+        pdfUrl: null,
+        pdfStoragePath: null,
+        logoClienteUrl: null,
+        logoClienteStoragePath: null,
+        status: 'rascunho' as const,
+        tema: 'mgr-classic' as PresentationTema,
+        slides,
+        slideAutoplay: false,
+        slideDelayMs: 5000,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: currentUser.uid,
+      });
 
-  const versoes: ProjectV2PropostaVersao[] = project.propostaVersoes || [];
+      // Salva no projeto
+      const novaVersao: ProjectV2PropostaVersao = {
+        versao: (project.propostaVersoes?.length || 0) + 1,
+        apresentacaoId: docRef.id,
+        slug,
+        criadaEm: Timestamp.now(),
+      };
+      await updateDoc(doc(db, CollectionName.PROJECTS_V2, project.id), {
+        apresentacaoId: docRef.id,
+        propostaVersoes: arrayUnion(novaVersao),
+        updatedAt: serverTimestamp(),
+      });
 
-  // Fase atual via onSnapshot (projects sempre atualizado)
-  const projectAtual = projects?.find(p => p.id === project.id);
-  const faseAtual = projectAtual?.fase || project.fase;
+      // Abre o editor em nova aba
+      window.open(`#/app/apresentacoes?id=${docRef.id}`, '_blank');
+    } catch (err: any) {
+      alert(`Erro ao criar apresentação: ${err?.message || String(err)}`);
+    } finally {
+      setCriandoApres(false);
+    }
+  };
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleSave = async () => {
+  // ── Upload PDF ─────────────────────────────────────────────────────────────
+  const handleUploadPdf = (file: File) => {
+    if (!file || !project.apresentacaoId) return;
+    setUploadError('');
+    setUploadProgress(0);
+    const path = `presentations/${project.apresentacaoId}/proposta.pdf`;
+    const ref = storageRef(storage, path);
+    const task = uploadBytesResumable(ref, file, { contentType: 'application/pdf' });
+    task.on(
+      'state_changed',
+      snap => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+      err => { setUploadError(err.message); setUploadProgress(null); },
+      async () => {
+        const url = await getDownloadURL(ref);
+        // Salva no doc da apresentação e no projeto
+        await Promise.all([
+          updateDoc(doc(db, CollectionName.PRESENTATIONS, project.apresentacaoId!), {
+            pdfUrl: url, pdfStoragePath: path, updatedAt: serverTimestamp(),
+          }),
+          updateProject(project.id, { propostaDados: { ...dados, pdfUrl: url } as any }),
+        ]);
+        setDados(prev => ({ ...prev, pdfUrl: url }));
+        setPdfExternalUrl(url);
+        setUploadProgress(null);
+        setSavedLocal(true);
+      },
+    );
+  };
+
+  const handleSavePdfUrl = async () => {
+    if (!pdfExternalUrl.trim()) return;
     setSaving(true);
     try {
-      await updateProject(project.id, { propostaDados: dados } as any);
+      const newDados = { ...dados, pdfUrl: pdfExternalUrl.trim() };
+      setDados(newDados);
+      await updateProject(project.id, { propostaDados: newDados as any });
+      if (project.apresentacaoId) {
+        await updateDoc(doc(db, CollectionName.PRESENTATIONS, project.apresentacaoId), {
+          pdfUrl: pdfExternalUrl.trim(), updatedAt: serverTimestamp(),
+        });
+      }
       setSavedLocal(true);
     } finally { setSaving(false); }
   };
 
-  const generateMessage = () => {
-    const servicos = project.prancheta?.servicosExecucao || [];
-    const linhas: string[] = [
-      `Olá${project.clientName ? `, *${project.clientName}*` : ''}! 👋`,
-      '',
-      `Segue a proposta comercial para o seu projeto *${project.nome}*:`,
-      '',
-    ];
-
-    if (servicos.length > 0) {
-      linhas.push('🔧 *Serviços previstos:*');
-      servicos.forEach((srv, i) => {
-        const dias = srv.fases.reduce((a, f) => a + (f.diasExecucao || 0), 0);
-        linhas.push(`  ${i + 1}. ${srv.nome}${dias > 0 ? ` — ${dias} dia${dias !== 1 ? 's' : ''}` : ''}`);
-      });
-      linhas.push('');
-    }
-
-    linhas.push('💰 *Resumo financeiro:*');
-    if (dados.valorMateriais && dados.valorMateriais > 0)
-      linhas.push(`  • Materiais: ${fmtCurrency(dados.valorMateriais)}`);
-    if (dados.valorMaoDeObra && dados.valorMaoDeObra > 0)
-      linhas.push(`  • Mão de obra: ${fmtCurrency(dados.valorMaoDeObra)}`);
-    if (dados.desconto && dados.desconto > 0)
-      linhas.push(`  • Desconto aplicado: ${dados.desconto}%`);
-    linhas.push(`  • *Total: ${fmtCurrency(dados.valorTotal || 0)}*`);
-    linhas.push('');
-
-    if (dados.condicoesPagamento)
-      linhas.push(`💳 *Condições de pagamento:* ${dados.condicoesPagamento}`);
-    if (dados.prazoExecucao)
-      linhas.push(`📅 *Prazo de execução:* ${dados.prazoExecucao}`);
-    if (dados.validadeAte)
-      linhas.push(`⏰ *Validade da proposta:* ${fmtDateBr(dados.validadeAte)}`);
-
-    if (dados.observacoesCliente?.trim()) {
-      linhas.push('');
-      linhas.push(`📋 *Observações:*`);
-      linhas.push(dados.observacoesCliente.trim());
-    }
-
-    if (linkApresentacao) {
-      linhas.push('');
-      linhas.push(`🎨 *Apresentação completa:* ${linkApresentacao}`);
-    }
-
-    linhas.push('');
-    linhas.push('Aguardamos sua aprovação. Qualquer dúvida, estou à disposição! 🙏');
-    return linhas.join('\n');
-  };
-
+  // ── Enviar WhatsApp ────────────────────────────────────────────────────────
   const handleEnviarWhatsApp = async () => {
-    const msg = generateMessage();
     const tel = telefoneWa.replace(/\D/g, '');
     const url = tel
-      ? `https://wa.me/${tel.startsWith('55') ? tel : '55' + tel}?text=${encodeURIComponent(msg)}`
-      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      ? `https://wa.me/${tel.startsWith('55') ? tel : '55' + tel}?text=${encodeURIComponent(mensagem)}`
+      : `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
     window.open(url, '_blank');
 
     const novoDados: PropostaDados = {
-      ...dados,
-      status: 'enviado',
-      enviadoEm: Timestamp.now() as any,
+      ...dados, status: 'enviado', enviadoEm: Timestamp.now() as any,
     };
     setDados(novoDados);
-    await updateProject(project.id, { propostaDados: novoDados } as any);
+    await updateProject(project.id, { propostaDados: novoDados as any });
     setSavedLocal(true);
   };
 
   const handleCopyMessage = async () => {
-    await navigator.clipboard.writeText(generateMessage());
+    await navigator.clipboard.writeText(mensagem);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const handleVincularApres = async () => {
-    if (!selectedApresId) return;
-    setSavingApres(true);
-    try {
-      const apres = apresentacoes.find(a => a.id === selectedApresId);
-      const novaVersao: ProjectV2PropostaVersao = {
-        versao: versoes.length + 1,
-        apresentacaoId: selectedApresId,
-        slug: apres?.slug || undefined,
-        criadaEm: Timestamp.now(),
-      };
-      await updateDoc(doc(db, CollectionName.PROJECTS_V2, project.id), {
-        apresentacaoId: selectedApresId,
-        propostaVersoes: arrayUnion(novaVersao),
-        updatedAt: serverTimestamp(),
-      });
-      setApResSaved(true);
-      setTimeout(() => setApResSaved(false), 3000);
-    } finally { setSavingApres(false); }
-  };
-
+  // ── Aprovação → Contrato ───────────────────────────────────────────────────
   const handleAvançarContrato = async () => {
     if (!window.confirm('Confirmar aprovação do cliente? O projeto avançará para a fase de Contrato.')) return;
     setAvancandoContrato(true);
     try {
       const novoDados: PropostaDados = {
-        ...dados,
-        status: 'aprovado',
-        aprovadoEm: Timestamp.now() as any,
+        ...dados, status: 'aprovado', aprovadoEm: Timestamp.now() as any,
       };
-      await updateProject(project.id, { propostaDados: novoDados } as any);
+      await updateProject(project.id, { propostaDados: novoDados as any });
       setDados(novoDados);
 
       const result = await advancePhase(
-        project.id,
-        'contrato_enviado',
+        project.id, 'contrato_enviado',
         'Proposta aprovada pelo cliente — avançando para Contrato',
       );
       if (!result.success) {
@@ -316,37 +414,38 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         return;
       }
       setContratoAvancado(true);
-    } catch (err: any) { alert(`Erro: ${err?.message || String(err)}`); }
-    finally { setAvancandoContrato(false); }
+    } catch (err: any) {
+      alert(`Erro: ${err?.message || String(err)}`);
+    } finally {
+      setAvancandoContrato(false);
+    }
   };
 
+  // ── Revisão → Voltar ───────────────────────────────────────────────────────
   const handleVoltar = async (fase: ProjectPhase) => {
     if (!revisaoMotivo.trim()) {
-      alert('Descreva brevemente o que o cliente pediu para ajustar.');
+      alert('Descreva o que o cliente pediu para ajustar.');
       return;
     }
     setVoltando(true);
     try {
-      const novoDados: PropostaDados = {
-        ...dados,
-        status: 'revisao',
-        revisaoMotivo,
-      };
-      await updateProject(project.id, { propostaDados: novoDados } as any);
+      const novoDados: PropostaDados = { ...dados, status: 'revisao', revisaoMotivo };
+      await updateProject(project.id, { propostaDados: novoDados as any });
       setDados(novoDados);
 
       const label = fase === 'cotacao_recebida' ? 'Cotação' : 'Prancheta';
       const result = await advancePhase(
-        project.id,
-        fase,
-        `Revisão solicitada pelo cliente — retornando para ${label}: ${revisaoMotivo}`,
+        project.id, fase,
+        `Revisão — retornando para ${label}: ${revisaoMotivo}`,
       );
       if (!result.success) alert(`Erro ao retornar: ${result.error}`);
-    } catch (err: any) { alert(`Erro: ${err?.message || String(err)}`); }
-    finally { setVoltando(false); setShowVoltarOpcoes(false); }
+    } catch (err: any) {
+      alert(`Erro: ${err?.message || String(err)}`);
+    } finally {
+      setVoltando(false);
+      setShowVoltarOpcoes(false);
+    }
   };
-
-  const statusCfg = STATUS_CONFIG[dados.status || 'rascunho'];
 
   // ── Confirmação final ──────────────────────────────────────────────────────
   if (contratoAvancado) {
@@ -354,14 +453,29 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       <div className="rounded-2xl p-6 bg-emerald-50 border border-emerald-300 flex items-center gap-4">
         <Check className="w-8 h-8 text-emerald-600 flex-shrink-0" />
         <div>
-          <p className="text-base font-extrabold text-emerald-800">🎉 Proposta aprovada! Projeto avançado para Contrato.</p>
+          <p className="text-base font-extrabold text-emerald-800">🎉 Proposta aprovada! Avançando para Contrato.</p>
           <p className="text-sm text-emerald-600 mt-1">Acesse a fase de Contrato para gerar e enviar o contrato ao cliente.</p>
         </div>
       </div>
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const statusCfg = STATUS_CONFIG[dados.status || 'rascunho'];
+  const temApresentacao = !!project.apresentacaoId;
+  const temPdf = !!(pdfUrl);
+  const temSlideLink = !!linkSlides;
+  const temDocPublicado = !!project.propostaDocumento?.slug &&
+    project.propostaDocumento.status !== 'rascunho';
+
+  // ── Passos de progresso ────────────────────────────────────────────────────
+  const steps = [
+    { n: 1, label: 'Slides',    done: temApresentacao,                                            icon: '🎨' },
+    { n: 2, label: 'PDF',       done: temPdf,                                                     icon: '📄' },
+    { n: 3, label: 'Documento', done: temDocPublicado,                                            icon: '📋' },
+    { n: 4, label: 'Envio',     done: dados.status === 'enviado' || dados.status === 'aprovado',  icon: '📱' },
+    { n: 5, label: 'Aprovação', done: dados.status === 'aprovado',                               icon: '✅' },
+  ];
+
   return (
     <div className="space-y-5">
 
@@ -378,20 +492,31 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusCfg.dot}`} />
             {statusCfg.label}
           </span>
-          <button onClick={handleSave} disabled={saving}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-              savedLocal ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                        : 'bg-brand-600 text-white hover:bg-brand-700'
-            }`}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" />
-              : savedLocal ? <Check className="w-4 h-4" />
-              : <Save className="w-4 h-4" />}
-            {saving ? 'Salvando...' : savedLocal ? 'Salvo ✓' : 'Salvar'}
-          </button>
         </div>
       </div>
 
-      {/* ── Banner de revisão ── */}
+      {/* ── Barra de progresso ── */}
+      <div className="flex items-center gap-2 bg-white border border-gray-100 rounded-2xl px-5 py-3">
+        {steps.map((s, i) => (
+          <React.Fragment key={s.n}>
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold flex-shrink-0 transition-colors ${
+                s.done ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-400'
+              }`}>
+                {s.done ? <Check className="w-3.5 h-3.5" /> : s.n}
+              </div>
+              <span className={`text-xs font-bold hidden sm:block truncate ${s.done ? 'text-emerald-700' : 'text-gray-400'}`}>
+                {s.icon} {s.label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <div className={`h-0.5 flex-1 max-w-8 rounded-full transition-colors ${s.done ? 'bg-emerald-300' : 'bg-gray-100'}`} />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* ── Banner revisão ── */}
       {dados.status === 'revisao' && dados.revisaoMotivo && (
         <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-start gap-3">
           <RefreshCw className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -402,149 +527,225 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         </div>
       )}
 
-      {/* ══ SEÇÃO 1: Valores e Condições ══ */}
+      {/* ══ PASSO 1: Apresentação em Slides ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <button onClick={() => setSecaoValores(!secaoValores)}
+        <button onClick={() => setSecaoSlides(!secaoSlides)}
           className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-emerald-100 rounded-lg flex items-center justify-center">
-              <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temApresentacao ? 'bg-emerald-100' : 'bg-brand-100'}`}>
+              <PresentIcon className={`w-3.5 h-3.5 ${temApresentacao ? 'text-emerald-600' : 'text-brand-600'}`} />
             </div>
-            <span className="text-sm font-bold text-gray-800">Valores e Condições da Proposta</span>
-            {(dados.valorTotal ?? 0) > 0 && (
-              <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">
-                {fmtCurrency(dados.valorTotal!)}
-              </span>
-            )}
+            <span className="text-sm font-bold text-gray-800">Passo 1 — Apresentação em Slides</span>
+            {temApresentacao
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Criada</span>
+              : <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold">Pendente</span>}
           </div>
-          {secaoValores ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          {secaoSlides ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
 
-        {secaoValores && (
+        {secaoSlides && (
           <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
 
-            {/* Banner auto-valores */}
-            {(totalMateriaisAuto > 0 || totalMdoAuto > 0) && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3">
-                <RefreshCw className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                <div className="text-xs text-blue-700 flex-1">
-                  <strong>Importado automaticamente das fases anteriores:</strong>
-                  {totalMateriaisAuto > 0 && <span className="ml-2">Materiais: <strong>{fmtCurrency(totalMateriaisAuto)}</strong></span>}
-                  {totalMdoAuto > 0 && <span className="ml-2">· Mão de obra: <strong>{fmtCurrency(totalMdoAuto)}</strong></span>}
-                  {totalDiasAuto > 0 && <span className="ml-2">· <strong>{totalDiasAuto} dias</strong></span>}
+            {!temApresentacao ? (
+              /* — Criar nova — */
+              <div className="space-y-3">
+                <div className="bg-brand-50 border border-brand-200 rounded-xl p-4">
+                  <p className="text-sm font-bold text-brand-900 mb-1">Criar apresentação de slides</p>
+                  <p className="text-xs text-brand-700">
+                    Uma apresentação será criada automaticamente pré-preenchida com os dados
+                    do projeto (cliente, cronograma, serviços). O editor abrirá em nova aba.
+                  </p>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={handleCriarApresentacao} disabled={criandoApres}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-60 transition-colors shadow-sm">
+                    {criandoApres
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Criando...</>
+                      : <><Plus className="w-4 h-4" /> Criar Apresentação</>}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* — Apresentação criada — */
+              <div className="space-y-3">
+
+                {/* Card da apresentação */}
+                <div className="flex items-center gap-3 p-4 bg-brand-50 border border-brand-200 rounded-xl">
+                  <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <PresentIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-brand-900 truncate">
+                      {apresentacaoInfo?.projetoTitulo || project.nome}
+                    </p>
+                    <p className="text-xs text-brand-600 truncate">
+                      {apresentacaoInfo?.clienteNome || project.clientName}
+                    </p>
+                    {linkSlides && (
+                      <p className="text-[10px] text-brand-400 font-mono mt-0.5 truncate">{linkSlides}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => window.open(`#/app/apresentacoes?id=${project.apresentacaoId}`, '_blank')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">
+                      <Play className="w-3 h-3" /> Editar Slides
+                    </button>
+                    {linkSlides && (
+                      <a href={linkSlides} target="_blank" rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg bg-white border border-brand-200 hover:bg-brand-50 text-brand-600 transition-colors">
+                        <Eye className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Copiar link dos slides */}
+                {linkSlides && (
+                  <div className="flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                    <Link2 className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="text-xs text-gray-600 flex-1 truncate font-mono">{linkSlides}</span>
+                    <button onClick={async () => {
+                      await navigator.clipboard.writeText(linkSlides);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold border rounded-lg transition-colors bg-white text-gray-600 border-gray-200 hover:bg-gray-100">
+                      {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      Copiar
+                    </button>
+                  </div>
+                )}
+
+                {/* Aviso se não tem slide link ainda */}
+                {!linkSlides && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                    <AlertCircle className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+                    <p className="text-xs text-yellow-800">
+                      Apresentação criada mas ainda sem link público. Abra o editor e publique a apresentação para gerar o link.
+                    </p>
+                  </div>
+                )}
+
+                {/* Criar nova versão */}
+                <button
+                  onClick={handleCriarApresentacao}
+                  disabled={criandoApres}
+                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                  <Plus className="w-3 h-3" />
+                  {criandoApres ? 'Criando...' : 'Criar nova versão dos slides'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ══ PASSO 2: PDF da Proposta ══ */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <button onClick={() => setSecaoPdf(!secaoPdf)}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-2">
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temPdf ? 'bg-emerald-100' : 'bg-red-100'}`}>
+              <FileText className={`w-3.5 h-3.5 ${temPdf ? 'text-emerald-600' : 'text-red-500'}`} />
+            </div>
+            <span className="text-sm font-bold text-gray-800">Passo 2 — Documento PDF</span>
+            {temPdf
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Vinculado</span>
+              : <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">Opcional</span>}
+          </div>
+          {secaoPdf ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </button>
+
+        {secaoPdf && (
+          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
+
+            {/* PDF atual */}
+            {temPdf && (
+              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span className="text-xs text-emerald-700 flex-1 truncate font-mono">{pdfUrl}</span>
+                <a href={pdfUrl!} target="_blank" rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Upload */}
+            <div>
+              <p className="text-xs font-bold text-gray-600 mb-2">Upload do PDF</p>
+              {!temApresentacao && (
+                <p className="text-xs text-amber-600 mb-2">Crie a apresentação em slides (Passo 1) antes de fazer o upload do PDF.</p>
+              )}
+              <input
+                type="file" accept=".pdf" ref={fileInputRef}
+                className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleUploadPdf(e.target.files[0]); }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!temApresentacao || uploadProgress !== null}
+                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-50 transition-all w-full justify-center">
+                {uploadProgress !== null
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgress}%</>
+                  : <><Upload className="w-4 h-4" /> Selecionar PDF</>}
+              </button>
+              {uploadError && <p className="text-xs text-red-600 mt-1">{uploadError}</p>}
+            </div>
 
-              {/* Materiais */}
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">
-                  Valor Materiais (R$)
-                  {totalMateriaisAuto > 0 && (
-                    <button onClick={() => updateDados('valorMateriais', totalMateriaisAuto)}
-                      className="ml-2 text-[9px] text-blue-600 font-bold hover:underline">
-                      ↺ usar auto ({fmtCurrency(totalMateriaisAuto)})
-                    </button>
-                  )}
-                </label>
-                <input type="number" min={0} step={100}
-                  value={dados.valorMateriais || ''}
-                  onChange={e => updateDados('valorMateriais', Number(e.target.value))}
-                  placeholder="0,00"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
-              </div>
-
-              {/* Mão de obra */}
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">
-                  Valor Mão de Obra (R$)
-                  {totalMdoAuto > 0 && (
-                    <button onClick={() => updateDados('valorMaoDeObra', totalMdoAuto)}
-                      className="ml-2 text-[9px] text-blue-600 font-bold hover:underline">
-                      ↺ usar auto ({fmtCurrency(totalMdoAuto)})
-                    </button>
-                  )}
-                </label>
-                <input type="number" min={0} step={100}
-                  value={dados.valorMaoDeObra || ''}
-                  onChange={e => updateDados('valorMaoDeObra', Number(e.target.value))}
-                  placeholder="0,00"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
-              </div>
-
-              {/* Desconto */}
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">Desconto (%)</label>
-                <input type="number" min={0} max={100} step={1}
-                  value={dados.desconto || ''}
-                  onChange={e => updateDados('desconto', Number(e.target.value))}
-                  placeholder="0"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
-              </div>
-
-              {/* Total */}
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">Valor Total da Proposta</label>
-                <div className="w-full border-2 border-emerald-300 rounded-xl px-3 py-2.5 text-base font-extrabold text-emerald-700 bg-emerald-50">
-                  {fmtCurrency(dados.valorTotal || 0)}
-                </div>
-              </div>
-
-              {/* Condições */}
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">Condições de Pagamento</label>
+            {/* OU URL externa */}
+            <div>
+              <p className="text-xs font-bold text-gray-600 mb-2">ou colar link externo do PDF</p>
+              <div className="flex gap-2">
                 <input
-                  value={dados.condicoesPagamento || ''}
-                  onChange={e => updateDados('condicoesPagamento', e.target.value)}
-                  placeholder="Ex: 30% na assinatura, 70% na conclusão"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
-              </div>
-
-              {/* Prazo */}
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">
-                  Prazo de Execução
-                  {totalDiasAuto > 0 && (
-                    <button onClick={() => updateDados('prazoExecucao', `${totalDiasAuto} dias corridos`)}
-                      className="ml-2 text-[9px] text-blue-600 font-bold hover:underline">
-                      ↺ usar auto ({totalDiasAuto} dias)
-                    </button>
-                  )}
-                </label>
-                <input
-                  value={dados.prazoExecucao || ''}
-                  onChange={e => updateDados('prazoExecucao', e.target.value)}
-                  placeholder="Ex: 23 dias corridos após aprovação"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
-              </div>
-
-              {/* Validade */}
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">Validade da Proposta</label>
-                <input type="date"
-                  value={dados.validadeAte || ''}
-                  onChange={e => updateDados('validadeAte', e.target.value)}
-                  className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
-              </div>
-
-              {/* Observações */}
-              <div className="md:col-span-2">
-                <label className="text-xs font-bold text-gray-600 block mb-1.5">Observações para o Cliente</label>
-                <textarea
-                  value={dados.observacoesCliente || ''}
-                  onChange={e => updateDados('observacoesCliente', e.target.value)}
-                  rows={3}
-                  placeholder="Ex: Proposta inclui materiais e mão de obra. Alterações no escopo serão renegociadas."
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none outline-none focus:ring-2 focus:ring-brand-400" />
+                  value={pdfExternalUrl}
+                  onChange={e => setPdfExternalUrl(e.target.value)}
+                  placeholder="https://drive.google.com/..."
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
+                <button
+                  onClick={handleSavePdfUrl}
+                  disabled={saving || !pdfExternalUrl.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-800 text-white rounded-xl text-sm font-bold hover:bg-gray-700 disabled:opacity-40 transition-colors">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar
+                </button>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* ══ SEÇÃO 2: Envio ao Cliente ══ */}
+      {/* ══ PASSO 3: Documento Comercial (Cláusulas HTML) ══ */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <button onClick={() => setSecaoDoc(!secaoDoc)}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-2">
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temDocPublicado ? 'bg-emerald-100' : 'bg-purple-100'}`}>
+              <FileText className={`w-3.5 h-3.5 ${temDocPublicado ? 'text-emerald-600' : 'text-purple-500'}`} />
+            </div>
+            <span className="text-sm font-bold text-gray-800">Passo 3 — Documento Comercial</span>
+            {temDocPublicado
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Publicado</span>
+              : project.propostaDocumento?.clausulas?.length
+                ? <span className="text-[9px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-bold">Rascunho</span>
+                : <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">Cláusulas + Aceite</span>
+            }
+          </div>
+          {secaoDoc ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </button>
+
+        {secaoDoc && (
+          <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+            <p className="text-xs text-gray-500 mb-4">
+              Crie o documento com cláusulas personalizadas, publique e envie o link ao cliente para leitura e aceite formal online.
+            </p>
+            <ProjectPropostaDoc project={project} />
+          </div>
+        )}
+      </div>
+
+      {/* ══ PASSO 4: Envio ao Cliente ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
         <button onClick={() => setSecaoEnvio(!secaoEnvio)}
           className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
@@ -552,10 +753,10 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
             <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center">
               <MessageCircle className="w-3.5 h-3.5 text-green-600" />
             </div>
-            <span className="text-sm font-bold text-gray-800">Envio ao Cliente</span>
-            {dados.status === 'enviado' && dados.enviadoEm && (
+            <span className="text-sm font-bold text-gray-800">Passo 4 — Envio ao Cliente</span>
+            {(dados.status === 'enviado' || dados.status === 'aprovado') && (
               <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">
-                Enviado em {fmtDate(dados.enviadoEm)}
+                {dados.enviadoEm ? `Enviado em ${fmtDate(dados.enviadoEm)}` : 'Enviado'}
               </span>
             )}
           </div>
@@ -565,228 +766,137 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         {secaoEnvio && (
           <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
 
-            {/* Preview da mensagem */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-gray-600">Prévia da Mensagem WhatsApp</p>
-                <button onClick={handleCopyMessage}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${
-                    copied ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                           : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                  }`}>
-                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  {copied ? 'Copiado!' : 'Copiar texto'}
+            {/* Aviso se não tem link */}
+            {!temSlideLink && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-start gap-3">
+                <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-yellow-800">
+                  A mensagem ficará mais completa após criar a apresentação (Passo 1), vincular o PDF (Passo 2) e publicar o documento comercial (Passo 3).
+                  Você pode enviar mesmo assim.
+                </p>
+              </div>
+            )}
+
+            {/* Área de texto editável */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs font-bold text-gray-600">Mensagem para o WhatsApp</p>
+                <button onClick={() => { mensagemEditada.current = false; setMensagem(gerarMensagemDefault()); }}
+                  className="text-[10px] text-brand-600 font-bold hover:underline">
+                  ↺ Regenerar
                 </button>
               </div>
-
-              {/* Bolha de preview estilo WhatsApp */}
-              <div className="bg-[#e9edef] rounded-2xl p-4 max-h-56 overflow-y-auto">
-                <div className="bg-white rounded-xl p-3.5 text-xs text-gray-800 whitespace-pre-wrap leading-relaxed shadow-sm">
-                  {generateMessage()}
-                </div>
-              </div>
+              <textarea
+                value={mensagem}
+                onChange={e => { mensagemEditada.current = true; setMensagem(e.target.value); }}
+                rows={10}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none outline-none focus:ring-2 focus:ring-green-400 font-mono leading-relaxed" />
             </div>
 
-            {/* Telefone + botão enviar */}
+            {/* Telefone + ações */}
             <div>
               <label className="text-xs font-bold text-gray-600 block mb-1.5">
                 WhatsApp do Cliente
-                <span className="text-gray-400 font-normal ml-1">(opcional — sem número abre sem destinatário)</span>
+                <span className="text-gray-400 font-normal ml-1">(opcional)</span>
               </label>
               <div className="flex gap-2 flex-wrap">
                 <input
                   value={telefoneWa}
                   onChange={e => setTelefoneWa(e.target.value)}
-                  placeholder="5511999999999 (com DDI 55)"
+                  placeholder="5511999999999"
                   className="flex-1 min-w-0 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
                 <button onClick={handleEnviarWhatsApp}
                   className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors shadow-sm flex-shrink-0">
                   <MessageCircle className="w-4 h-4" /> Enviar via WhatsApp
                 </button>
-              </div>
-            </div>
-
-            {/* Link da apresentação (se vinculada) */}
-            {linkApresentacao && (
-              <div className="flex items-center gap-3 p-3 bg-brand-50 border border-brand-200 rounded-xl">
-                <Link2 className="w-4 h-4 text-brand-600 flex-shrink-0" />
-                <span className="text-xs text-brand-700 flex-1 truncate font-mono">{linkApresentacao}</span>
-                <a href={linkApresentacao} target="_blank" rel="noopener noreferrer"
-                  className="p-1.5 rounded-lg hover:bg-brand-100 text-brand-600 transition-colors flex-shrink-0">
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ══ SEÇÃO 3: Apresentação/Slides (opcional) ══ */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <button onClick={() => setSecaoApresentacao(!secaoApresentacao)}
-          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-brand-100 rounded-lg flex items-center justify-center">
-              <FileText className="w-3.5 h-3.5 text-brand-600" />
-            </div>
-            <span className="text-sm font-bold text-gray-800">Apresentação / Slides</span>
-            <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">Opcional</span>
-            {project.apresentacaoId && (
-              <span className="text-[9px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full font-bold">✓ Vinculada</span>
-            )}
-          </div>
-          {secaoApresentacao ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-        </button>
-
-        {secaoApresentacao && (
-          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-3">
-            <p className="text-xs text-gray-500">
-              Vincule uma apresentação criada no módulo de Apresentações — o link será incluído automaticamente na mensagem WhatsApp.
-            </p>
-
-            {loadingApres ? (
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando apresentações...
-              </div>
-            ) : apresentacoes.length === 0 ? (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start gap-3">
-                <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-bold text-yellow-800">Nenhuma apresentação encontrada</p>
-                  <a href="#/app/apresentacoes"
-                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-yellow-600 text-white rounded-lg text-xs font-bold hover:bg-yellow-700">
-                    <Plus className="w-3.5 h-3.5" /> Criar no módulo de Apresentações
-                  </a>
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2 flex-wrap">
-                <select value={selectedApresId} onChange={e => setSelectedApresId(e.target.value)}
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400 bg-white min-w-0">
-                  <option value="">— Selecione uma apresentação —</option>
-                  {apresentacoes.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.title || a.nome || a.id}{a.clienteNome ? ` (${a.clienteNome})` : ''}
-                    </option>
-                  ))}
-                </select>
-                <button onClick={handleVincularApres}
-                  disabled={!selectedApresId || savingApres || selectedApresId === project.apresentacaoId}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-40 flex-shrink-0 ${
-                    apResSaved ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-600 text-white hover:bg-brand-700'
+                <button onClick={handleCopyMessage}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all flex-shrink-0 ${
+                    copied ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                   }`}>
-                  {savingApres ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : apResSaved ? <Check className="w-4 h-4" />
-                    : <Link2 className="w-4 h-4" />}
-                  {apResSaved ? 'Vinculado!' : 'Vincular'}
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied ? 'Copiado!' : 'Copiar'}
                 </button>
               </div>
-            )}
-
-            {/* Histórico de versões */}
-            {versoes.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-gray-100">
-                <p className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
-                  <History className="w-3 h-3" /> Versões vinculadas
-                </p>
-                {[...versoes].reverse().slice(0, 3).map((v, i) => {
-                  const apres = apresentacoes.find(a => a.id === v.apresentacaoId);
-                  return (
-                    <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg text-xs">
-                      <span className="w-6 h-6 rounded bg-brand-100 flex items-center justify-center text-[10px] font-extrabold text-brand-700">v{v.versao}</span>
-                      <span className="flex-1 truncate text-gray-700">{apres?.title || apres?.nome || v.apresentacaoId}</span>
-                      <span className="text-gray-400 text-[9px]">{fmtDate(v.criadaEm)}</span>
-                      {v.apresentacaoId && (
-                        <a href={`#/app/apresentacoes/${v.apresentacaoId}`}
-                          className="p-1 rounded hover:bg-gray-200 text-gray-400 transition-colors">
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* ══ SEÇÃO 4: Aprovação e Próximos Passos ══ */}
+      {/* ══ PASSO 4: Aprovação ══ */}
       {faseAtual === 'proposta_enviada' && dados.status !== 'aprovado' && (
-        <div className="space-y-3">
-
-          {/* Aprovação → Contrato */}
-          <div className="rounded-2xl p-5 bg-emerald-50 border border-emerald-200 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Check className="w-4 h-4 text-emerald-600" />
+        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+          <button onClick={() => setSecaoAprovacao(!secaoAprovacao)}
+            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-emerald-100 rounded-lg flex items-center justify-center">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
               </div>
-              <div>
-                <p className="text-sm font-bold text-emerald-900">✅ Cliente aprovou a proposta?</p>
-                <p className="text-xs text-emerald-700 mt-0.5">
-                  Registre a aprovação para avançar para a fase de Contrato.
-                </p>
-              </div>
+              <span className="text-sm font-bold text-gray-800">Passo 5 — Aprovação do Cliente</span>
             </div>
-            <button onClick={handleAvançarContrato} disabled={avancandoContrato}
-              className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm active:scale-[0.99]">
-              {avancandoContrato
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Avançando...</>
-                : <><ArrowRight className="w-4 h-4" /> Cliente Aprovou — Avançar para Contrato</>}
-            </button>
-          </div>
+            {secaoAprovacao ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          </button>
 
-          {/* Revisão → Voltar */}
-          <div className="rounded-2xl p-5 bg-amber-50 border border-amber-200 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <RefreshCw className="w-4 h-4 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-amber-900">🔄 Cliente pediu ajustes?</p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  Volte para a fase adequada, faça as alterações e gere uma nova proposta.
-                </p>
-              </div>
-            </div>
+          {secaoAprovacao && (
+            <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
 
-            {!showVoltarOpcoes ? (
-              <button onClick={() => setShowVoltarOpcoes(true)}
-                className="flex items-center gap-2 px-4 py-2.5 border border-amber-300 text-amber-700 bg-white rounded-xl text-sm font-bold hover:bg-amber-100 transition-colors">
-                <RefreshCw className="w-4 h-4" /> Solicitar Revisão
-              </button>
-            ) : (
-              <div className="space-y-3">
+              {/* Aprovar */}
+              <div className="rounded-xl p-4 bg-emerald-50 border border-emerald-200 space-y-3">
                 <div>
-                  <label className="text-xs font-bold text-amber-800 block mb-1.5">
-                    O que o cliente pediu para ajustar? *
-                  </label>
-                  <textarea
-                    value={revisaoMotivo}
-                    onChange={e => setRevisaoMotivo(e.target.value)}
-                    rows={2}
-                    placeholder="Ex: Cliente quer materiais de melhor qualidade; Prazo de pagamento diferente..."
-                    className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:ring-2 focus:ring-amber-300 bg-white" />
+                  <p className="text-sm font-bold text-emerald-900">✅ Cliente aprovou a proposta?</p>
+                  <p className="text-xs text-emerald-700 mt-0.5">Registre a aprovação para avançar para a fase de Contrato.</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => handleVoltar('cotacao_recebida')} disabled={voltando || !revisaoMotivo.trim()}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 disabled:opacity-50 transition-colors">
-                    {voltando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowLeft className="w-4 h-4" />}
-                    ← Revisar Cotações
-                  </button>
-                  <button onClick={() => handleVoltar('em_levantamento')} disabled={voltando || !revisaoMotivo.trim()}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                    {voltando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowLeft className="w-4 h-4" />}
-                    ← Revisar Prancheta
-                  </button>
-                  <button onClick={() => { setShowVoltarOpcoes(false); setRevisaoMotivo(''); }}
-                    className="flex items-center gap-1.5 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors">
-                    <X className="w-4 h-4" /> Cancelar
-                  </button>
-                </div>
+                <button onClick={handleAvançarContrato} disabled={avancandoContrato}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm">
+                  {avancandoContrato
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Avançando...</>
+                    : <><ArrowRight className="w-4 h-4" /> Cliente Aprovou — Avançar para Contrato</>}
+                </button>
               </div>
-            )}
-          </div>
+
+              {/* Revisão */}
+              <div className="rounded-xl p-4 bg-amber-50 border border-amber-200 space-y-3">
+                <div>
+                  <p className="text-sm font-bold text-amber-900">🔄 Cliente pediu ajustes?</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Volte para a fase adequada, ajuste e reenvie uma nova proposta.</p>
+                </div>
+
+                {!showVoltarOpcoes ? (
+                  <button onClick={() => setShowVoltarOpcoes(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 border border-amber-300 text-amber-700 bg-white rounded-xl text-sm font-bold hover:bg-amber-100 transition-colors">
+                    <RefreshCw className="w-4 h-4" /> Solicitar Revisão
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-bold text-amber-800 block mb-1.5">O que o cliente pediu para ajustar? *</label>
+                      <textarea
+                        value={revisaoMotivo}
+                        onChange={e => setRevisaoMotivo(e.target.value)}
+                        rows={2}
+                        placeholder="Ex: Prazo de pagamento diferente; Incluir mais serviços..."
+                        className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:ring-2 focus:ring-amber-300 bg-white" />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => handleVoltar('cotacao_recebida')} disabled={voltando || !revisaoMotivo.trim()}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 disabled:opacity-50 transition-colors">
+                        {voltando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowLeft className="w-4 h-4" />}
+                        ← Revisar Cotações
+                      </button>
+                      <button onClick={() => handleVoltar('em_levantamento')} disabled={voltando || !revisaoMotivo.trim()}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                        {voltando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowLeft className="w-4 h-4" />}
+                        ← Revisar Prancheta
+                      </button>
+                      <button onClick={() => { setShowVoltarOpcoes(false); setRevisaoMotivo(''); }}
+                        className="flex items-center gap-1.5 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                        <X className="w-4 h-4" /> Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

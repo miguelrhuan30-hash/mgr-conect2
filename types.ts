@@ -1153,6 +1153,8 @@ const _BASE_COLLECTIONS = {
   INTEL_TOOL_STATE:   'intel_tool_state',
   // Sprint IW-02 — Multi-Análise Ishikawa
   ISHIKAWA_ANALYSES:  'hub_ishikawa_analyses',
+  // Sprint Proposta Comercial — Documento de Proposta + Banco de Cláusulas
+  CLAUSULAS_MODELOS: 'clausulas_modelos',
 
 } as const;
 
@@ -1991,10 +1993,46 @@ export interface PropostaDados {
   prazoExecucao?: string;       // ex: "23 dias corridos após aprovação"
   validadeAte?: string;         // 'YYYY-MM-DD'
   observacoesCliente?: string;  // texto livre para o cliente
+  pdfUrl?: string;              // URL do PDF da proposta (upload ou link externo)
   status: PropostaStatus;
   enviadoEm?: Timestamp;
   aprovadoEm?: Timestamp;
   revisaoMotivo?: string;
+}
+
+// ── Cláusula individual no documento da proposta ─────────────────────────────
+export interface PropostaClausula {
+  id: string;
+  titulo: string;
+  corpo: string;        // texto da cláusula (plain text / markdown simples)
+  ordem: number;
+  modeloId?: string;    // referência ao template de origem, se importado do banco
+}
+
+// ── Documento de Proposta — página HTML pública com aceite do cliente ─────────
+export interface PropostaDocumento {
+  slug: string;                         // URL pública: /proposta/:slug
+  titulo?: string;                      // título exibido no topo do documento
+  clausulas: PropostaClausula[];
+  status: 'rascunho' | 'publicado' | 'aceito';
+  publicadoEm?: Timestamp;
+  aceitoEm?: Timestamp;
+  aceitoPor?: string;                   // nome digitado pelo cliente ao aceitar
+  aceitoPorEmail?: string;             // e-mail opcional do cliente
+  mensagemProxPassos?: string;          // texto exibido no "wow moment" de aceite
+}
+
+// ── Template de cláusula — banco de modelos reutilizáveis ─────────────────────
+export interface ClausulaModelo {
+  id: string;
+  titulo: string;
+  corpo: string;
+  categoria: string;   // ex: "Execução", "Pagamento", "Garantia", "Geral"
+  ordem: number;
+  ativo: boolean;
+  criadoEm: Timestamp;
+  criadoPor: string;
+  criadoPorNome?: string;
 }
 
 export interface ProjectV2PropostaVersao {
@@ -2032,6 +2070,7 @@ export interface ProjectV2 {
   apresentacaoId?: string;
   propostaVersoes?: ProjectV2PropostaVersao[];
   propostaDados?: PropostaDados;
+  propostaDocumento?: PropostaDocumento;  // documento HTML público com cláusulas + aceite
 
   // F4 — Contrato
   contratoId?: string;

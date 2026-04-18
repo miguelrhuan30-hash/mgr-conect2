@@ -11,7 +11,16 @@
       "Bash(dir \"C:\\\\Users\\\\Cliente\\\\Desktop\\\\mgr docs\\\\obsidian mgr\\\\04-erp-mgrconnect\" /b)",
       "Bash(echo \"EXIT:$?\")",
       "Bash(node_modules/.bin/tsc --noEmit)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "mcp__4b485324-b7b8-4f5c-a249-1e9df0f603ab__search_files",
+      "mcp__4b485324-b7b8-4f5c-a249-1e9df0f603ab__read_file_content",
+      "Read(//c/Users/Cliente/Desktop/mgr docs/obsidian mgr/**)",
+      "Bash(dir \"C:\\\\Users\\\\Cliente\\\\Desktop\\\\mgr docs\\\\obsidian mgr\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f['title'], '|', f['id']\\) for f in d['files']]\")",
+      "Read(//mnt/c/Users/Cliente/Desktop/mgr-conect2/src/**)",
+      "Read(//mnt/c/Users/Cliente/Desktop/**)",
+      "mcp__4b485324-b7b8-4f5c-a249-1e9df0f603ab__list_recent_files",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f['id']+'|'+f['name']\\) for f in data['files'][:30]]\")"
     ]
   }
 }
