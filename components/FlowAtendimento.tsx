@@ -393,17 +393,26 @@ const FlowAtendimento: React.FC = () => {
 
   // ── Navegação a partir do FunilConversao ──────────────────────────────────
   const handleNavigateToFase = (faseId: FlowFaseId, projectId?: string) => {
-    setFaseSelecionada(faseId);
-    setSearch('');
-    setSelectedProjectId(null);
-    if (faseId === 'prancheta' && projectId) {
-      setSelectedProjectId(projectId);
+    if (faseId === 'prancheta') {
+      // Prancheta: abre inline dentro do FlowAtendimento
+      setFaseSelecionada('prancheta');
+      setSearch('');
+      setSelectedProjectId(projectId ?? null);
     } else if (projectId) {
+      // Cotação/Proposta/Contrato com projeto específico:
+      // navega direto para o ProjectDetail sem alterar estado local
+      // (FlowAtendimento vai desmontar após navigate — state updates seriam perdidos)
       const fase = FLOW_FASES.find(f => f.id === faseId);
-      navigate(fase?.tabHint
-        ? `/app/projetos-v2/${projectId}?tab=${fase.tabHint}&from=flow`
-        : `/app/projetos-v2/${projectId}?from=flow`
+      navigate(
+        fase?.tabHint
+          ? `/app/projetos-v2/${projectId}?tab=${fase.tabHint}&from=flow`
+          : `/app/projetos-v2/${projectId}?from=flow`
       );
+    } else {
+      // Clique no header do estágio (sem projectId) → apenas troca de fase
+      setFaseSelecionada(faseId);
+      setSearch('');
+      setSelectedProjectId(null);
     }
   };
 
