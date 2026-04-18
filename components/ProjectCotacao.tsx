@@ -15,7 +15,7 @@ import {
   Plus, Trash2, Upload, Check, Star, Loader2,
   FileText, Package, ChevronDown, ChevronUp,
   Tag, X, Archive, MessageCircle, Clock, Search,
-  Truck,
+  Truck, Send, ArrowRight,
 } from 'lucide-react';
 import { useProjectCotacao } from '../hooks/useProjectCotacao';
 import { useFornecedores } from '../hooks/useFornecedores';
@@ -640,13 +640,19 @@ const CategoriaBloco: React.FC<{
 const ProjectCotacao: React.FC<Props> = ({ projectId, leadId, categoriasCotacao: catsProp, escopoTexto, projectName, clientName }) => {
   const { cotacoes, loading, addCotacao, selecionarCotacao, updateCotacao, deleteCotacao, uploadDocumento, calcularTotal } = useProjectCotacao(projectId);
   const { fornecedores } = useFornecedores();
-  const { advancePhase, updateProject } = useProject();
+  const { projects, advancePhase, updateProject } = useProject();
+
+  // Fase atual do projeto (para mostrar o botão correto)
+  const project = useMemo(() => projects?.find(p => p.id === projectId), [projects, projectId]);
+  const faseAtual = project?.fase;
 
   const [categorias, setCategorias] = useState<CotacaoCategoria[]>(catsProp || []);
   const [novaCategoria, setNovaCategoria] = useState('');
   const [adicionandoCat, setAdicionandoCat] = useState(false);
   const [cotacoesRecebidas, setCotacoesRecebidas] = useState(false);
   const [salvandoRecebidas, setSalvandoRecebidas] = useState(false);
+  const [avancandoProposta, setAvancandoProposta] = useState(false);
+  const [propostaAvancada, setPropostaAvancada] = useState(false);
 
   useEffect(() => { if (catsProp) setCategorias(catsProp); }, [catsProp]);
 
@@ -703,6 +709,16 @@ const ProjectCotacao: React.FC<Props> = ({ projectId, leadId, categoriasCotacao:
       setCotacoesRecebidas(true);
     } catch (err: any) { alert(`Erro: ${err?.message || String(err)}`); }
     finally { setSalvandoRecebidas(false); }
+  };
+
+  const handleAvançarProposta = async () => {
+    if (!window.confirm('Avançar para a fase de Proposta? O comercial poderá montar e enviar a apresentação ao cliente.')) return;
+    setAvancandoProposta(true);
+    try {
+      await advancePhase(projectId, 'proposta_enviada', 'Cotação analisada — avançando para montagem da Proposta');
+      setPropostaAvancada(true);
+    } catch (err: any) { alert(`Erro: ${err?.message || String(err)}`); }
+    finally { setAvancandoProposta(false); }
   };
 
   if (loading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-brand-600" /></div>;
@@ -800,28 +816,82 @@ const ProjectCotacao: React.FC<Props> = ({ projectId, leadId, categoriasCotacao:
         </div>
       )}
 
-      {/* Botão Cotações Recebidas */}
-      <div className={`rounded-2xl p-5 flex items-center justify-between gap-4 ${
-        cotacoesRecebidas ? 'bg-emerald-100 border border-emerald-300' : 'bg-amber-50 border border-amber-200'
-      }`}>
-        <div>
-          <p className="text-sm font-bold text-amber-900">
-            {cotacoesRecebidas ? '✅ Cotações marcadas como recebidas!' : '📩 Todas as cotações foram recebidas?'}
-          </p>
-          <p className="text-xs text-amber-700 mt-0.5">
-            {cotacoesRecebidas
-              ? 'Lead atualizado para "🟢 Material Cotado". O comercial pode montar a proposta.'
-              : 'Após receber e registrar todas as cotações, avance para análise e proposta.'}
-          </p>
+      {/* ── Passo 1: Marcar cotações como recebidas ── */}
+      {faseAtual !== 'cotacao_recebida' && !propostaAvancada && (
+        <div className={`rounded-2xl p-5 flex items-center justify-between gap-4 ${
+          cotacoesRecebidas ? 'bg-emerald-100 border border-emerald-300' : 'bg-amber-50 border border-amber-200'
+        }`}>
+          <div>
+            <p className="text-sm font-bold text-amber-900">
+              {cotacoesRecebidas ? '✅ Cotações marcadas como recebidas!' : '📩 Todas as cotações foram recebidas?'}
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              {cotacoesRecebidas
+                ? 'Agora selecione a melhor cotação de cada categoria e avance para montar a Proposta.'
+                : 'Após receber e registrar todas as cotações, marque aqui para avançar.'}
+            </p>
+          </div>
+          {!cotacoesRecebidas && (
+            <button onClick={handleCotacoesRecebidas} disabled={salvandoRecebidas || cotacoes.length === 0}
+              className="flex items-center gap-1.5 px-5 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-bold hover:bg-amber-700 disabled:opacity-50 flex-shrink-0 transition-colors">
+              {salvandoRecebidas ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+              Cotações Recebidas
+            </button>
+          )}
         </div>
-        {!cotacoesRecebidas && (
-          <button onClick={handleCotacoesRecebidas} disabled={salvandoRecebidas || cotacoes.length === 0}
-            className="flex items-center gap-1.5 px-5 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-bold hover:bg-amber-700 disabled:opacity-50 flex-shrink-0 transition-colors">
-            {salvandoRecebidas ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
-            Cotações Recebidas 🟢
+      )}
+
+      {/* ── Passo 2: Avançar para Proposta (fase cotacao_recebida ou após marcar recebidas) ── */}
+      {(faseAtual === 'cotacao_recebida' || cotacoesRecebidas) && !propostaAvancada && (
+        <div className="rounded-2xl p-5 border border-indigo-200 bg-indigo-50">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Send className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-indigo-900">🎯 Pronto para montar a Proposta?</p>
+              <p className="text-xs text-indigo-600 mt-0.5">
+                Selecione a melhor cotação de cada categoria (estrela) e avance para criar a apresentação comercial ao cliente.
+              </p>
+            </div>
+          </div>
+
+          {/* Resumo das seleções */}
+          {totalGeral > 0 && (
+            <div className="flex items-center gap-3 mb-4 px-3 py-2.5 bg-white border border-indigo-200 rounded-xl">
+              <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-xs font-bold text-gray-700">
+                  {cotacoes.filter(c => c.selecionada).length} cotaç{cotacoes.filter(c => c.selecionada).length !== 1 ? 'ões' : 'ão'} selecionada{cotacoes.filter(c => c.selecionada).length !== 1 ? 's' : ''}
+                </p>
+                <p className="text-[10px] text-gray-400">Total de materiais</p>
+              </div>
+              <span className="text-base font-extrabold text-emerald-700">{fmtCurrency(totalGeral)}</span>
+            </div>
+          )}
+
+          <button
+            onClick={handleAvançarProposta}
+            disabled={avancandoProposta}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm hover:shadow-md active:scale-[0.98]"
+          >
+            {avancandoProposta
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Avançando...</>
+              : <><ArrowRight className="w-4 h-4" /> Avançar para Proposta</>}
           </button>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* ── Confirmação final ── */}
+      {propostaAvancada && (
+        <div className="rounded-2xl p-5 bg-emerald-50 border border-emerald-300 flex items-center gap-3">
+          <Check className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-emerald-800">🚀 Projeto avançado para Proposta!</p>
+            <p className="text-xs text-emerald-600 mt-0.5">O comercial pode montar a apresentação e enviar ao cliente na aba Proposta.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
