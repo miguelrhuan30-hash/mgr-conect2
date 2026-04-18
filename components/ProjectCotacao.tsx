@@ -715,7 +715,11 @@ const ProjectCotacao: React.FC<Props> = ({ projectId, leadId, categoriasCotacao:
     if (!window.confirm('Avançar para a fase de Proposta? O comercial poderá montar e enviar a apresentação ao cliente.')) return;
     setAvancandoProposta(true);
     try {
-      await advancePhase(projectId, 'proposta_enviada', 'Cotação analisada — avançando para montagem da Proposta');
+      const result = await advancePhase(projectId, 'proposta_enviada', 'Cotação analisada — avançando para montagem da Proposta');
+      if (!result.success) {
+        alert(`Não foi possível avançar: ${result.error || 'Erro desconhecido'}`);
+        return;
+      }
       setPropostaAvancada(true);
     } catch (err: any) { alert(`Erro: ${err?.message || String(err)}`); }
     finally { setAvancandoProposta(false); }

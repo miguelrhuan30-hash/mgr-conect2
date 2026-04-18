@@ -38,8 +38,10 @@ const TRANSITION_REQUIREMENTS: Partial<
     message: 'Preencha a prancheta técnica antes de avançar para cotação.',
   }),
   proposta_enviada: (p) => ({
-    valid: (p.cotacaoIds?.length ?? 0) > 0,
-    message: 'Cadastre pelo menos uma cotação antes de montar a proposta.',
+    // cotações ficam em subcoleção — checar categoriasCotacao (que é salvo no doc do projeto)
+    // ou liberar: se chegou em cotacao_recebida já houve cotação
+    valid: (p.categoriasCotacao?.length ?? 0) > 0 || p.fase === 'cotacao_recebida',
+    message: 'Crie pelo menos um grupo de cotação antes de avançar para a proposta.',
   }),
   contrato_enviado: (p) => ({
     valid: !!p.apresentacaoId,
