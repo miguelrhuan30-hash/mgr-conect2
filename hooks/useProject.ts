@@ -44,8 +44,9 @@ const TRANSITION_REQUIREMENTS: Partial<
     message: 'Crie pelo menos um grupo de cotação antes de avançar para a proposta.',
   }),
   contrato_enviado: (p) => ({
-    valid: !!p.apresentacaoId,
-    message: 'Crie a apresentação/proposta antes de enviar o contrato.',
+    // Aceita: apresentação vinculada OU proposta criada inline (propostaDados presente) OU fase já é proposta_enviada
+    valid: !!p.apresentacaoId || !!p.propostaDados || p.fase === 'proposta_enviada',
+    message: 'Monte a proposta e envie ao cliente antes de avançar para o contrato.',
   }),
   contrato_assinado: (p) => ({
     valid: !!p.contratoId,
