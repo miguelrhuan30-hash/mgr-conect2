@@ -1863,7 +1863,7 @@ export const PROJECT_TRANSITIONS: Record<ProjectPhase, ProjectPhase[]> = {
   em_levantamento:        ['em_cotacao', 'nao_aprovado'],
   em_cotacao:             ['cotacao_recebida', 'nao_aprovado'],
   cotacao_recebida:       ['proposta_enviada', 'em_cotacao', 'nao_aprovado'],
-  proposta_enviada:       ['contrato_enviado', 'nao_aprovado'],
+  proposta_enviada:       ['contrato_enviado', 'cotacao_recebida', 'em_levantamento', 'nao_aprovado'],
   contrato_enviado:       ['contrato_assinado', 'nao_aprovado'],
   contrato_assinado:      ['em_planejamento'],
   em_planejamento:        ['cronograma_aprovado'],
@@ -1979,6 +1979,24 @@ export interface ProjectV2NaoAprovado {
   }[];
 }
 
+// ── Proposta Comercial ────────────────────────────────────────────────────────
+export type PropostaStatus = 'rascunho' | 'enviado' | 'aprovado' | 'revisao';
+
+export interface PropostaDados {
+  valorMateriais?: number;      // total das cotações selecionadas
+  valorMaoDeObra?: number;      // total do plano de execução (prancheta)
+  desconto?: number;            // % de desconto
+  valorTotal?: number;          // (materiais + MO) * (1 - desconto/100)
+  condicoesPagamento?: string;  // ex: "30% na assinatura, 70% na entrega"
+  prazoExecucao?: string;       // ex: "23 dias corridos após aprovação"
+  validadeAte?: string;         // 'YYYY-MM-DD'
+  observacoesCliente?: string;  // texto livre para o cliente
+  status: PropostaStatus;
+  enviadoEm?: Timestamp;
+  aprovadoEm?: Timestamp;
+  revisaoMotivo?: string;
+}
+
 export interface ProjectV2PropostaVersao {
   versao: number;
   apresentacaoId: string;
@@ -2010,9 +2028,10 @@ export interface ProjectV2 {
   relatorioNecessidadesUrl?: string;
   categoriasCotacao?: CotacaoCategoria[];   // grupos ex: Câmara / Portas / Prateleiras
 
-  // F3 — Apresentação
+  // F3 — Proposta
   apresentacaoId?: string;
   propostaVersoes?: ProjectV2PropostaVersao[];
+  propostaDados?: PropostaDados;
 
   // F4 — Contrato
   contratoId?: string;
