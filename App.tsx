@@ -82,6 +82,7 @@ const PropostasPDF = lazy(() => import('./components/PropostasPDF'));
 // ─────────────────────────────────────────────
 const Apresentacoes     = lazy(() => import('./components/Apresentacoes'));
 const ApresentacaoPublica = lazy(() => import('./components/ApresentacaoPublica'));
+const PropostaDocPublica  = lazy(() => import('./components/PropostaDocPublica'));
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 49: Módulo Meu Almoço
@@ -463,6 +464,7 @@ const App: React.FC = () => (
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/p/:slug" element={<ApresentacaoPublica />} />
+          <Route path="/proposta/:slug" element={<PropostaDocPublica />} />
           <Route path="/orcamentos/:id" element={<OrcamentoPublico />} />
           <Route path="*" element={<AppContent />} />
         </Routes>
