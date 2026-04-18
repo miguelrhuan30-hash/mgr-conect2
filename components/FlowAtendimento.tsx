@@ -29,6 +29,9 @@ import { useProject } from '../hooks/useProject';
 import LeadsDashboard from './LeadsDashboard';
 import ProjectUpsell from './ProjectUpsell';
 import ProjectPrancheta from './ProjectPrancheta';
+import ProjectCotacao from './ProjectCotacao';
+import ProjectProposta from './ProjectProposta';
+import ProjectContrato from './ProjectContrato';
 import FunilConversao from './FunilConversao';
 import {
   ProjectV2, ProjectPhase, Sector,
@@ -76,6 +79,9 @@ const FLOW_FASES: FlowFase[] = [
 ];
 
 const RACI_DOC = 'flow_phases';
+
+// Fases que abrem inline no FlowAtendimento (sem navegar para o ProjectDetail)
+const INLINE_FASES: FlowFaseId[] = ['prancheta', 'cotacao', 'proposta', 'contrato'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -262,7 +268,7 @@ const FaseProjectList: React.FC<{
       {filtered.length > 0 && (
         <p className="text-[10px] text-gray-400 text-center">
           {onSelectInline
-            ? '📄 Clique para abrir a Prancheta Técnica do projeto.'
+            ? `📄 Clique para abrir ${fase.label} do projeto.`
             : `💡 Clique em um projeto para abrir a fase ${fase.label} e executar as atividades.`}
         </p>
       )}
@@ -391,17 +397,15 @@ const FlowAtendimento: React.FC = () => {
     setSelectedProjectId(null); // fecha prancheta inline ao trocar de fase
   };
 
-  // ── Navegação a partir do FunilConversao ──────────────────────────────────
+  // ── Navegação a partir do FunilConversao ou cards ─────────────────────────
   const handleNavigateToFase = (faseId: FlowFaseId, projectId?: string) => {
-    if (faseId === 'prancheta') {
-      // Prancheta: abre inline dentro do FlowAtendimento
-      setFaseSelecionada('prancheta');
+    if (INLINE_FASES.includes(faseId)) {
+      // Todas as fases comerciais abrem inline dentro do FlowAtendimento
+      setFaseSelecionada(faseId);
       setSearch('');
       setSelectedProjectId(projectId ?? null);
     } else if (projectId) {
-      // Cotação/Proposta/Contrato com projeto específico:
-      // navega direto para o ProjectDetail sem alterar estado local
-      // (FlowAtendimento vai desmontar após navigate — state updates seriam perdidos)
+      // Fases de execução (gantt, os, execucao…) ainda navegam para ProjectDetail
       const fase = FLOW_FASES.find(f => f.id === faseId);
       navigate(
         fase?.tabHint
@@ -409,7 +413,7 @@ const FlowAtendimento: React.FC = () => {
           : `/app/projetos-v2/${projectId}?from=flow`
       );
     } else {
-      // Clique no header do estágio (sem projectId) → apenas troca de fase
+      // Clique no header do estágio sem projectId → apenas troca de fase
       setFaseSelecionada(faseId);
       setSearch('');
       setSelectedProjectId(null);
@@ -595,7 +599,24 @@ const FlowAtendimento: React.FC = () => {
         {/* Fase 11 — Nao Aprovados */}
         {faseSelecionada === 'nao_aprovados' && !loading && <ProjectUpsell />}
 
-        {/* Fase 1 — Prancheta: modo inline (lista de projetos -> editor embarcado) */}
+        {/* ── Helper: breadcrumb de retorno para fases inline ── */}
+        {INLINE_FASES.includes(faseSelecionada) && !loading && selectedProjectId && selectedProject && (
+          <div className="flex items-center gap-3 flex-wrap mb-4">
+            <button
+              onClick={() => setSelectedProjectId(null)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-gray-500 hover:text-brand-600 hover:bg-brand-50 rounded-xl border border-gray-200 hover:border-brand-200 transition-all"
+            >
+              <ArrowLeft className="w-4 h-4" /> {faseAtual.label}
+            </button>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <faseAtual.icon className="w-4 h-4 text-brand-600 flex-shrink-0" />
+              <span className="text-sm font-extrabold text-gray-800 truncate">{selectedProject.nome}</span>
+              <span className="text-xs text-gray-400 hidden md:block">· {selectedProject.clientName}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Fase 1 — Prancheta: modo inline (lista de projetos → editor embarcado) */}
         {faseSelecionada === 'prancheta' && !loading && !selectedProjectId && (
           <FaseProjectList
             fase={faseAtual}
@@ -606,45 +627,85 @@ const FlowAtendimento: React.FC = () => {
           />
         )}
         {faseSelecionada === 'prancheta' && !loading && selectedProjectId && selectedProject && (
-          <div className="space-y-4">
-            {/* Breadcrumb */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <button
-                id="btn-voltar-lista-prancheta"
-                onClick={() => setSelectedProjectId(null)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl border border-gray-200 hover:border-blue-200 transition-all"
-              >
-                <ArrowLeft className="w-4 h-4" /> Prancheta
-              </button>
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Ruler className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                <span className="text-sm font-extrabold text-gray-800 truncate">{selectedProject.nome}</span>
-                <span className="text-xs text-gray-400 hidden md:block">· {selectedProject.clientName}</span>
-              </div>
-            </div>
-            {/* Prancheta embarcada */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-5">
-              <ProjectPrancheta
-                projectId={selectedProject.id}
-                prancheta={selectedProject.prancheta}
-                projectName={selectedProject.nome}
-                clientName={selectedProject.clientName}
-                leadId={selectedProject.leadId}
-                arquivosContato={selectedProject.leadData?.arquivosContato ?? undefined}
-              />
-            </div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <ProjectPrancheta
+              projectId={selectedProject.id}
+              prancheta={selectedProject.prancheta}
+              projectName={selectedProject.nome}
+              clientName={selectedProject.clientName}
+              leadId={selectedProject.leadId}
+              arquivosContato={selectedProject.leadData?.arquivosContato ?? undefined}
+            />
           </div>
         )}
 
-        {/* Fases 2-10 (todas as demais) */}
-        {faseSelecionada !== 'prancheta' && faseAtual.fases && !loading && (
+        {/* Fase 2 — Cotação: modo inline */}
+        {faseSelecionada === 'cotacao' && !loading && !selectedProjectId && (
+          <FaseProjectList
+            fase={faseAtual}
+            projects={projetosDaFase}
+            search={search}
+            onSearch={setSearch}
+            onSelectInline={setSelectedProjectId}
+          />
+        )}
+        {faseSelecionada === 'cotacao' && !loading && selectedProjectId && selectedProject && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <ProjectCotacao
+              projectId={selectedProject.id}
+              leadId={selectedProject.leadId}
+              categoriasCotacao={selectedProject.categoriasCotacao}
+              escopoTexto={selectedProject.prancheta?.solicitacaoCotacao}
+              projectName={selectedProject.nome}
+              clientName={selectedProject.clientName}
+            />
+          </div>
+        )}
+
+        {/* Fase 3 — Proposta: modo inline */}
+        {faseSelecionada === 'proposta' && !loading && !selectedProjectId && (
+          <FaseProjectList
+            fase={faseAtual}
+            projects={projetosDaFase}
+            search={search}
+            onSearch={setSearch}
+            onSelectInline={setSelectedProjectId}
+          />
+        )}
+        {faseSelecionada === 'proposta' && !loading && selectedProjectId && selectedProject && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <ProjectProposta project={selectedProject} />
+          </div>
+        )}
+
+        {/* Fase 4 — Contrato: modo inline */}
+        {faseSelecionada === 'contrato' && !loading && !selectedProjectId && (
+          <FaseProjectList
+            fase={faseAtual}
+            projects={projetosDaFase}
+            search={search}
+            onSearch={setSearch}
+            onSelectInline={setSelectedProjectId}
+          />
+        )}
+        {faseSelecionada === 'contrato' && !loading && selectedProjectId && selectedProject && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <ProjectContrato
+              projectId={selectedProject.id}
+              projectNome={selectedProject.nome}
+              clientName={selectedProject.clientName}
+              valorTotal={selectedProject.valorContrato}
+            />
+          </div>
+        )}
+
+        {/* Fases 5-10 (execução — continuam abrindo no ProjectDetail via navigate) */}
+        {!INLINE_FASES.includes(faseSelecionada) && faseAtual.fases && !loading && (
           <FaseProjectList fase={faseAtual} projects={projetosDaFase} search={search} onSearch={setSearch} />
         )}
 
-        {/* Funil de Conversão — visível nas fases 0-4, EXCETO quando o editor da Prancheta está aberto */}
-        {(['leads', 'prancheta', 'cotacao', 'proposta', 'contrato'] as FlowFaseId[]).includes(faseSelecionada)
-          && !(faseSelecionada === 'prancheta' && selectedProjectId)
-          && !loading && (
+        {/* Funil de Conversão — somente na Fase 0 (Leads) */}
+        {faseSelecionada === 'leads' && !loading && (
           <div className="mt-6">
             <FunilConversao
               projects={projects || []}
