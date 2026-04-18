@@ -583,17 +583,6 @@ const FlowAtendimento: React.FC = () => {
           />
         )}
 
-        {/* Funil de Conversão — visível nas fases 0-4 */}
-        {(['leads', 'prancheta', 'cotacao', 'proposta', 'contrato'] as FlowFaseId[]).includes(faseSelecionada) && !loading && (
-          <div className="mt-6">
-            <FunilConversao
-              projects={projects || []}
-              onNavigateToFase={handleNavigateToFase}
-              faseSelecionada={faseSelecionada}
-            />
-          </div>
-        )}
-
         {/* Fase 11 — Nao Aprovados */}
         {faseSelecionada === 'nao_aprovados' && !loading && <ProjectUpsell />}
 
@@ -641,6 +630,19 @@ const FlowAtendimento: React.FC = () => {
         {/* Fases 2-10 (todas as demais) */}
         {faseSelecionada !== 'prancheta' && faseAtual.fases && !loading && (
           <FaseProjectList fase={faseAtual} projects={projetosDaFase} search={search} onSearch={setSearch} />
+        )}
+
+        {/* Funil de Conversão — visível nas fases 0-4, EXCETO quando o editor da Prancheta está aberto */}
+        {(['leads', 'prancheta', 'cotacao', 'proposta', 'contrato'] as FlowFaseId[]).includes(faseSelecionada)
+          && !(faseSelecionada === 'prancheta' && selectedProjectId)
+          && !loading && (
+          <div className="mt-6">
+            <FunilConversao
+              projects={projects || []}
+              onNavigateToFase={handleNavigateToFase}
+              faseSelecionada={faseSelecionada}
+            />
+          </div>
         )}
       </div>
     </div>
