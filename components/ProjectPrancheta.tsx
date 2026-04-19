@@ -26,7 +26,7 @@ import { storage } from '../firebase';
 import { useProject } from '../hooks/useProject';
 import {
   ProjectV2Prancheta, ProjectV2PranchetaItemCotacao, ArquivoContato,
-  FaseExecucaoPrancheta, ServicoExecucaoPrancheta,
+  FaseExecucaoPrancheta, ServicoExecucaoPrancheta, EntregaValorPrancheta,
 } from '../types';
 
 // ── Tipos locais ────────────────────────────────────────────────────────────
@@ -75,6 +75,7 @@ const ProjectPrancheta: React.FC<Props> = ({ projectId, prancheta, projectName, 
     itensCotacao: [],
     fotosLevantamento: [],
     croquis: [],
+    entregasValor: [],
     ...prancheta,
   });
 
@@ -880,6 +881,123 @@ Exemplo:
           </div>
         )}
       </div>
+
+      {/* ══ SEÇÃO 2C: Entregas de Valor (para apresentação) ══ */}
+      {(() => {
+        const entregas = form.entregasValor || [];
+        const addEntrega = () => {
+          const nova: EntregaValorPrancheta = { id: `${Date.now()}`, titulo: '', descricao: '', icone: '' };
+          setForm(f => ({ ...f, entregasValor: [...(f.entregasValor || []), nova] }));
+        };
+        const removeEntrega = (id: string) =>
+          setForm(f => ({ ...f, entregasValor: (f.entregasValor || []).filter(e => e.id !== id) }));
+        const updateEntrega = (id: string, field: keyof EntregaValorPrancheta, val: string) =>
+          setForm(f => ({
+            ...f,
+            entregasValor: (f.entregasValor || []).map(e => e.id === id ? { ...e, [field]: val } : e),
+          }));
+        return (
+          <div className="bg-white border border-indigo-200 rounded-2xl overflow-hidden">
+            <button onClick={() => setForm(f => ({ ...f }))} // dummy — seção sempre aberta
+              className="w-full flex items-center justify-between px-5 py-3.5 bg-indigo-50/60 cursor-default">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <ChevronRight className="w-3.5 h-3.5 text-indigo-600" />
+                </div>
+                <span className="text-sm font-bold text-gray-800">🎯 Entregas de Valor</span>
+                <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold">
+                  pré-preenche o slide de entregáveis
+                </span>
+                {entregas.length > 0 && (
+                  <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">
+                    {entregas.length} entrega(s)
+                  </span>
+                )}
+              </div>
+            </button>
+
+            <div className="px-5 pb-5 pt-4 space-y-3">
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs text-indigo-800">
+                <strong>🎨 Para a apresentação:</strong> Descreva as entregas de <em>valor</em> que o cliente vai receber.
+                Essas informações vão pré-preencher automaticamente o slide de entregáveis na proposta comercial —
+                focando no benefício, não no preço.
+                <br />
+                <span className="text-indigo-600 mt-1 block">Ex: "Estrutura Térmica PIR 200mm" → "Máxima eficiência energética com isolamento premium e estanqueidade total"</span>
+              </div>
+
+              {/* Lista de entregas */}
+              {entregas.map((entrega, idx) => (
+                <div key={entrega.id} className="border border-indigo-100 rounded-xl p-3 space-y-2 bg-indigo-50/30">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] font-extrabold text-indigo-700 flex-shrink-0">
+                      {idx + 1}
+                    </span>
+                    <input
+                      value={entrega.icone || ''}
+                      onChange={e => updateEntrega(entrega.id, 'icone', e.target.value)}
+                      placeholder="❄"
+                      className="w-10 text-center border border-gray-200 rounded-lg px-1 py-1.5 text-sm outline-none focus:border-indigo-400 bg-white"
+                      maxLength={2}
+                    />
+                    <input
+                      value={entrega.titulo}
+                      onChange={e => updateEntrega(entrega.id, 'titulo', e.target.value)}
+                      placeholder="Título da entrega (ex: Estrutura Térmica PIR 200mm)"
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-400 bg-white font-semibold"
+                    />
+                    <button onClick={() => removeEntrega(entrega.id)}
+                      className="w-7 h-7 flex items-center justify-center text-red-400 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <textarea
+                    value={entrega.descricao}
+                    onChange={e => updateEntrega(entrega.id, 'descricao', e.target.value)}
+                    placeholder="Descrição do benefício para o cliente (ex: Máxima eficiência energética com isolamento premium e estanqueidade total)"
+                    rows={2}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-400 resize-none bg-white text-gray-600"
+                  />
+                </div>
+              ))}
+
+              {/* Botão adicionar */}
+              <button
+                onClick={addEntrega}
+                className="flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-800 font-bold transition-colors py-1">
+                <Plus className="w-3.5 h-3.5" /> Adicionar entrega de valor
+              </button>
+
+              {/* Sugestões rápidas */}
+              {entregas.length === 0 && (
+                <div className="pt-1">
+                  <p className="text-[10px] text-gray-400 font-bold mb-2">Sugestões rápidas:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { icone: '❄', titulo: 'Isolamento PIR 100mm', descricao: 'Alta resistência térmica — mantém temperatura estável reduzindo esforço dos compressores' },
+                      { icone: '⚡', titulo: 'Redundância Ativa', descricao: '2 condensadoras + 2 evaporadoras independentes — operação contínua mesmo em manutenção' },
+                      { icone: '✔', titulo: 'Comissionamento Completo', descricao: 'Testes de pressão, vácuo e funcionamento pleno antes da entrega oficial' },
+                      { icone: '🔧', titulo: 'Instalação Elétrica Interna', descricao: 'Interligação completa entre painel de controle e equipamentos em 380V' },
+                      { icone: '🚪', titulo: 'Porta de Acesso Rápido', descricao: 'Sistema automatizado de alta velocidade — minimiza troca térmica e aumenta eficiência logística' },
+                    ].map((sug, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          entregasValor: [...(f.entregasValor || []), {
+                            id: `${Date.now()}-${i}`, titulo: sug.titulo, descricao: sug.descricao, icone: sug.icone,
+                          }],
+                        }))}
+                        className="text-[10px] px-2 py-1 border border-indigo-200 rounded-lg text-indigo-700 hover:bg-indigo-50 transition-colors">
+                        {sug.icone} {sug.titulo}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══ SEÇÃO 3: Itens para Cotação ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">

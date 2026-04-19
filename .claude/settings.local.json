@@ -23,7 +23,10 @@
       "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f['id']+'|'+f['name']\\) for f in data['files'][:30]]\")",
       "Bash(git worktree:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m ':*)"
+      "Bash(git commit -m ':*)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(npm run *)",
+      "Bash(tasklist /fi \"imagename eq node.exe\")"
     ]
   }
 }

@@ -42,6 +42,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import ProjectPropostaDoc from './ProjectPropostaDoc';
+import ApresentacaoEditorInline from './ApresentacaoEditorInline';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
@@ -84,14 +85,16 @@ async function generateSlug(): Promise<string> {
 }
 
 // ── Monta slides pré-preenchidos com dados do projeto ─────────────────────────
+// Regra: NUNCA incluir slide de investimento/preço na apresentação ao cliente.
+// Preço é comunicado via Documento Comercial (cláusulas) e PDF — não nos slides.
 function buildSlidesFromProject(project: ProjectV2): SlideData[] {
-  const servicos = project.prancheta?.servicosExecucao || [];
+  const prancheta = project.prancheta;
+  const servicos = prancheta?.servicosExecucao || [];
   const totalDias = servicos.reduce(
     (s, srv) => s + srv.fases.reduce((a, f) => a + (f.diasExecucao || 0), 0), 0,
   );
-  const totalMdo = servicos.reduce((s, srv) => s + (srv.valorMaoDeObra || 0), 0);
 
-  // Slide Cronograma — usa as fases do primeiro serviço (ou todos se só 1)
+  // Slide Cronograma — usa as fases do primeiro serviço (se um) ou por serviço (se vários)
   const fasesCrono = servicos.length === 1
     ? servicos[0].fases.map(f => ({
         id: f.id,
@@ -106,17 +109,35 @@ function buildSlidesFromProject(project: ProjectV2): SlideData[] {
         descricao: '',
       }));
 
-  // Slide Entregas — um item por serviço
-  const entregas = servicos.length > 0
-    ? servicos.map(srv => ({ id: srv.id, categoria: srv.nome, descricao: 'A definir' }))
-    : [{ id: '1', categoria: 'Exemplo', descricao: 'Descrição da entrega' }];
+  // Slide Entregas de Valor — prefere entregasValor (prancheta F1), depois servicosExecucao
+  const entregasValor = prancheta?.entregasValor;
+  const entregas = (entregasValor && entregasValor.length > 0)
+    ? entregasValor.map(e => ({
+        id: e.id,
+        categoria: [e.icone, e.titulo].filter(Boolean).join(' '),
+        descricao: e.descricao,
+      }))
+    : servicos.length > 0
+      ? servicos.map(srv => ({ id: srv.id, categoria: srv.nome, descricao: '' }))
+      : [{ id: '1', categoria: 'Entrega 1', descricao: 'Descrição da entrega de valor ao cliente' }];
+
+  // Visão Geral — prancheta tem prioridade sobre leadData
+  const localizacao = prancheta?.localizacao || project.leadData?.localizacao || '';
+  const finalidade  = prancheta?.finalidade  || project.leadData?.finalidade  || '';
+  const temperatura = prancheta?.temperaturaAlvo || '';
+  const metragem    = prancheta?.metragem || '';
+  const dimensoes   = prancheta?.dimensoes || '';
+  const descricao   = project.descricao
+    || prancheta?.observacoesTecnicas
+    || prancheta?.scopeNotes?.slice(0, 400)
+    || '';
 
   return [
     {
       type: 'cover', order: 0, visible: true,
       data: {
         titulo: project.nome,
-        subtitulo: 'Proposta Comercial',
+        subtitulo: 'Proposta de Solução e Entregáveis Estratégicos',
         clienteNome: project.clientName,
         dataValidade: '',
         usarLogoMGR: true,
@@ -125,11 +146,11 @@ function buildSlidesFromProject(project: ProjectV2): SlideData[] {
     {
       type: 'overview', order: 1, visible: true,
       data: {
-        descricao: project.descricao || project.prancheta?.observacoesTecnicas || '',
-        localizacao: project.leadData?.localizacao || '',
-        temperatura: '',
-        finalidade: project.leadData?.finalidade || '',
-        metragem: project.prancheta?.metragem || '',
+        descricao,
+        localizacao,
+        temperatura,
+        finalidade,
+        metragem: metragem || dimensoes,
       } as OverviewData,
     },
     {
@@ -145,14 +166,15 @@ function buildSlidesFromProject(project: ProjectV2): SlideData[] {
               { id: '1', nome: 'Fase 1', prazo: '—', descricao: '' },
               { id: '2', nome: 'Fase 2', prazo: '—', descricao: '' },
             ],
-        totalDias: totalDias > 0 ? `${totalDias} dias corridos` : '',
+        totalDias: totalDias > 0 ? `${totalDias} dias úteis` : '',
       } as TimelineData,
     },
     {
-      // Slide de encerramento — CTA direciona para o PDF com valores e condições
+      // ⚠️ Encerramento — CTA direciona para documento comercial com cláusulas e PDF.
+      // Preço NÃO aparece nos slides — fica no Documento Comercial (F3 PropostaDoc).
       type: 'closing', order: 4, visible: true,
       data: {
-        textoCTA: 'Ver proposta comercial completa (PDF)',
+        textoCTA: 'Ver documento comercial completo',
         textoFechamento: 'Agradecemos a confiança e estamos à disposição para esclarecer qualquer dúvida sobre a solução apresentada.',
         exibirContato: true,
       } as ClosingData,
@@ -215,6 +237,11 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [secaoDoc, setSecaoDoc] = useState(true);
   const [secaoEnvio, setSecaoEnvio] = useState(true);
   const [secaoAprovacao, setSecaoAprovacao] = useState(true);
+
+  // ── Editor inline de slides (overlay full-screen) ──────────────────────────
+  const [editorSlidesAberto, setEditorSlidesAberto] = useState(false);
+  // ID local para evitar race condition: abre overlay imediatamente após criar
+  const [editorApresentacaoId, setEditorApresentacaoId] = useState<string | null>(null);
 
   // Upload PDF
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -318,8 +345,9 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         updatedAt: serverTimestamp(),
       });
 
-      // Abre o editor em nova aba
-      window.open(`#/app/apresentacoes?id=${docRef.id}`, '_blank');
+      // Abre o editor inline (usa ID local para evitar race condition com snapshot)
+      setEditorApresentacaoId(docRef.id);
+      setEditorSlidesAberto(true);
     } catch (err: any) {
       alert(`Erro ao criar apresentação: ${err?.message || String(err)}`);
     } finally {
@@ -587,7 +615,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button
-                      onClick={() => window.open(`#/app/apresentacoes?id=${project.apresentacaoId}`, '_blank')}
+                      onClick={() => { setEditorApresentacaoId(project.apresentacaoId ?? null); setEditorSlidesAberto(true); }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">
                       <Play className="w-3 h-3" /> Editar Slides
                     </button>
@@ -911,6 +939,15 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Editor de Slides inline (overlay full-screen) ── */}
+      {editorSlidesAberto && (editorApresentacaoId ?? project.apresentacaoId) && (
+        <ApresentacaoEditorInline
+          apresentacaoId={(editorApresentacaoId ?? project.apresentacaoId)!}
+          projetoNome={project.nome}
+          onClose={() => { setEditorSlidesAberto(false); setEditorApresentacaoId(null); }}
+        />
       )}
 
     </div>

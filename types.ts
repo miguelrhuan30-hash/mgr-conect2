@@ -1932,6 +1932,15 @@ export interface ServicoExecucaoPrancheta {
   valorMaoDeObra: number; // valor total da mão de obra deste serviço (R$)
 }
 
+// ── Entregas de Valor para Apresentação ─────────────────────────────────────
+// Preenchido na Prancheta (F1) para pré-popular o slide de entregáveis (F3)
+export interface EntregaValorPrancheta {
+  id: string;
+  titulo: string;    // ex: "Estrutura Térmica PIR 200mm"
+  descricao: string; // ex: "Máxima eficiência energética com isolamento premium"
+  icone?: string;    // emoji opcional: ❄ ⚡ ✔ 🔧
+}
+
 export interface ProjectV2Prancheta {
   // ── Campos técnicos originais ──
   dimensoes?: string;
@@ -1955,6 +1964,8 @@ export interface ProjectV2Prancheta {
   escopoGeradoEm?: Timestamp;       // quando o escopo foi gerado/finalizado
   // ── Plano de Execução ──
   servicosExecucao?: ServicoExecucaoPrancheta[];  // serviços com fases e mão de obra
+  // ── Entregas de Valor → pré-preenchem o slide de entregáveis (F3) ──
+  entregasValor?: EntregaValorPrancheta[];
   // ── Metadados ──
   preenchidoPor?: string;
   preenchidoPorNome?: string;
