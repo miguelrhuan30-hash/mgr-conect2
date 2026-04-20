@@ -24,6 +24,10 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
+# Worktrees do Claude Code — pastas temporárias de sessões de agente
+# O VS Code confunde os arquivos internos do git dessas pastas com mudanças normais
+.claude/worktrees/
+
 # Antigravity / Gemini AI — dados locais da ferramenta (screenshots, gravações, conversas)
 # Manter apenas GEMINI.md que é configuração do projeto
 .gemini/antigravity/
