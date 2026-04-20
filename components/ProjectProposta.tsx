@@ -5,16 +5,19 @@
  *
  * Passo 1 — 🎨 Apresentação em Slides
  *   Cria uma apresentação no módulo de Apresentações pré-preenchida com dados
- *   do projeto (cliente, título, cronograma, valores). Abre o editor em nova aba.
+ *   do projeto (cliente, título, cronograma, entregáveis). Abre o editor inline.
  *
  * Passo 2 — 📄 Documento PDF
  *   Upload do PDF final da proposta para o Firebase Storage.
  *
- * Passo 3 — 📱 Envio ao Cliente
- *   Texto editável simples (sem detalhes financeiros no corpo) com link dos
- *   slides e do PDF. Envia via WhatsApp ou copia.
+ * Passo 3 — 📋 Documento Comercial
+ *   Cláusulas + aceite online (ProjectPropostaDoc).
  *
- * Passo 4 — ✅ Aprovação / Revisão
+ * Passo 4 — 📱 Envio ao Cliente
+ *   Texto editável simples (sem detalhes financeiros no corpo) com link dos
+ *   slides, PDF e documento comercial. Envia via WhatsApp ou copia.
+ *
+ * Passo 5 — ✅ Aprovação / Revisão
  *   Aprovação → avança para Contrato.
  *   Revisão → volta para Cotação ou Prancheta.
  */
@@ -822,7 +825,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         )}
       </div>
 
-      {/* ══ PASSO 4: Aprovação ══ */}
+      {/* ══ PASSO 5: Aprovação ══ */}
       {faseAtual === 'proposta_enviada' && dados.status !== 'aprovado' && (
         <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
           <button onClick={() => setSecaoAprovacao(!secaoAprovacao)}

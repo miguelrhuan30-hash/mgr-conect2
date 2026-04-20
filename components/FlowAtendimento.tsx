@@ -704,11 +704,9 @@ const FlowAtendimento: React.FC = () => {
           <FaseProjectList fase={faseAtual} projects={projetosDaFase} search={search} onSearch={setSearch} />
         )}
 
-        {/* Funil de Conversão — visível nas fases 0-4 (leads → contrato),
-            EXCETO quando há editor inline aberto (selectedProjectId em fase inline) */}
-        {(['leads', 'prancheta', 'cotacao', 'proposta', 'contrato'] as FlowFaseId[]).includes(faseSelecionada)
-          && !(INLINE_FASES.includes(faseSelecionada) && selectedProjectId)
-          && !loading && (
+        {/* Funil de Conversão — SOMENTE na Fase 0 (Leads), conforme regra do vault.
+            Nas fases 1-4 o projeto já está identificado e o editor inline toma o lugar. */}
+        {faseSelecionada === 'leads' && !loading && (
           <div className="mt-6">
             <FunilConversao
               projects={projects || []}
