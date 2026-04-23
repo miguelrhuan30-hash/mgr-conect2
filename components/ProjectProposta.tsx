@@ -200,11 +200,8 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   }, [project.apresentacaoId]);
 
   const linkSlides = useMemo(() => {
-    if (!apresentacaoInfo) return null;
-    const base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
-    return apresentacaoInfo.slug
-      ? `${window.location.origin}/#/apresentacao/${apresentacaoInfo.slug}`
-      : null;
+    if (!apresentacaoInfo?.slug) return null;
+    return `${window.location.origin}/#/p/${apresentacaoInfo.slug}`;
   }, [apresentacaoInfo]);
 
   const pdfUrl = apresentacaoInfo?.pdfUrl || dados.pdfUrl || null;
@@ -260,29 +257,17 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       `Segue sua proposta comercial para o projeto *${project.nome}*.`,
       '',
     ];
-    if (linkSlides) {
-      linhas.push(`🎨 *Apresentação completa:*`);
-      linhas.push(linkSlides);
-      linhas.push('');
-    }
+    // Link principal = /proposta/:slug (domínio MGR) — contém tudo para o cliente
     if (propostaDocLink) {
-      linhas.push(`📋 *Documento comercial (cláusulas + aceite):*`);
+      linhas.push(`🎯 *Acesse sua proposta completa:*`);
       linhas.push(propostaDocLink);
       linhas.push('');
+      linhas.push('Neste link você encontra a apresentação, os detalhes do projeto e pode aceitar a proposta online. ✅');
     }
-    if (pdfUrl) {
-      linhas.push(`🎨 *Apresentação (PDF):*`);
-      linhas.push(pdfUrl);
-      linhas.push('');
-    }
-    if (pdfDescritivoUrl) {
-      linhas.push(`📄 *Proposta Descritiva (PDF completo):*`);
-      linhas.push(pdfDescritivoUrl);
-      linhas.push('');
-    }
+    linhas.push('');
     linhas.push('Ficamos à disposição para qualquer dúvida. Aguardamos sua aprovação! 🙏');
     return linhas.join('\n');
-  }, [project.clientName, project.nome, linkSlides, propostaDocLink, pdfUrl, pdfDescritivoUrl]);
+  }, [project.clientName, project.nome, propostaDocLink]);
 
   // Atualiza mensagem quando links mudam (só se ainda não foi editada manualmente)
   const mensagemEditada = useRef(false);

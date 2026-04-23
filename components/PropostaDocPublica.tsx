@@ -416,7 +416,9 @@ const PropostaDocPublica: React.FC = () => {
   const [projectNome, setProjectNome]       = useState('');
   const [clienteNome, setClienteNome]       = useState('');
   const [pdfApresentacao, setPdfApresentacao] = useState<string | null>(null);
-  const [pdfDescritivo, setPdfDescritivo]   = useState<string | null>(null);
+  const [pdfDescritivo, setPdfDescritivo]     = useState<string | null>(null);
+  const [slidesSlug, setSlidesSlug]           = useState<string | null>(null);
+  const [viewerError, setViewerError]         = useState(false);
   const [showModal, setShowModal]           = useState(false);
   const [showPdfModal, setShowPdfModal]     = useState(false);
   const [wowMoment, setWowMoment]           = useState(false);
@@ -443,6 +445,12 @@ const PropostaDocPublica: React.FC = () => {
         setClienteNome(data.clientName ?? '');
         setPdfApresentacao(data.propostaDados?.pdfUrl ?? null);
         setPdfDescritivo(data.propostaDados?.pdfDescritivo ?? null);
+        // Fallback: slug da apresentação de slides do sistema
+        const versoes = data.propostaVersoes;
+        if (!data.propostaDados?.pdfUrl && versoes?.length) {
+          const slug = versoes[versoes.length - 1].slug;
+          if (slug) setSlidesSlug(slug);
+        }
       } catch {
         setNotFound(true);
       } finally {
@@ -620,49 +628,78 @@ const PropostaDocPublica: React.FC = () => {
           </div>
         )}
 
-        {/* ── Viewer PDF Apresentação ── */}
-        {pdfApresentacao && (
-          <div style={{
-            marginBottom: 40, borderRadius: 16, overflow: 'hidden',
-            border: `1px solid ${C.border}`, animation: 'fadeIn 0.6s 0.1s both',
-          }}>
+        {/* ── Viewer Apresentação (PDF ou Slides do sistema) ── */}
+        {(pdfApresentacao || slidesSlug) && (() => {
+          // Se tem PDF → Google Docs Viewer (sem barra lateral do Chrome)
+          // Se não → embed dos slides do sistema via /p/:slug
+          const isSlidesEmbed = !pdfApresentacao && !!slidesSlug;
+          const viewerSrc = pdfApresentacao
+            ? (viewerError
+                ? pdfApresentacao  // fallback direto se Google Docs falhar
+                : `https://docs.google.com/viewer?url=${encodeURIComponent(pdfApresentacao)}&embedded=true`)
+            : `${window.location.origin}/#/p/${slidesSlug}`;
+          const openHref = pdfApresentacao || `${window.location.origin}/#/p/${slidesSlug}`;
+
+          return (
             <div style={{
-              background: C.bgCard2, padding: '12px 18px',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              borderBottom: `1px solid ${C.border}`,
+              marginBottom: 40, borderRadius: 16, overflow: 'hidden',
+              border: `1px solid ${C.border}`, animation: 'fadeIn 0.6s 0.1s both',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: `${C.accent}22`, border: `1px solid ${C.accent}40`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Eye size={15} color={C.accent} />
+              {/* Barra do viewer */}
+              <div style={{
+                background: C.bgCard2, padding: '12px 18px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                borderBottom: `1px solid ${C.border}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 8,
+                    background: `${C.accent}22`, border: `1px solid ${C.accent}40`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Eye size={15} color={C.accent} />
+                  </div>
+                  <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>
+                    {isSlidesEmbed ? 'Apresentação da Proposta' : 'Apresentação da Proposta (PDF)'}
+                  </span>
                 </div>
-                <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>
-                  Apresentação da Proposta
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {pdfApresentacao && (
+                    <button
+                      onClick={() => setViewerError(v => !v)}
+                      style={{
+                        background: 'transparent', border: `1px solid ${C.border}`,
+                        borderRadius: 8, cursor: 'pointer', color: C.textMuted,
+                        padding: '5px 10px', fontSize: 11, fontFamily: 'system-ui, sans-serif',
+                      }}
+                      title="Alternar modo de visualização"
+                    >
+                      {viewerError ? 'Visor MGR' : 'Modo direto'}
+                    </button>
+                  )}
+                  <a href={openHref} target="_blank" rel="noopener noreferrer"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      color: C.textMuted, fontSize: 12, textDecoration: 'none',
+                      padding: '6px 12px', borderRadius: 8, border: `1px solid ${C.border}`,
+                    }}>
+                    <ExternalLink size={13} /> Abrir em nova aba
+                  </a>
+                </div>
               </div>
-              <a href={pdfApresentacao} target="_blank" rel="noopener noreferrer"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  color: C.textMuted, fontSize: 12, textDecoration: 'none',
-                  padding: '6px 12px', borderRadius: 8, border: `1px solid ${C.border}`,
-                  transition: 'all 0.2s',
-                }}>
-                <ExternalLink size={13} />
-                Abrir em nova aba
-              </a>
+              {/* Viewer */}
+              <div style={{ background: '#000', position: 'relative' }}>
+                <iframe
+                  key={viewerSrc}
+                  src={viewerSrc}
+                  style={{ width: '100%', height: 'min(80vh, 640px)', border: 'none', display: 'block' }}
+                  title="Apresentação da Proposta"
+                  onError={() => setViewerError(true)}
+                />
+              </div>
             </div>
-            <div style={{ background: '#000', position: 'relative' }}>
-              <iframe
-                src={pdfApresentacao}
-                style={{ width: '100%', height: 'min(80vh, 620px)', border: 'none', display: 'block' }}
-                title="Apresentação da Proposta"
-              />
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Divisor */}
         <div style={{ width: 60, height: 3, borderRadius: 2, background: C.accent, marginBottom: 40 }} />
@@ -780,10 +817,10 @@ const PropostaDocPublica: React.FC = () => {
               </button>
             </div>
           </div>
-          {/* iframe PDF */}
+          {/* iframe PDF via Google Docs Viewer */}
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <iframe
-              src={pdfDescritivo}
+              src={`https://docs.google.com/viewer?url=${encodeURIComponent(pdfDescritivo!)}&embedded=true`}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Proposta Descritiva"
             />
