@@ -11,7 +11,13 @@
       "Bash(dir \"C:\\\\Users\\\\Cliente\\\\Desktop\\\\mgr docs\\\\obsidian mgr\\\\04-erp-mgrconnect\" /b)",
       "Bash(echo \"EXIT:$?\")",
       "Bash(node_modules/.bin/tsc --noEmit)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(git cherry-pick *)",
+      "Bash(npm run *)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__read_console_messages",
+      "Bash(git stash *)"
     ]
   }
 }
