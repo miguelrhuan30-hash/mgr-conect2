@@ -16,6 +16,7 @@ import { db } from '../firebase';
 import { CollectionName, ProjectV2, PropostaDocumento } from '../types';
 import {
   Check, Loader2, AlertCircle, X, Mail, User, ChevronDown,
+  FileText, Download, ExternalLink, Eye,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -408,16 +409,19 @@ const ModalAceite: React.FC<{
 const PropostaDocPublica: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
 
-  const [loading, setLoading]         = useState(true);
-  const [notFound, setNotFound]       = useState(false);
-  const [projectId, setProjectId]     = useState<string>('');
-  const [proposta, setProposta]       = useState<PropostaDocumento | null>(null);
-  const [projectNome, setProjectNome] = useState('');
-  const [clienteNome, setClienteNome] = useState('');
-  const [showModal, setShowModal]     = useState(false);
-  const [wowMoment, setWowMoment]     = useState(false);
-  const [wowNome, setWowNome]         = useState('');
-  const [wowData, setWowData]         = useState<Date>(new Date());
+  const [loading, setLoading]               = useState(true);
+  const [notFound, setNotFound]             = useState(false);
+  const [projectId, setProjectId]           = useState<string>('');
+  const [proposta, setProposta]             = useState<PropostaDocumento | null>(null);
+  const [projectNome, setProjectNome]       = useState('');
+  const [clienteNome, setClienteNome]       = useState('');
+  const [pdfApresentacao, setPdfApresentacao] = useState<string | null>(null);
+  const [pdfDescritivo, setPdfDescritivo]   = useState<string | null>(null);
+  const [showModal, setShowModal]           = useState(false);
+  const [showPdfModal, setShowPdfModal]     = useState(false);
+  const [wowMoment, setWowMoment]           = useState(false);
+  const [wowNome, setWowNome]               = useState('');
+  const [wowData, setWowData]               = useState<Date>(new Date());
 
   // ── Busca por slug ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -437,6 +441,8 @@ const PropostaDocPublica: React.FC = () => {
         setProposta(data.propostaDocumento);
         setProjectNome(data.nome ?? '');
         setClienteNome(data.clientName ?? '');
+        setPdfApresentacao(data.propostaDados?.pdfUrl ?? null);
+        setPdfDescritivo(data.propostaDados?.pdfDescritivo ?? null);
       } catch {
         setNotFound(true);
       } finally {
@@ -614,6 +620,50 @@ const PropostaDocPublica: React.FC = () => {
           </div>
         )}
 
+        {/* ── Viewer PDF Apresentação ── */}
+        {pdfApresentacao && (
+          <div style={{
+            marginBottom: 40, borderRadius: 16, overflow: 'hidden',
+            border: `1px solid ${C.border}`, animation: 'fadeIn 0.6s 0.1s both',
+          }}>
+            <div style={{
+              background: C.bgCard2, padding: '12px 18px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: `${C.accent}22`, border: `1px solid ${C.accent}40`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Eye size={15} color={C.accent} />
+                </div>
+                <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>
+                  Apresentação da Proposta
+                </span>
+              </div>
+              <a href={pdfApresentacao} target="_blank" rel="noopener noreferrer"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  color: C.textMuted, fontSize: 12, textDecoration: 'none',
+                  padding: '6px 12px', borderRadius: 8, border: `1px solid ${C.border}`,
+                  transition: 'all 0.2s',
+                }}>
+                <ExternalLink size={13} />
+                Abrir em nova aba
+              </a>
+            </div>
+            <div style={{ background: '#000', position: 'relative' }}>
+              <iframe
+                src={pdfApresentacao}
+                style={{ width: '100%', height: 'min(80vh, 620px)', border: 'none', display: 'block' }}
+                title="Apresentação da Proposta"
+              />
+            </div>
+          </div>
+        )}
+
         {/* Divisor */}
         <div style={{ width: 60, height: 3, borderRadius: 2, background: C.accent, marginBottom: 40 }} />
 
@@ -629,7 +679,117 @@ const PropostaDocPublica: React.FC = () => {
             ))}
           </div>
         )}
+
+        {/* ── Botão Ver Proposta Completa ── */}
+        {pdfDescritivo && (
+          <div style={{
+            marginTop: 48, padding: '28px 24px',
+            background: C.bgCard2, border: `1px solid ${C.border}`,
+            borderRadius: 16, textAlign: 'center',
+            animation: 'fadeIn 0.5s 0.3s both',
+          }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: 12,
+              background: `${C.accent}22`, border: `1px solid ${C.accent}40`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}>
+              <FileText size={22} color={C.accent} />
+            </div>
+            <p style={{ color: C.text, fontWeight: 700, fontSize: 16, margin: '0 0 8px' }}>
+              Proposta Descritiva Completa
+            </p>
+            <p style={{ color: C.textMuted, fontSize: 14, margin: '0 0 20px', lineHeight: 1.5 }}>
+              Documento completo com detalhes técnicos, escopo e condições comerciais.
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setShowPdfModal(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '12px 24px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
+                  color: 'white', fontWeight: 700, fontSize: 14,
+                  fontFamily: 'system-ui, sans-serif',
+                  boxShadow: `0 4px 20px ${C.accent}44`,
+                  transition: 'transform 0.15s, box-shadow 0.15s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
+              >
+                <Eye size={16} /> Ver Proposta Completa
+              </button>
+              <a
+                href={pdfDescritivo} target="_blank" rel="noopener noreferrer" download
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '12px 24px', borderRadius: 10,
+                  border: `1px solid ${C.border}`, textDecoration: 'none',
+                  color: C.textMuted, fontWeight: 600, fontSize: 14,
+                  fontFamily: 'system-ui, sans-serif',
+                  transition: 'border-color 0.2s, color 0.2s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.color = C.text; (e.currentTarget as HTMLAnchorElement).style.borderColor = C.textMuted; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = C.textMuted; (e.currentTarget as HTMLAnchorElement).style.borderColor = C.border; }}
+              >
+                <Download size={16} /> Baixar PDF
+              </a>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* ── Modal PDF Descritivo ── */}
+      {showPdfModal && pdfDescritivo && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 500,
+          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
+          display: 'flex', flexDirection: 'column',
+          animation: 'fadeIn 0.2s both',
+        }}>
+          {/* Barra superior */}
+          <div style={{
+            height: 56, background: C.bgCard2, borderBottom: `1px solid ${C.border}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0 20px', flexShrink: 0, gap: 16,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <MGRLogo size={28} />
+              <span style={{ color: C.text, fontWeight: 700, fontSize: 14, marginLeft: 4 }}>
+                Proposta Descritiva
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <a href={pdfDescritivo} target="_blank" rel="noopener noreferrer" download
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, color: C.textMuted,
+                  fontSize: 13, textDecoration: 'none', padding: '6px 14px',
+                  borderRadius: 8, border: `1px solid ${C.border}`, fontFamily: 'system-ui, sans-serif',
+                }}>
+                <Download size={14} /> Baixar
+              </a>
+              <button
+                onClick={() => setShowPdfModal(false)}
+                style={{
+                  background: 'transparent', border: `1px solid ${C.border}`,
+                  borderRadius: 8, cursor: 'pointer', color: C.textMuted,
+                  padding: '6px 10px', display: 'flex', alignItems: 'center',
+                  transition: 'color 0.2s',
+                }}>
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          {/* iframe PDF */}
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <iframe
+              src={pdfDescritivo}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+              title="Proposta Descritiva"
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── Rodapé com botão de aceite ──────────────────────────────────────── */}
       {!jaAceita && (

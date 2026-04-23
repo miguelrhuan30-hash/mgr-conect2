@@ -1993,7 +1993,10 @@ export interface PropostaDados {
   prazoExecucao?: string;       // ex: "23 dias corridos após aprovação"
   validadeAte?: string;         // 'YYYY-MM-DD'
   observacoesCliente?: string;  // texto livre para o cliente
-  pdfUrl?: string;              // URL do PDF da proposta (upload ou link externo)
+  pdfUrl?: string;              // URL do PDF da apresentação (slides)
+  pdfStoragePath?: string | null;
+  pdfDescritivo?: string | null;    // URL do PDF descritivo da proposta
+  pdfDescritivoPath?: string | null;
   status: PropostaStatus;
   enviadoEm?: Timestamp;
   aprovadoEm?: Timestamp;

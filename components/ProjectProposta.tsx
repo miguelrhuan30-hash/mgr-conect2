@@ -219,11 +219,18 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [secaoEnvio, setSecaoEnvio] = useState(true);
   const [secaoAprovacao, setSecaoAprovacao] = useState(true);
 
-  // Upload PDF
+  // Upload PDF Apresentação
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [pdfExternalUrl, setPdfExternalUrl] = useState(dados.pdfUrl || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload PDF Descritivo
+  const [uploadProgressDesc, setUploadProgressDesc] = useState<number | null>(null);
+  const [uploadErrorDesc, setUploadErrorDesc] = useState('');
+  const [pdfDescritivoUrl, setPdfDescritivoUrl] = useState(dados.pdfDescritivo || '');
+  const [pdfDescritivoExtUrl, setPdfDescritivoExtUrl] = useState(dados.pdfDescritivo || '');
+  const fileInputDescRef = useRef<HTMLInputElement>(null);
 
   // Mensagem
   const [mensagem, setMensagem] = useState('');
@@ -264,13 +271,18 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       linhas.push('');
     }
     if (pdfUrl) {
-      linhas.push(`📄 *Documento PDF:*`);
+      linhas.push(`🎨 *Apresentação (PDF):*`);
       linhas.push(pdfUrl);
+      linhas.push('');
+    }
+    if (pdfDescritivoUrl) {
+      linhas.push(`📄 *Proposta Descritiva (PDF completo):*`);
+      linhas.push(pdfDescritivoUrl);
       linhas.push('');
     }
     linhas.push('Ficamos à disposição para qualquer dúvida. Aguardamos sua aprovação! 🙏');
     return linhas.join('\n');
-  }, [project.clientName, project.nome, linkSlides, propostaDocLink, pdfUrl]);
+  }, [project.clientName, project.nome, linkSlides, propostaDocLink, pdfUrl, pdfDescritivoUrl]);
 
   // Atualiza mensagem quando links mudam (só se ainda não foi editada manualmente)
   const mensagemEditada = useRef(false);
@@ -330,12 +342,12 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
     }
   };
 
-  // ── Upload PDF ─────────────────────────────────────────────────────────────
+  // ── Upload PDF Apresentação ────────────────────────────────────────────────
   const handleUploadPdf = (file: File) => {
-    if (!file || !project.apresentacaoId) return;
+    if (!file) return;
     setUploadError('');
     setUploadProgress(0);
-    const path = `presentations/${project.apresentacaoId}/proposta.pdf`;
+    const path = `projects/${project.id}/apresentacao.pdf`;
     const ref = storageRef(storage, path);
     const task = uploadBytesResumable(ref, file, { contentType: 'application/pdf' });
     task.on(
@@ -344,14 +356,14 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       err => { setUploadError(err.message); setUploadProgress(null); },
       async () => {
         const url = await getDownloadURL(ref);
-        // Salva no doc da apresentação e no projeto
-        await Promise.all([
-          updateDoc(doc(db, CollectionName.PRESENTATIONS, project.apresentacaoId!), {
+        const newDados = { ...dados, pdfUrl: url, pdfStoragePath: path };
+        await updateProject(project.id, { propostaDados: newDados as any });
+        if (project.apresentacaoId) {
+          await updateDoc(doc(db, CollectionName.PRESENTATIONS, project.apresentacaoId), {
             pdfUrl: url, pdfStoragePath: path, updatedAt: serverTimestamp(),
-          }),
-          updateProject(project.id, { propostaDados: { ...dados, pdfUrl: url } as any }),
-        ]);
-        setDados(prev => ({ ...prev, pdfUrl: url }));
+          });
+        }
+        setDados(newDados);
         setPdfExternalUrl(url);
         setUploadProgress(null);
         setSavedLocal(true);
@@ -371,6 +383,43 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
           pdfUrl: pdfExternalUrl.trim(), updatedAt: serverTimestamp(),
         });
       }
+      setSavedLocal(true);
+    } finally { setSaving(false); }
+  };
+
+  // ── Upload PDF Descritivo ──────────────────────────────────────────────────
+  const handleUploadPdfDescritivo = (file: File) => {
+    if (!file) return;
+    setUploadErrorDesc('');
+    setUploadProgressDesc(0);
+    const path = `projects/${project.id}/proposta_descritiva.pdf`;
+    const ref = storageRef(storage, path);
+    const task = uploadBytesResumable(ref, file, { contentType: 'application/pdf' });
+    task.on(
+      'state_changed',
+      snap => setUploadProgressDesc(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+      err => { setUploadErrorDesc(err.message); setUploadProgressDesc(null); },
+      async () => {
+        const url = await getDownloadURL(ref);
+        const newDados = { ...dados, pdfDescritivo: url, pdfDescritivoPath: path };
+        await updateProject(project.id, { propostaDados: newDados as any });
+        setDados(newDados);
+        setPdfDescritivoUrl(url);
+        setPdfDescritivoExtUrl(url);
+        setUploadProgressDesc(null);
+        setSavedLocal(true);
+      },
+    );
+  };
+
+  const handleSavePdfDescritivoUrl = async () => {
+    if (!pdfDescritivoExtUrl.trim()) return;
+    setSaving(true);
+    try {
+      const newDados = { ...dados, pdfDescritivo: pdfDescritivoExtUrl.trim() };
+      setDados(newDados);
+      setPdfDescritivoUrl(pdfDescritivoExtUrl.trim());
+      await updateProject(project.id, { propostaDados: newDados as any });
       setSavedLocal(true);
     } finally { setSaving(false); }
   };
@@ -466,6 +515,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const statusCfg = STATUS_CONFIG[dados.status || 'rascunho'];
   const temApresentacao = !!project.apresentacaoId;
   const temPdf = !!(pdfUrl);
+  const temPdfDescritivo = !!(pdfDescritivoUrl);
   const temSlideLink = !!linkSlides;
   const temDocPublicado = !!project.propostaDocumento?.slug &&
     project.propostaDocumento.status !== 'rascunho';
@@ -644,73 +694,98 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         )}
       </div>
 
-      {/* ══ PASSO 2: PDF da Proposta ══ */}
+      {/* ══ PASSO 2: PDFs da Proposta ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
         <button onClick={() => setSecaoPdf(!secaoPdf)}
           className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temPdf ? 'bg-emerald-100' : 'bg-red-100'}`}>
-              <FileText className={`w-3.5 h-3.5 ${temPdf ? 'text-emerald-600' : 'text-red-500'}`} />
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temPdf || temPdfDescritivo ? 'bg-emerald-100' : 'bg-blue-50'}`}>
+              <FileText className={`w-3.5 h-3.5 ${temPdf || temPdfDescritivo ? 'text-emerald-600' : 'text-blue-400'}`} />
             </div>
-            <span className="text-sm font-bold text-gray-800">Passo 2 — Documento PDF</span>
-            {temPdf
-              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Vinculado</span>
-              : <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">Opcional</span>}
+            <span className="text-sm font-bold text-gray-800">Passo 2 — PDFs da Proposta</span>
+            {temPdf && temPdfDescritivo
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Ambos vinculados</span>
+              : temPdf || temPdfDescritivo
+              ? <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">Parcial</span>
+              : <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">Upload PDFs</span>}
           </div>
           {secaoPdf ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
 
         {secaoPdf && (
-          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
+          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-6">
 
-            {/* PDF atual */}
-            {temPdf && (
-              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                <span className="text-xs text-emerald-700 flex-1 truncate font-mono">{pdfUrl}</span>
-                <a href={pdfUrl!} target="_blank" rel="noopener noreferrer"
-                  className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
-            )}
-
-            {/* Upload */}
+            {/* ── PDF da Apresentação ── */}
             <div>
-              <p className="text-xs font-bold text-gray-600 mb-2">Upload do PDF</p>
-              {!temApresentacao && (
-                <p className="text-xs text-amber-600 mb-2">Crie a apresentação em slides (Passo 1) antes de fazer o upload do PDF.</p>
+              <p className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
+                <span className="w-5 h-5 bg-indigo-100 rounded-md flex items-center justify-center text-indigo-600 text-[10px]">🎨</span>
+                PDF da Apresentação (Slides)
+              </p>
+              {temPdf && (
+                <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-3">
+                  <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span className="text-xs text-emerald-700 flex-1 truncate font-mono">{pdfUrl}</span>
+                  <a href={pdfUrl!} target="_blank" rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
               )}
-              <input
-                type="file" accept=".pdf" ref={fileInputRef}
-                className="hidden"
-                onChange={e => { if (e.target.files?.[0]) handleUploadPdf(e.target.files[0]); }}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!temApresentacao || uploadProgress !== null}
-                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-50 transition-all w-full justify-center">
+              <input type="file" accept=".pdf" ref={fileInputRef} className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleUploadPdf(e.target.files[0]); }} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploadProgress !== null}
+                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 transition-all w-full justify-center mb-2">
                 {uploadProgress !== null
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgress}%</>
-                  : <><Upload className="w-4 h-4" /> Selecionar PDF</>}
+                  : <><Upload className="w-4 h-4" /> {temPdf ? 'Substituir PDF da Apresentação' : 'Selecionar PDF da Apresentação'}</>}
               </button>
-              {uploadError && <p className="text-xs text-red-600 mt-1">{uploadError}</p>}
+              {uploadError && <p className="text-xs text-red-600 mb-2">{uploadError}</p>}
+              <div className="flex gap-2">
+                <input value={pdfExternalUrl} onChange={e => setPdfExternalUrl(e.target.value)}
+                  placeholder="ou colar link externo (Drive, Dropbox…)"
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-300" />
+                <button onClick={handleSavePdfUrl} disabled={saving || !pdfExternalUrl.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-700 text-white rounded-xl text-xs font-bold hover:bg-gray-600 disabled:opacity-40 transition-colors">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Salvar
+                </button>
+              </div>
             </div>
 
-            {/* OU URL externa */}
+            <div className="border-t border-gray-100" />
+
+            {/* ── PDF Descritivo ── */}
             <div>
-              <p className="text-xs font-bold text-gray-600 mb-2">ou colar link externo do PDF</p>
+              <p className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
+                <span className="w-5 h-5 bg-orange-100 rounded-md flex items-center justify-center text-orange-600 text-[10px]">📄</span>
+                PDF Descritivo da Proposta
+              </p>
+              {temPdfDescritivo && (
+                <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-3">
+                  <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span className="text-xs text-emerald-700 flex-1 truncate font-mono">{pdfDescritivoUrl}</span>
+                  <a href={pdfDescritivoUrl} target="_blank" rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
+              <input type="file" accept=".pdf" ref={fileInputDescRef} className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleUploadPdfDescritivo(e.target.files[0]); }} />
+              <button onClick={() => fileInputDescRef.current?.click()} disabled={uploadProgressDesc !== null}
+                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50 disabled:opacity-50 transition-all w-full justify-center mb-2">
+                {uploadProgressDesc !== null
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgressDesc}%</>
+                  : <><Upload className="w-4 h-4" /> {temPdfDescritivo ? 'Substituir PDF Descritivo' : 'Selecionar PDF Descritivo'}</>}
+              </button>
+              {uploadErrorDesc && <p className="text-xs text-red-600 mb-2">{uploadErrorDesc}</p>}
               <div className="flex gap-2">
-                <input
-                  value={pdfExternalUrl}
-                  onChange={e => setPdfExternalUrl(e.target.value)}
-                  placeholder="https://drive.google.com/..."
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
-                <button
-                  onClick={handleSavePdfUrl}
-                  disabled={saving || !pdfExternalUrl.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-800 text-white rounded-xl text-sm font-bold hover:bg-gray-700 disabled:opacity-40 transition-colors">
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <input value={pdfDescritivoExtUrl} onChange={e => setPdfDescritivoExtUrl(e.target.value)}
+                  placeholder="ou colar link externo (Drive, Dropbox…)"
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-orange-300" />
+                <button onClick={handleSavePdfDescritivoUrl} disabled={saving || !pdfDescritivoExtUrl.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-700 text-white rounded-xl text-xs font-bold hover:bg-gray-600 disabled:opacity-40 transition-colors">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                   Salvar
                 </button>
               </div>
