@@ -394,8 +394,16 @@ const FlowAtendimento: React.FC = () => {
   const handleFaseChange = (id: FlowFaseId) => {
     setFaseSelecionada(id);
     setSearch('');
-    setSelectedProjectId(null); // fecha prancheta inline ao trocar de fase
+    setSelectedProjectId(null); // fecha editor inline ao trocar de fase
   };
+
+  // Guard: se selectedProjectId aponta para projeto não encontrado após loading,
+  // reseta para a lista — evita tela branca quando há race condition com onSnapshot.
+  useEffect(() => {
+    if (INLINE_FASES.includes(faseSelecionada) && !loading && selectedProjectId && !selectedProject) {
+      setSelectedProjectId(null);
+    }
+  }, [faseSelecionada, loading, selectedProjectId, selectedProject]);
 
   // ── Navegação a partir do FunilConversao ou cards ─────────────────────────
   const handleNavigateToFase = (faseId: FlowFaseId, projectId?: string) => {
@@ -587,8 +595,22 @@ const FlowAtendimento: React.FC = () => {
           </div>
         )}
 
-        {/* Fase 0 — Leads */}
+        {/* ── Funil de Conversão — SOMENTE Fase 0 (Leads), ACIMA do LeadsDashboard.
+            Regra vault: visível apenas na Fase 0. Posicionado no topo para garantir
+            visibilidade imediata — o LeadsDashboard pode ser longo e empurrá-lo
+            para fora do viewport se ficar abaixo. */}
         {faseSelecionada === 'leads' && !loading && (
+          <div className="mb-6">
+            <FunilConversao
+              projects={projects || []}
+              onNavigateToFase={handleNavigateToFase}
+              faseSelecionada={faseSelecionada}
+            />
+          </div>
+        )}
+
+        {/* Fase 0 — Leads (sem gate de loading: LeadsDashboard carrega seus próprios dados) */}
+        {faseSelecionada === 'leads' && (
           <LeadsDashboard
             initialTab={openNovoLead ? 'config' : undefined}
             key={openNovoLead ? 'novo-lead' : 'leads'}
@@ -704,17 +726,6 @@ const FlowAtendimento: React.FC = () => {
           <FaseProjectList fase={faseAtual} projects={projetosDaFase} search={search} onSearch={setSearch} />
         )}
 
-        {/* Funil de Conversão — SOMENTE na Fase 0 (Leads), conforme regra do vault.
-            Nas fases 1-4 o projeto já está identificado e o editor inline toma o lugar. */}
-        {faseSelecionada === 'leads' && !loading && (
-          <div className="mt-6">
-            <FunilConversao
-              projects={projects || []}
-              onNavigateToFase={handleNavigateToFase}
-              faseSelecionada={faseSelecionada}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
