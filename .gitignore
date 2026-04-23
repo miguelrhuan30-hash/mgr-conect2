@@ -53,3 +53,7 @@ brandmgrrules.md
 # Apresentações HTML standalone (arquivos grandes, não versionados)
 MGR_Bimbo_Proposta_v3.html
 public/MGR_Bimbo_Proposta_v3.html
+
+# Google Drive — arquivos temporários de sincronização
+.tmp.driveupload/
+.tmp.drivedownload/
