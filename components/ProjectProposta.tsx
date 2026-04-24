@@ -210,6 +210,11 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [saving, setSaving] = useState(false);
   const [savedLocal, setSavedLocal] = useState(false);
   const [criandoApres, setCriandoApres] = useState(false);
+  const [secaoApres, setSecaoApres] = useState(true);
+  // modo: 'sistema' = criar slides no sistema | 'pdf' = upload de PDF
+  const [modoApres, setModoApres] = useState<'sistema' | 'pdf'>(
+    project.propostaDados?.pdfUrl ? 'pdf' : 'sistema'
+  );
   const [secaoSlides, setSecaoSlides] = useState(true);
   const [secaoPdf, setSecaoPdf] = useState(true);
   const [secaoDoc, setSecaoDoc] = useState(true);
@@ -565,113 +570,148 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         </div>
       )}
 
-      {/* ══ PASSO 1: Apresentação em Slides ══ */}
+      {/* ══ PASSO 1: Apresentação (Slides ou PDF) ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        <button onClick={() => setSecaoSlides(!secaoSlides)}
+        <button onClick={() => setSecaoApres(!secaoApres)}
           className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temApresentacao ? 'bg-emerald-100' : 'bg-brand-100'}`}>
-              <PresentIcon className={`w-3.5 h-3.5 ${temApresentacao ? 'text-emerald-600' : 'text-brand-600'}`} />
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${(temApresentacao || temPdf) ? 'bg-emerald-100' : 'bg-brand-100'}`}>
+              <PresentIcon className={`w-3.5 h-3.5 ${(temApresentacao || temPdf) ? 'text-emerald-600' : 'text-brand-600'}`} />
             </div>
-            <span className="text-sm font-bold text-gray-800">Passo 1 — Apresentação em Slides</span>
-            {temApresentacao
-              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Criada</span>
+            <span className="text-sm font-bold text-gray-800">Passo 1 — Apresentação</span>
+            {temPdf
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ PDF vinculado</span>
+              : temApresentacao
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Slides criados</span>
               : <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold">Pendente</span>}
           </div>
-          {secaoSlides ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          {secaoApres ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
 
-        {secaoSlides && (
+        {secaoApres && (
           <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
 
-            {!temApresentacao ? (
-              /* — Criar nova — */
+            {/* ── Toggle modo ── */}
+            <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => setModoApres('pdf')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold transition-colors ${
+                  modoApres === 'pdf' ? 'bg-brand-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}>
+                <Upload className="w-3.5 h-3.5" /> Upload PDF
+              </button>
+              <button
+                onClick={() => setModoApres('sistema')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold transition-colors border-l border-gray-200 ${
+                  modoApres === 'sistema' ? 'bg-brand-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}>
+                <PresentIcon className="w-3.5 h-3.5" /> Criar no sistema
+              </button>
+            </div>
+
+            {/* ── MODO PDF ── */}
+            {modoApres === 'pdf' && (
               <div className="space-y-3">
-                <div className="bg-brand-50 border border-brand-200 rounded-xl p-4">
-                  <p className="text-sm font-bold text-brand-900 mb-1">Criar apresentação de slides</p>
-                  <p className="text-xs text-brand-700">
-                    Uma apresentação será criada automaticamente pré-preenchida com os dados
-                    do projeto (cliente, cronograma, serviços). O editor abrirá em nova aba.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={handleCriarApresentacao} disabled={criandoApres}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-60 transition-colors shadow-sm">
-                    {criandoApres
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Criando...</>
-                      : <><Plus className="w-4 h-4" /> Criar Apresentação</>}
+                <p className="text-xs text-gray-500">
+                  Gere a apresentação externamente (PowerPoint, Canva, etc), exporte em PDF e faça o upload. Ela será exibida no link do cliente.
+                </p>
+                {temPdf && (
+                  <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="text-xs text-emerald-700 flex-1 min-w-0 truncate">PDF vinculado ✓</span>
+                    <a href={pdfUrl!} target="_blank" rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
+                <input type="file" accept=".pdf" ref={fileInputRef} className="hidden"
+                  onChange={e => { if (e.target.files?.[0]) handleUploadPdf(e.target.files[0]); }} />
+                <button onClick={() => fileInputRef.current?.click()} disabled={uploadProgress !== null}
+                  className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-50 transition-all w-full justify-center">
+                  {uploadProgress !== null
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgress}%</>
+                    : <><Upload className="w-4 h-4" /> {temPdf ? 'Substituir PDF' : 'Selecionar PDF da Apresentação'}</>}
+                </button>
+                {uploadError && <p className="text-xs text-red-600">{uploadError}</p>}
+                <div className="flex gap-2">
+                  <input value={pdfExternalUrl} onChange={e => setPdfExternalUrl(e.target.value)}
+                    placeholder="ou colar link externo (Drive, Dropbox…)"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-300" />
+                  <button onClick={handleSavePdfUrl} disabled={saving || !pdfExternalUrl.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gray-700 text-white rounded-xl text-xs font-bold hover:bg-gray-600 disabled:opacity-40 transition-colors">
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    Salvar
                   </button>
                 </div>
               </div>
-            ) : (
-              /* — Apresentação criada — */
+            )}
+
+            {/* ── MODO SISTEMA ── */}
+            {modoApres === 'sistema' && (
               <div className="space-y-3">
-
-                {/* Card da apresentação */}
-                <div className="flex items-center gap-3 p-4 bg-brand-50 border border-brand-200 rounded-xl">
-                  <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <PresentIcon className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-brand-900 truncate">
-                      {apresentacaoInfo?.projetoTitulo || project.nome}
-                    </p>
-                    <p className="text-xs text-brand-600 truncate">
-                      {apresentacaoInfo?.clienteNome || project.clientName}
-                    </p>
-                    {linkSlides && (
-                      <p className="text-[10px] text-brand-400 font-mono mt-0.5 truncate">{linkSlides}</p>
+                <p className="text-xs text-gray-500">
+                  Crie os slides diretamente no sistema MGR. Os dados do projeto são preenchidos automaticamente.
+                </p>
+                {!temApresentacao ? (
+                  <button onClick={handleCriarApresentacao} disabled={criandoApres}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-60 transition-colors shadow-sm w-full justify-center">
+                    {criandoApres
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Criando...</>
+                      : <><Plus className="w-4 h-4" /> Criar Apresentação no Sistema</>}
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 p-3 bg-brand-50 border border-brand-200 rounded-xl">
+                      <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <PresentIcon className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-brand-900 truncate">{apresentacaoInfo?.projetoTitulo || project.nome}</p>
+                        <p className="text-[10px] text-brand-500 truncate">{linkSlides || 'Sem link público ainda'}</p>
+                      </div>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        <button onClick={() => window.open(`#/app/apresentacoes?id=${project.apresentacaoId}`, '_blank')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700">
+                          <Play className="w-3 h-3" /> Editar
+                        </button>
+                        {linkSlides && (
+                          <a href={linkSlides} target="_blank" rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg bg-white border border-brand-200 hover:bg-brand-50 text-brand-600">
+                            <Eye className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    {!linkSlides && (
+                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        ⚠️ Publique a apresentação no editor para gerar o link público.
+                      </p>
                     )}
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <button
-                      onClick={() => window.open(`#/app/apresentacoes?id=${project.apresentacaoId}`, '_blank')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">
-                      <Play className="w-3 h-3" /> Editar Slides
+                    <button onClick={handleCriarApresentacao} disabled={criandoApres}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                      <Plus className="w-3 h-3" /> {criandoApres ? 'Criando...' : 'Criar nova versão'}
                     </button>
-                    {linkSlides && (
-                      <a href={linkSlides} target="_blank" rel="noopener noreferrer"
-                        className="p-1.5 rounded-lg bg-white border border-brand-200 hover:bg-brand-50 text-brand-600 transition-colors">
-                        <Eye className="w-3.5 h-3.5" />
-                      </a>
-                    )}
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Link do cliente (sempre visível se disponível) ── */}
+            {propostaDocLink && (
+              <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                <Link2 className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-wide mb-0.5">Link do cliente</p>
+                  <span className="text-xs text-indigo-700 font-mono truncate block">{propostaDocLink}</span>
                 </div>
-
-                {/* Copiar link dos slides */}
-                {linkSlides && (
-                  <div className="flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                    <Link2 className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                    <span className="text-xs text-gray-600 flex-1 truncate font-mono">{linkSlides}</span>
-                    <button onClick={async () => {
-                      await navigator.clipboard.writeText(linkSlides);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    }}
-                      className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold border rounded-lg transition-colors bg-white text-gray-600 border-gray-200 hover:bg-gray-100">
-                      {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                      Copiar
-                    </button>
-                  </div>
-                )}
-
-                {/* Aviso se não tem slide link ainda */}
-                {!linkSlides && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <AlertCircle className="w-4 h-4 text-yellow-600 flex-shrink-0" />
-                    <p className="text-xs text-yellow-800">
-                      Apresentação criada mas ainda sem link público. Abra o editor e publique a apresentação para gerar o link.
-                    </p>
-                  </div>
-                )}
-
-                {/* Criar nova versão */}
-                <button
-                  onClick={handleCriarApresentacao}
-                  disabled={criandoApres}
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                  <Plus className="w-3 h-3" />
-                  {criandoApres ? 'Criando...' : 'Criar nova versão dos slides'}
+                <button onClick={async () => {
+                  await navigator.clipboard.writeText(propostaDocLink);
+                  setCopied(true); setTimeout(() => setCopied(false), 2000);
+                }}
+                  className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-bold border border-indigo-200 rounded-lg bg-white text-indigo-600 hover:bg-indigo-100 flex-shrink-0 transition-colors">
+                  {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  Copiar
                 </button>
               </div>
             )}
@@ -679,101 +719,53 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         )}
       </div>
 
-      {/* ══ PASSO 2: PDFs da Proposta ══ */}
+      {/* ══ PASSO 2: PDF Descritivo (opcional) ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
         <button onClick={() => setSecaoPdf(!secaoPdf)}
           className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temPdf || temPdfDescritivo ? 'bg-emerald-100' : 'bg-blue-50'}`}>
-              <FileText className={`w-3.5 h-3.5 ${temPdf || temPdfDescritivo ? 'text-emerald-600' : 'text-blue-400'}`} />
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temPdfDescritivo ? 'bg-emerald-100' : 'bg-orange-50'}`}>
+              <FileText className={`w-3.5 h-3.5 ${temPdfDescritivo ? 'text-emerald-600' : 'text-orange-400'}`} />
             </div>
-            <span className="text-sm font-bold text-gray-800">Passo 2 — PDFs da Proposta</span>
-            {temPdf && temPdfDescritivo
-              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Ambos vinculados</span>
-              : temPdf || temPdfDescritivo
-              ? <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">Parcial</span>
-              : <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">Upload PDFs</span>}
+            <span className="text-sm font-bold text-gray-800">Passo 2 — PDF Descritivo</span>
+            {temPdfDescritivo
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Vinculado</span>
+              : <span className="text-[9px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full font-bold">Opcional</span>}
           </div>
           {secaoPdf ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
 
         {secaoPdf && (
-          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-6">
-
-            {/* ── PDF da Apresentação ── */}
-            <div>
-              <p className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
-                <span className="w-5 h-5 bg-indigo-100 rounded-md flex items-center justify-center text-indigo-600 text-[10px]">🎨</span>
-                PDF da Apresentação (Slides)
-              </p>
-              {temPdf && (
-                <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-3">
-                  <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span className="text-xs text-emerald-700 flex-1 truncate font-mono">{pdfUrl}</span>
-                  <a href={pdfUrl!} target="_blank" rel="noopener noreferrer"
-                    className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              )}
-              <input type="file" accept=".pdf" ref={fileInputRef} className="hidden"
-                onChange={e => { if (e.target.files?.[0]) handleUploadPdf(e.target.files[0]); }} />
-              <button onClick={() => fileInputRef.current?.click()} disabled={uploadProgress !== null}
-                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 transition-all w-full justify-center mb-2">
-                {uploadProgress !== null
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgress}%</>
-                  : <><Upload className="w-4 h-4" /> {temPdf ? 'Substituir PDF da Apresentação' : 'Selecionar PDF da Apresentação'}</>}
-              </button>
-              {uploadError && <p className="text-xs text-red-600 mb-2">{uploadError}</p>}
-              <div className="flex gap-2">
-                <input value={pdfExternalUrl} onChange={e => setPdfExternalUrl(e.target.value)}
-                  placeholder="ou colar link externo (Drive, Dropbox…)"
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-300" />
-                <button onClick={handleSavePdfUrl} disabled={saving || !pdfExternalUrl.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-700 text-white rounded-xl text-xs font-bold hover:bg-gray-600 disabled:opacity-40 transition-colors">
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                  Salvar
-                </button>
+          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-3">
+            <p className="text-xs text-gray-500">Proposta técnica detalhada em PDF. Aparece como botão "Ver Proposta Completa" no link do cliente.</p>
+            {temPdfDescritivo && (
+              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span className="text-xs text-emerald-700 flex-1 truncate">PDF descritivo vinculado ✓</span>
+                <a href={pdfDescritivoUrl} target="_blank" rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 flex-shrink-0">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
-            </div>
-
-            <div className="border-t border-gray-100" />
-
-            {/* ── PDF Descritivo ── */}
-            <div>
-              <p className="text-xs font-bold text-gray-700 mb-3 flex items-center gap-1.5">
-                <span className="w-5 h-5 bg-orange-100 rounded-md flex items-center justify-center text-orange-600 text-[10px]">📄</span>
-                PDF Descritivo da Proposta
-              </p>
-              {temPdfDescritivo && (
-                <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-3">
-                  <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span className="text-xs text-emerald-700 flex-1 truncate font-mono">{pdfDescritivoUrl}</span>
-                  <a href={pdfDescritivoUrl} target="_blank" rel="noopener noreferrer"
-                    className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              )}
-              <input type="file" accept=".pdf" ref={fileInputDescRef} className="hidden"
-                onChange={e => { if (e.target.files?.[0]) handleUploadPdfDescritivo(e.target.files[0]); }} />
-              <button onClick={() => fileInputDescRef.current?.click()} disabled={uploadProgressDesc !== null}
-                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50 disabled:opacity-50 transition-all w-full justify-center mb-2">
-                {uploadProgressDesc !== null
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgressDesc}%</>
-                  : <><Upload className="w-4 h-4" /> {temPdfDescritivo ? 'Substituir PDF Descritivo' : 'Selecionar PDF Descritivo'}</>}
+            )}
+            <input type="file" accept=".pdf" ref={fileInputDescRef} className="hidden"
+              onChange={e => { if (e.target.files?.[0]) handleUploadPdfDescritivo(e.target.files[0]); }} />
+            <button onClick={() => fileInputDescRef.current?.click()} disabled={uploadProgressDesc !== null}
+              className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50 disabled:opacity-50 transition-all w-full justify-center">
+              {uploadProgressDesc !== null
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgressDesc}%</>
+                : <><Upload className="w-4 h-4" /> {temPdfDescritivo ? 'Substituir PDF Descritivo' : 'Upload PDF Descritivo'}</>}
+            </button>
+            {uploadErrorDesc && <p className="text-xs text-red-600">{uploadErrorDesc}</p>}
+            <div className="flex gap-2">
+              <input value={pdfDescritivoExtUrl} onChange={e => setPdfDescritivoExtUrl(e.target.value)}
+                placeholder="ou colar link externo (Drive, Dropbox…)"
+                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-orange-300" />
+              <button onClick={handleSavePdfDescritivoUrl} disabled={saving || !pdfDescritivoExtUrl.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gray-700 text-white rounded-xl text-xs font-bold hover:bg-gray-600 disabled:opacity-40 transition-colors">
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Salvar
               </button>
-              {uploadErrorDesc && <p className="text-xs text-red-600 mb-2">{uploadErrorDesc}</p>}
-              <div className="flex gap-2">
-                <input value={pdfDescritivoExtUrl} onChange={e => setPdfDescritivoExtUrl(e.target.value)}
-                  placeholder="ou colar link externo (Drive, Dropbox…)"
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-orange-300" />
-                <button onClick={handleSavePdfDescritivoUrl} disabled={saving || !pdfDescritivoExtUrl.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-700 text-white rounded-xl text-xs font-bold hover:bg-gray-600 disabled:opacity-40 transition-colors">
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                  Salvar
-                </button>
-              </div>
             </div>
           </div>
         )}
