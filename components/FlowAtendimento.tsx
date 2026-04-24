@@ -595,27 +595,24 @@ const FlowAtendimento: React.FC = () => {
           </div>
         )}
 
-        {/* ── Funil de Conversão — SOMENTE Fase 0 (Leads), ACIMA do LeadsDashboard.
-            Regra vault: visível apenas na Fase 0. Posicionado no topo para garantir
-            visibilidade imediata — o LeadsDashboard pode ser longo e empurrá-lo
-            para fora do viewport se ficar abaixo. */}
-        {faseSelecionada === 'leads' && !loading && (
-          <div className="mb-6">
-            <FunilConversao
-              projects={projects || []}
-              onNavigateToFase={handleNavigateToFase}
-              faseSelecionada={faseSelecionada}
-            />
-          </div>
-        )}
-
-        {/* Fase 0 — Leads (sem gate de loading: LeadsDashboard carrega seus próprios dados) */}
+        {/* Fase 0 — Leads: CRM Funil de Leads (acima) */}
         {faseSelecionada === 'leads' && (
           <LeadsDashboard
             initialTab={openNovoLead ? 'config' : undefined}
             key={openNovoLead ? 'novo-lead' : 'leads'}
             onNavigateToFlow={handleFaseChange}
           />
+        )}
+
+        {/* ── Funil de Conversão — SOMENTE Fase 0 (Leads), ABAIXO do LeadsDashboard */}
+        {faseSelecionada === 'leads' && !loading && (
+          <div className="mt-6">
+            <FunilConversao
+              projects={projects || []}
+              onNavigateToFase={handleNavigateToFase}
+              faseSelecionada={faseSelecionada}
+            />
+          </div>
         )}
 
         {/* Fase 11 — Nao Aprovados */}
