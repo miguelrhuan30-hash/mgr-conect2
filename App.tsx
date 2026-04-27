@@ -28,7 +28,6 @@ const WorkLocations    = lazy(() => import('./components/WorkLocations'));
 const AttendanceReports= lazy(() => import('./components/AttendanceReports'));
 const PendingApproval  = lazy(() => import('./components/PendingApproval'));
 const LandingPage      = lazy(() => import('./components/LandingPage'));
-const LandingPageEditor= lazy(() => import('./components/LandingPageEditor'));
 const SystemLogs       = lazy(() => import('./components/SystemLogs'));
 const TechnicianStats  = lazy(() => import('./components/TechnicianStats'));
 const CampaignManagement=lazy(() => import('./components/CampaignManagement'));
@@ -109,6 +108,7 @@ const ProjectUpsell    = lazy(() => import('./components/ProjectUpsell'));
 const GanttGerencial   = lazy(() => import('./components/GanttGerencial'));
 const FlowAtendimento  = lazy(() => import('./components/FlowAtendimento'));
 const Fornecedores     = lazy(() => import('./components/Fornecedores'));
+const Candidatos       = lazy(() => import('./components/Candidatos'));
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -250,16 +250,6 @@ const AppContent: React.FC = () => {
           element={currentUser ? <PendingApproval /> : <Navigate to="/login" />}
         />
 
-        <Route
-          path="/editor-site"
-          element={
-            currentUser && (userProfile?.role === 'developer' || userProfile?.role === 'admin')
-              ? <LandingPageEditor />
-              : <Navigate to="/app" />
-          }
-        />
-
-
         {/* ── ROTAS PROTEGIDAS ── */}
         <Route
           path="/app"
@@ -335,6 +325,8 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageSettings') ? <SystemLogs /> : <Navigate to="/app" />} />
           <Route path="usuarios"
             element={hasPermission('canManageUsers') ? <Users /> : <Navigate to="/app" />} />
+          <Route path="candidatos"
+            element={hasPermission('canManageUsers') ? <Candidatos /> : <Navigate to="/app" />} />
           <Route path="ranking" element={<TechnicianStats />} />
           <Route path="setores"
             element={hasPermission('canManageSectors') ? <SectorManagement /> : <Navigate to="/app" />} />

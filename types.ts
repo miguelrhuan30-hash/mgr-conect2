@@ -1128,6 +1128,7 @@ const _BASE_COLLECTIONS = {
   // Sprint Projetos v2 — Ciclo de Vida Completo
   PROJECTS_V2: 'projects_v2',
   PROJECT_LEADS: 'project_leads',
+  CANDIDATOS: 'candidatos',
   PROJECT_COTACOES: 'project_cotacoes',
   PROJECT_CONTRATOS: 'project_contratos',
   PROJECT_FATURAMENTOS: 'project_faturamentos',

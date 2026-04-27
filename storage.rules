@@ -19,6 +19,15 @@ service firebase.storage {
                    && request.resource.size <= 30 * 1024 * 1024; // max 30MB
     }
 
+    // ── Currículos de candidatos: upload público pelo site Trabalhe Conosco ──
+    // Leitura restrita (link com token usado pelo gestor no banco de candidatos)
+    match /candidatos/{candidatoId}/{fileName} {
+      allow read: if true;
+      allow create: if request.resource.size <= 5 * 1024 * 1024 // max 5MB
+                    && request.resource.contentType.matches('application/.*');
+      allow delete: if request.auth != null;
+    }
+
     // ── Regra genérica: somente autenticados podem ler/escrever ──
     match /{allPaths=**} {
       allow read, write: if request.auth != null;

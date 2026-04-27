@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>MGR · Homepage</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #ffffff; font-family: Inter, Arial, sans-serif; color: #1A1A1A; scroll-behavior: smooth; }
+  a { text-decoration: none; color: inherit; cursor: pointer; }
+  * { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; box-sizing: border-box; }
+  input, textarea, button { font-family: inherit; }
+
+  img { max-width: 100%; height: auto; }
+
+  /* ── Responsivo (mesmas breakpoints das sub-páginas) ── */
+  @media (max-width: 1100px) {
+    .pad { padding-left: 32px !important; padding-right: 32px !important; padding-top: 80px !important; padding-bottom: 80px !important; }
+    .pad h1 { font-size: 56px !important; line-height: 1.05 !important; letter-spacing: -1.6px !important; }
+    .pad h2 { font-size: 36px !important; line-height: 1.1 !important; letter-spacing: -1px !important; }
+    .nav-links { display: none !important; }
+    /* Top-level grid de cada section vira coluna única */
+    .pad > div[style*="grid-template-columns"],
+    .pad > div > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; gap: 40px !important; }
+    /* Grids 3-4 cols viram 2 cols */
+    .pad div[style*="repeat(4"] { grid-template-columns: repeat(2, 1fr) !important; }
+    .pad div[style*="repeat(3"] { grid-template-columns: repeat(2, 1fr) !important; }
+    /* Hero header padding interno */
+    section [style*="80px 56px"] { padding: 56px 0 !important; }
+  }
+  @media (max-width: 640px) {
+    .pad { padding-left: 20px !important; padding-right: 20px !important; padding-top: 64px !important; padding-bottom: 64px !important; }
+    .pad h1 { font-size: 38px !important; letter-spacing: -1.2px !important; line-height: 1.05 !important; }
+    .pad h2 { font-size: 28px !important; letter-spacing: -0.8px !important; }
+    .pad p { font-size: 16px !important; }
+    /* Tudo coluna única */
+    .pad div[style*="repeat(4"],
+    .pad div[style*="repeat(3"],
+    .pad div[style*="repeat(2"] { grid-template-columns: 1fr !important; }
+    /* Header MGR — reduz padding lateral */
+    .pad [style*="22px 56px"] { padding: 16px 20px !important; }
+  }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script>
+  // Firebase config — projeto MGR Conect 2 (mesmo do app)
+  firebase.initializeApp({
+    apiKey: "AIzaSyDgIijdFVs2_ti7rqndRZhKI3QYpkOlwsg",
+    authDomain: "mgrrefrigeracao.com.br",
+    projectId: "mgr-conect2",
+    storageBucket: "mgr-conect2.firebasestorage.app",
+    messagingSenderId: "94240285880",
+    appId: "1:94240285880:web:8fad80b8c49c7f7280c04d"
+  });
+  window.mgrDb = firebase.firestore();
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="direction-a.jsx"></script>
+<script type="text/babel">
+  ReactDOM.createRoot(document.getElementById('root')).render(<DirectionA />);
+</script>
+</body>
+</html>

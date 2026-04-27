@@ -107,6 +107,29 @@ service cloud.firestore {
     // MÓDULO DE PROJETOS V2 — SECURITY RULES
     // ══════════════════════════════════════════════════════════════════════
 
+    // ── Candidatos: criação pública pelo site Trabalhe Conosco ──
+    match /candidatos/{candidatoId} {
+      allow create: if
+        request.resource.data.keys().hasAll([
+          'nomeCompleto', 'email', 'telefone', 'cidade',
+          'areaInteresse', 'nivelExperiencia', 'criadoEm', 'status'
+        ])
+        && request.resource.data.status == 'novo'
+        && request.resource.data.nomeCompleto is string
+        && request.resource.data.nomeCompleto.size() > 2
+        && request.resource.data.nomeCompleto.size() < 200
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 5
+        && request.resource.data.email.size() < 200
+        && request.resource.data.telefone is string
+        && request.resource.data.telefone.size() > 7
+        && request.resource.data.telefone.size() < 30
+        && request.resource.data.keys().size() <= 16;
+      // Gestores autenticados leem, atualizam (mover status) e podem deletar
+      allow read, update: if isAuthenticated() && isManager();
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
     // ── Leads: criação pública com validação (formulário anúncios) ──
     match /project_leads/{leadId} {
       allow create: if

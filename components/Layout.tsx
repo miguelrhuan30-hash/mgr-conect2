@@ -350,6 +350,7 @@ const Layout: React.FC = () => {
       visible: can('canManageUsers') || can('canViewAttendanceReports') || can('canManageSurveys') || true, // pesquisas visível p/ todos
       children: [
         { to: '/app/usuarios',           icon: Users,        label: 'Equipe & RH',           visible: can('canManageUsers') },
+        { to: '/app/candidatos',         icon: UserPlus,     label: 'Banco de Candidatos',    visible: can('canManageUsers') },
         { to: '/app/setores',            icon: Shield,       label: 'Cargos & Acessos',       visible: can('canManageSectors') },
         { to: '/app/locais',             icon: MapPin,       label: 'Locais de Trabalho',     visible: can('canManageUsers') },
         { to: '/app/relatorios-ponto',   icon: CalendarCheck,label: 'Monitoramento de Turnos',  visible: can('canViewAttendanceReports') },
@@ -360,11 +361,6 @@ const Layout: React.FC = () => {
       ],
     },
   ];
-
-  // Add "Editar Site" only for Developers/Admins
-  if (['admin', 'developer'].includes(userProfile?.role || '')) {
-    navItems.push({ to: '/editor-site', icon: Edit, label: 'Editar Site', visible: true, end: false });
-  }
 
   const visibleItems = navItems.filter(item => item.visible);
 

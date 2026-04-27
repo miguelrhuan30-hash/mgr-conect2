@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>MGR · Sobre · +20 anos garantindo continuidade em refrigeração industrial</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #ffffff; font-family: Inter, Arial, sans-serif; color: #1A1A1A; scroll-behavior: smooth; }
+  a { text-decoration: none; color: inherit; cursor: pointer; }
+  * { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; box-sizing: border-box; }
+
+  @media (max-width: 1100px) {
+    .pad { padding-left: 32px !important; padding-right: 32px !important; }
+    .h1 { font-size: 56px !important; }
+    .h2 { font-size: 36px !important; }
+    .h-edit { font-size: 30px !important; }
+    .grid-2 { grid-template-columns: 1fr !important; }
+    .grid-3 { grid-template-columns: 1fr !important; }
+    .grid-4 { grid-template-columns: 1fr 1fr !important; }
+    .grid-5 { grid-template-columns: 1fr 1fr 1fr !important; }
+    .timeline { grid-template-columns: 1fr !important; gap: 32px !important; }
+    .timeline-line { display: none !important; }
+    .timeline-item { padding-top: 0 !important; padding-left: 24px !important; border-left: 2px solid #1B5E8A !important; }
+    .timeline-item > div:first-child { left: -8px !important; top: 4px !important; }
+    .nav-links { display: none !important; }
+    .anchors { display: none !important; }
+  }
+  @media (max-width: 640px) {
+    .pad { padding-left: 20px !important; padding-right: 20px !important; }
+    .h1 { font-size: 38px !important; line-height: 1.05 !important; letter-spacing: -1.5px !important; }
+    .h2 { font-size: 28px !important; }
+    .grid-4 { grid-template-columns: 1fr !important; }
+    .grid-5 { grid-template-columns: 1fr 1fr !important; }
+  }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="page-sobre.jsx"></script>
+<script type="text/babel">
+  ReactDOM.createRoot(document.getElementById('root')).render(<PageSobre />);
+</script>
+</body>
+</html>
