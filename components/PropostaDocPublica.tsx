@@ -532,7 +532,8 @@ const PropostaDocPublica: React.FC = () => {
 
   // ── Cláusulas ordenadas ───────────────────────────────────────────────────
   const clausulas = [...(proposta.clausulas ?? [])].sort((a, b) => a.ordem - b.ordem);
-  const jaAceita  = proposta.status === 'aceito';
+  const jaAceita   = proposta.status === 'aceito';
+  const eRascunho  = proposta.status === 'rascunho';
 
   const aceitoEmFormatado = proposta.aceitoEm
     ? format(proposta.aceitoEm.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })
@@ -864,8 +865,28 @@ const PropostaDocPublica: React.FC = () => {
         </div>
       )}
 
+      {/* ── Aviso rascunho ─────────────────────────────────────────────────── */}
+      {eRascunho && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
+          background: `${C.bg}f5`, backdropFilter: 'blur(20px)',
+          borderTop: `1px solid ${C.border}`,
+          padding: '14px 24px',
+        }}>
+          <div style={{
+            maxWidth: 800, margin: '0 auto',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
+            <p style={{ color: C.textMuted, fontSize: 13, margin: 0, textAlign: 'center' }}>
+              Esta proposta está em preparação e ainda não está disponível para aceite online.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Rodapé com botão de aceite ──────────────────────────────────────── */}
-      {!jaAceita && (
+      {!jaAceita && !eRascunho && (
         <div style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
           background: `${C.bg}f5`, backdropFilter: 'blur(20px)',

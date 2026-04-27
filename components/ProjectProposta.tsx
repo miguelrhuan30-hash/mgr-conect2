@@ -252,13 +252,21 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [showVoltarOpcoes, setShowVoltarOpcoes] = useState(false);
   const [revisaoMotivo, setRevisaoMotivo] = useState('');
 
-  // Link do documento de proposta HTML (cláusulas)
+  // Link do documento de proposta HTML (cláusulas) — só quando publicado
   const propostaDocLink = useMemo(() => {
     const slug = project.propostaDocumento?.slug;
     const status = project.propostaDocumento?.status;
     if (!slug || status === 'rascunho') return '';
     return `${window.location.origin}/#/proposta/${slug}`;
   }, [project.propostaDocumento?.slug, project.propostaDocumento?.status]);
+
+  // Link de apresentação — funciona mesmo com documento em rascunho.
+  // É sempre um link interno do site MGR (página /proposta/:slug).
+  const apresentacaoLink = useMemo(() => {
+    const slug = project.propostaDocumento?.slug;
+    if (!slug) return '';
+    return `${window.location.origin}/#/proposta/${slug}`;
+  }, [project.propostaDocumento?.slug]);
 
   // Gera mensagem default
   const gerarMensagemDefault = useCallback(() => {
@@ -276,21 +284,18 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       linhas.push('');
       linhas.push('Neste link você encontra a apresentação, os detalhes e pode aceitar a proposta online. ✅');
     } else {
-      // Fallback: documento ainda não publicado — envia links disponíveis
-      if (htmlApresUrl) {
+      // Fallback: documento ainda não publicado.
+      // Usa sempre o link interno do site (/proposta/:slug) se disponível.
+      // Só cai no link externo (Firebase) como último recurso.
+      const linkApres = apresentacaoLink || htmlApresUrl || pdfUrl || linkSlides;
+      if (linkApres) {
         linhas.push(`🎨 *Apresentação da proposta:*`);
-        linhas.push(htmlApresUrl);
-        linhas.push('');
-      } else if (pdfUrl) {
-        linhas.push(`🎨 *Apresentação da proposta:*`);
-        linhas.push(pdfUrl);
-        linhas.push('');
-      } else if (linkSlides) {
-        linhas.push(`🎨 *Apresentação da proposta:*`);
-        linhas.push(linkSlides);
+        linhas.push(linkApres);
         linhas.push('');
       }
-      if (pdfDescritivoUrl) {
+      if (pdfDescritivoUrl && !apresentacaoLink) {
+        // Só envia link do PDF descritivo separado se não há página interna
+        // (a página /proposta já exibe o descritivo internamente)
         linhas.push(`📄 *Proposta descritiva (PDF completo):*`);
         linhas.push(pdfDescritivoUrl);
         linhas.push('');
@@ -299,7 +304,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
 
     linhas.push('Ficamos à disposição para qualquer dúvida. Aguardamos sua aprovação! 🙏');
     return linhas.join('\n');
-  }, [project.clientName, project.nome, propostaDocLink, htmlApresUrl, pdfUrl, linkSlides, pdfDescritivoUrl]);
+  }, [project.clientName, project.nome, propostaDocLink, apresentacaoLink, htmlApresUrl, pdfUrl, linkSlides, pdfDescritivoUrl]);
 
   // Atualiza mensagem quando links mudam (só se ainda não foi editada manualmente)
   const mensagemEditada = useRef(false);
@@ -789,24 +794,41 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
               </div>
             )}
 
-            {/* ── Link do cliente (sempre visível se disponível) ── */}
-            {propostaDocLink && (
-              <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
-                <Link2 className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-wide mb-0.5">Link do cliente</p>
-                  <span className="text-xs text-indigo-700 font-mono truncate block">{propostaDocLink}</span>
+            {/* ── Link do cliente ── */}
+            {(propostaDocLink || apresentacaoLink) && (() => {
+              const link = propostaDocLink || apresentacaoLink;
+              const isRascunho = !propostaDocLink && !!apresentacaoLink;
+              return (
+                <div className={`flex items-center gap-2 p-3 rounded-xl border ${
+                  isRascunho
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-indigo-50 border-indigo-200'
+                }`}>
+                  <Link2 className={`w-3.5 h-3.5 flex-shrink-0 ${isRascunho ? 'text-amber-500' : 'text-indigo-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[9px] font-bold uppercase tracking-wide mb-0.5 ${isRascunho ? 'text-amber-400' : 'text-indigo-400'}`}>
+                      {isRascunho ? 'Link de apresentação (rascunho)' : 'Link do cliente'}
+                    </p>
+                    <span className={`text-xs font-mono truncate block ${isRascunho ? 'text-amber-700' : 'text-indigo-700'}`}>{link}</span>
+                    {isRascunho && (
+                      <p className="text-[9px] text-amber-500 mt-0.5">Documento em rascunho — aceite online desativado até publicação</p>
+                    )}
+                  </div>
+                  <button onClick={async () => {
+                    await navigator.clipboard.writeText(link!);
+                    setCopied(true); setTimeout(() => setCopied(false), 2000);
+                  }}
+                    className={`flex items-center gap-1 px-2 py-1.5 text-[10px] font-bold rounded-lg bg-white flex-shrink-0 transition-colors border ${
+                      isRascunho
+                        ? 'border-amber-200 text-amber-600 hover:bg-amber-100'
+                        : 'border-indigo-200 text-indigo-600 hover:bg-indigo-100'
+                    }`}>
+                    {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    Copiar
+                  </button>
                 </div>
-                <button onClick={async () => {
-                  await navigator.clipboard.writeText(propostaDocLink);
-                  setCopied(true); setTimeout(() => setCopied(false), 2000);
-                }}
-                  className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-bold border border-indigo-200 rounded-lg bg-white text-indigo-600 hover:bg-indigo-100 flex-shrink-0 transition-colors">
-                  {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                  Copiar
-                </button>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
       </div>
