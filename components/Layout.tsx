@@ -13,7 +13,7 @@ import {
   CheckSquare, 
   Package, 
   LogOut, 
-  Hexagon,
+
   Users,
   FileText,
   Building,
@@ -455,14 +455,15 @@ const Layout: React.FC = () => {
         <div className="h-full flex flex-col">
           {/* Logo Area */}
           <div className="h-16 flex items-center justify-between px-6 border-b border-gray-100">
-            <div 
-              onClick={() => handleNavClick('/app')} 
+            <div
+              onClick={() => handleNavClick('/app')}
               className="flex items-center cursor-pointer group"
             >
-              <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 group-hover:bg-brand-700 transition-colors">
-                <Hexagon size={20} fill="currentColor" />
-              </div>
-              <span className="text-xl font-bold text-gray-900 group-hover:text-brand-700 transition-colors">MGR Conect</span>
+              <img
+                src="/mgr-logo-light.png"
+                alt="MGR Refrigeração"
+                style={{ height: 44, width: 'auto', objectFit: 'contain' }}
+              />
             </div>
             {/* Close Button (Mobile Only) */}
             <button onClick={closeSidebar} className="lg:hidden text-gray-500">

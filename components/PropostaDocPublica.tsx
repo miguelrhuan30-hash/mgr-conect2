@@ -38,21 +38,17 @@ const C = {
 
 // ── Logo MGR ─────────────────────────────────────────────────────────────────
 const MGRLogo: React.FC<{ size?: number }> = ({ size = 40 }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-    <div style={{
-      width: size, height: size, borderRadius: 12,
-      background: `linear-gradient(135deg, ${C.accent}, ${C.accent}99)`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      boxShadow: `0 0 20px ${C.accent}44`, flexShrink: 0,
-    }}>
-      <svg viewBox="0 0 24 24" fill="white" width={size * 0.55} height={size * 0.55}>
-        <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" />
-      </svg>
-    </div>
-    <span style={{ color: 'white', fontWeight: 800, fontSize: size * 0.45, letterSpacing: 2 }}>
-      MGR
-    </span>
-  </div>
+  <img
+    src="/mgr-logo.png"
+    alt="MGR Refrigeração"
+    style={{
+      height: size * 1.4,
+      width: 'auto',
+      objectFit: 'contain',
+      mixBlendMode: 'screen',
+      flexShrink: 0,
+    }}
+  />
 );
 
 // ── CSS injetado ──────────────────────────────────────────────────────────────
