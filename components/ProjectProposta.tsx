@@ -72,7 +72,7 @@ const STATUS_CONFIG: Record<PropostaStatus, { label: string; color: string; dot:
   revisao:  { label: 'Em Revisão',         color: 'bg-amber-100 text-amber-700 border-amber-200',       dot: 'bg-amber-500'   },
 };
 
-// ── Gera slug único para a apresentação ───────────────────────────────────────
+// ── Gera slug único para a apresentação (verifica PRESENTATIONS) ──────────────
 async function generateSlug(): Promise<string> {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -80,6 +80,23 @@ async function generateSlug(): Promise<string> {
       .map(b => chars[b % chars.length]).join('');
     const slug = `mgr-${rand}`;
     const q = query(collection(db, CollectionName.PRESENTATIONS), where('slug', '==', slug));
+    const snap = await getDocs(q);
+    if (snap.empty) return slug;
+  }
+  return `mgr-${Date.now().toString(36)}`;
+}
+
+// ── Gera slug único para propostaDocumento (verifica PROJECTS_V2) ─────────────
+async function generatePropostaSlug(): Promise<string> {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const rand = Array.from(crypto.getRandomValues(new Uint8Array(6)))
+      .map(b => chars[b % chars.length]).join('');
+    const slug = `mgr-${rand}`;
+    const q = query(
+      collection(db, CollectionName.PROJECTS_V2),
+      where('propostaDocumento.slug', '==', slug),
+    );
     const snap = await getDocs(q);
     if (snap.empty) return slug;
   }
@@ -314,6 +331,17 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
     }
   }, [gerarMensagemDefault]);
 
+  // Se já tem HTML ou PDF mas ainda não tem propostaDocumento.slug, gera agora
+  // (retrocompatibilidade para projetos criados antes dessa feature)
+  useEffect(() => {
+    const temArquivo = !!(dados.htmlUrl || dados.pdfUrl);
+    const temSlug = !!project.propostaDocumento?.slug;
+    if (temArquivo && !temSlug) {
+      garantirPropostaSlug();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Criar apresentação pré-preenchida ──────────────────────────────────────
   const handleCriarApresentacao = async () => {
     if (!currentUser) return;
@@ -364,6 +392,21 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
     }
   };
 
+  // ── Garante que propostaDocumento existe com slug (para link interno) ────────
+  const garantirPropostaSlug = useCallback(async () => {
+    if (project.propostaDocumento?.slug) return; // já existe
+    const slug = await generatePropostaSlug();
+    await updateDoc(doc(db, CollectionName.PROJECTS_V2, project.id), {
+      propostaDocumento: {
+        slug,
+        titulo: `Proposta – ${project.nome}`,
+        clausulas: [],
+        status: 'rascunho',
+      },
+      updatedAt: serverTimestamp(),
+    });
+  }, [project.id, project.nome, project.propostaDocumento?.slug]);
+
   // ── Upload PDF Apresentação ────────────────────────────────────────────────
   const handleUploadPdf = (file: File) => {
     if (!file) return;
@@ -389,6 +432,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         setPdfExternalUrl(url);
         setUploadProgress(null);
         setSavedLocal(true);
+        await garantirPropostaSlug(); // garante link interno
       },
     );
   };
@@ -466,6 +510,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         setHtmlApresUrl(url);
         setUploadProgressHtml(null);
         setSavedLocal(true);
+        await garantirPropostaSlug(); // garante link interno
       },
     );
   };
