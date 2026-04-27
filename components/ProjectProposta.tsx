@@ -26,7 +26,7 @@ import {
   Save, Check, Loader2, Send, Copy, ExternalLink, Link2,
   MessageCircle, ArrowRight, ArrowLeft, RefreshCw, AlertCircle,
   ChevronDown, ChevronUp, Upload, FileText, Play, Plus,
-  Presentation as PresentIcon, X, Trash2, Eye,
+  Presentation as PresentIcon, X, Trash2, Eye, FileCode,
 } from 'lucide-react';
 import {
   collection, query, orderBy, onSnapshot, addDoc,
@@ -211,9 +211,9 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [savedLocal, setSavedLocal] = useState(false);
   const [criandoApres, setCriandoApres] = useState(false);
   const [secaoApres, setSecaoApres] = useState(true);
-  // modo: 'sistema' = criar slides no sistema | 'pdf' = upload de PDF
-  const [modoApres, setModoApres] = useState<'sistema' | 'pdf'>(
-    project.propostaDados?.pdfUrl ? 'pdf' : 'sistema'
+  // modo: 'sistema' = criar slides no sistema | 'pdf' = upload PDF | 'html' = upload HTML
+  const [modoApres, setModoApres] = useState<'sistema' | 'pdf' | 'html'>(
+    project.propostaDados?.htmlUrl ? 'html' : project.propostaDados?.pdfUrl ? 'pdf' : 'sistema'
   );
   const [secaoSlides, setSecaoSlides] = useState(true);
   const [secaoPdf, setSecaoPdf] = useState(true);
@@ -233,6 +233,12 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [pdfDescritivoUrl, setPdfDescritivoUrl] = useState(dados.pdfDescritivo || '');
   const [pdfDescritivoExtUrl, setPdfDescritivoExtUrl] = useState(dados.pdfDescritivo || '');
   const fileInputDescRef = useRef<HTMLInputElement>(null);
+
+  // Upload HTML Apresentação
+  const [uploadProgressHtml, setUploadProgressHtml] = useState<number | null>(null);
+  const [uploadErrorHtml, setUploadErrorHtml] = useState('');
+  const [htmlApresUrl, setHtmlApresUrl] = useState(dados.htmlUrl || '');
+  const fileInputHtmlRef = useRef<HTMLInputElement>(null);
 
   // Mensagem
   const [mensagem, setMensagem] = useState('');
@@ -271,7 +277,11 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       linhas.push('Neste link você encontra a apresentação, os detalhes e pode aceitar a proposta online. ✅');
     } else {
       // Fallback: documento ainda não publicado — envia links disponíveis
-      if (pdfUrl) {
+      if (htmlApresUrl) {
+        linhas.push(`🎨 *Apresentação da proposta:*`);
+        linhas.push(htmlApresUrl);
+        linhas.push('');
+      } else if (pdfUrl) {
         linhas.push(`🎨 *Apresentação da proposta:*`);
         linhas.push(pdfUrl);
         linhas.push('');
@@ -289,7 +299,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
 
     linhas.push('Ficamos à disposição para qualquer dúvida. Aguardamos sua aprovação! 🙏');
     return linhas.join('\n');
-  }, [project.clientName, project.nome, propostaDocLink, pdfUrl, linkSlides, pdfDescritivoUrl]);
+  }, [project.clientName, project.nome, propostaDocLink, htmlApresUrl, pdfUrl, linkSlides, pdfDescritivoUrl]);
 
   // Atualiza mensagem quando links mudam (só se ainda não foi editada manualmente)
   const mensagemEditada = useRef(false);
@@ -431,6 +441,30 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
     } finally { setSaving(false); }
   };
 
+  // ── Upload HTML Apresentação ───────────────────────────────────────────────
+  const handleUploadHtml = (file: File) => {
+    if (!file) return;
+    setUploadErrorHtml('');
+    setUploadProgressHtml(0);
+    const path = `projects/${project.id}/apresentacao.html`;
+    const ref = storageRef(storage, path);
+    const task = uploadBytesResumable(ref, file, { contentType: 'text/html' });
+    task.on(
+      'state_changed',
+      snap => setUploadProgressHtml(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+      err => { setUploadErrorHtml(err.message); setUploadProgressHtml(null); },
+      async () => {
+        const url = await getDownloadURL(ref);
+        const newDados = { ...dados, htmlUrl: url, htmlPath: path };
+        await updateProject(project.id, { propostaDados: newDados as any });
+        setDados(newDados);
+        setHtmlApresUrl(url);
+        setUploadProgressHtml(null);
+        setSavedLocal(true);
+      },
+    );
+  };
+
   // ── Enviar WhatsApp ────────────────────────────────────────────────────────
   const handleEnviarWhatsApp = async () => {
     const tel = telefoneWa.replace(/\D/g, '');
@@ -522,6 +556,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const statusCfg = STATUS_CONFIG[dados.status || 'rascunho'];
   const temApresentacao = !!project.apresentacaoId;
   const temPdf = !!(pdfUrl);
+  const temHtml = !!(htmlApresUrl);
   const temPdfDescritivo = !!(pdfDescritivoUrl);
   const temSlideLink = !!linkSlides;
   const temDocPublicado = !!project.propostaDocumento?.slug &&
@@ -592,11 +627,13 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         <button onClick={() => setSecaoApres(!secaoApres)}
           className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${(temApresentacao || temPdf) ? 'bg-emerald-100' : 'bg-brand-100'}`}>
-              <PresentIcon className={`w-3.5 h-3.5 ${(temApresentacao || temPdf) ? 'text-emerald-600' : 'text-brand-600'}`} />
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${(temApresentacao || temPdf || temHtml) ? 'bg-emerald-100' : 'bg-brand-100'}`}>
+              <PresentIcon className={`w-3.5 h-3.5 ${(temApresentacao || temPdf || temHtml) ? 'text-emerald-600' : 'text-brand-600'}`} />
             </div>
             <span className="text-sm font-bold text-gray-800">Passo 1 — Apresentação</span>
-            {temPdf
+            {temHtml
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ HTML vinculado</span>
+              : temPdf
               ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ PDF vinculado</span>
               : temApresentacao
               ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Slides criados</span>
@@ -611,8 +648,15 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
             {/* ── Toggle modo ── */}
             <div className="flex rounded-xl border border-gray-200 overflow-hidden">
               <button
-                onClick={() => setModoApres('pdf')}
+                onClick={() => setModoApres('html')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold transition-colors ${
+                  modoApres === 'html' ? 'bg-brand-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}>
+                <FileCode className="w-3.5 h-3.5" /> Upload HTML
+              </button>
+              <button
+                onClick={() => setModoApres('pdf')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold transition-colors border-l border-gray-200 ${
                   modoApres === 'pdf' ? 'bg-brand-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
                 }`}>
                 <Upload className="w-3.5 h-3.5" /> Upload PDF
@@ -625,6 +669,37 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
                 <PresentIcon className="w-3.5 h-3.5" /> Criar no sistema
               </button>
             </div>
+
+            {/* ── MODO HTML ── */}
+            {modoApres === 'html' && (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-500">
+                  Faça upload de uma apresentação em HTML. O arquivo será exibido diretamente no link do cliente, com o botão "Ver Proposta Completa" sobreposto automaticamente quando houver PDF descritivo vinculado.
+                </p>
+                {temHtml && (
+                  <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <FileCode className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="text-xs text-emerald-700 flex-1 min-w-0 truncate">HTML vinculado ✓</span>
+                    <a href={htmlApresUrl} target="_blank" rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors flex-shrink-0">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
+                <input type="file" accept=".html,.htm" ref={fileInputHtmlRef} className="hidden"
+                  onChange={e => { if (e.target.files?.[0]) handleUploadHtml(e.target.files[0]); }} />
+                <button onClick={() => fileInputHtmlRef.current?.click()} disabled={uploadProgressHtml !== null}
+                  className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-50 transition-all w-full justify-center">
+                  {uploadProgressHtml !== null
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgressHtml}%</>
+                    : <><Upload className="w-4 h-4" /> {temHtml ? 'Substituir HTML' : 'Selecionar HTML da Apresentação'}</>}
+                </button>
+                {uploadErrorHtml && <p className="text-xs text-red-600">{uploadErrorHtml}</p>}
+                <p className="text-[10px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                  💡 O botão "Ver Proposta Completa" aparecerá automaticamente sobre a apresentação quando você vincular um PDF Descritivo no Passo 2.
+                </p>
+              </div>
+            )}
 
             {/* ── MODO PDF ── */}
             {modoApres === 'pdf' && (

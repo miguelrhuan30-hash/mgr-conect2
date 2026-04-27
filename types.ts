@@ -1997,6 +1997,8 @@ export interface PropostaDados {
   pdfStoragePath?: string | null;
   pdfDescritivo?: string | null;    // URL do PDF descritivo da proposta
   pdfDescritivoPath?: string | null;
+  htmlUrl?: string | null;          // URL do HTML de apresentação
+  htmlPath?: string | null;         // Storage path do HTML
   status: PropostaStatus;
   enviadoEm?: Timestamp;
   aprovadoEm?: Timestamp;

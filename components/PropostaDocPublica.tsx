@@ -415,6 +415,7 @@ const PropostaDocPublica: React.FC = () => {
   const [proposta, setProposta]             = useState<PropostaDocumento | null>(null);
   const [projectNome, setProjectNome]       = useState('');
   const [clienteNome, setClienteNome]       = useState('');
+  const [htmlApresentacao, setHtmlApresentacao] = useState<string | null>(null);
   const [pdfApresentacao, setPdfApresentacao] = useState<string | null>(null);
   const [pdfDescritivo, setPdfDescritivo]     = useState<string | null>(null);
   const [slidesSlug, setSlidesSlug]           = useState<string | null>(null);
@@ -443,6 +444,7 @@ const PropostaDocPublica: React.FC = () => {
         setProposta(data.propostaDocumento);
         setProjectNome(data.nome ?? '');
         setClienteNome(data.clientName ?? '');
+        setHtmlApresentacao(data.propostaDados?.htmlUrl ?? null);
         setPdfApresentacao(data.propostaDados?.pdfUrl ?? null);
         setPdfDescritivo(data.propostaDados?.pdfDescritivo ?? null);
         // Fallback: slug da apresentação de slides do sistema
@@ -628,16 +630,25 @@ const PropostaDocPublica: React.FC = () => {
           </div>
         )}
 
-        {/* ── Viewer Apresentação (PDF ou Slides do sistema) ── */}
-        {(pdfApresentacao || slidesSlug) && (() => {
-          // Se tem PDF → Google Docs Viewer (sem barra lateral do Chrome)
-          // Se não → embed dos slides do sistema via /p/:slug
-          const isSlidesEmbed = !pdfApresentacao && !!slidesSlug;
-          // PDF direto com hash params para suprimir barra lateral e toolbar do Chrome
-          const viewerSrc = pdfApresentacao
+        {/* ── Viewer Apresentação (HTML, PDF ou Slides do sistema) ── */}
+        {(htmlApresentacao || pdfApresentacao || slidesSlug) && (() => {
+          const isHtml = !!htmlApresentacao;
+          const isSlidesEmbed = !htmlApresentacao && !pdfApresentacao && !!slidesSlug;
+
+          // Prioridade: HTML > PDF > Slides do sistema
+          const viewerSrc = htmlApresentacao
+            ? htmlApresentacao
+            : pdfApresentacao
             ? `${pdfApresentacao}#toolbar=0&navpanes=0&view=FitH`
             : `${window.location.origin}/#/p/${slidesSlug}`;
-          const openHref = pdfApresentacao || `${window.location.origin}/#/p/${slidesSlug}`;
+
+          const openHref = htmlApresentacao || pdfApresentacao || `${window.location.origin}/#/p/${slidesSlug}`;
+
+          const viewerLabel = isHtml
+            ? 'Apresentação da Proposta'
+            : isSlidesEmbed
+            ? 'Apresentação da Proposta'
+            : 'Apresentação da Proposta (PDF)';
 
           return (
             <div style={{
@@ -659,7 +670,7 @@ const PropostaDocPublica: React.FC = () => {
                     <Eye size={15} color={C.accent} />
                   </div>
                   <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>
-                    {isSlidesEmbed ? 'Apresentação da Proposta' : 'Apresentação da Proposta (PDF)'}
+                    {viewerLabel}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -673,7 +684,8 @@ const PropostaDocPublica: React.FC = () => {
                   </a>
                 </div>
               </div>
-              {/* Viewer */}
+
+              {/* Viewer + botão overlay "Ver Proposta Completa" */}
               <div style={{ background: '#000', position: 'relative' }}>
                 <iframe
                   key={viewerSrc}
@@ -681,7 +693,45 @@ const PropostaDocPublica: React.FC = () => {
                   style={{ width: '100%', height: 'min(80vh, 640px)', border: 'none', display: 'block' }}
                   title="Apresentação da Proposta"
                   onError={() => setViewerError(true)}
+                  {...(isHtml ? { sandbox: 'allow-scripts allow-same-origin allow-popups' } : {})}
                 />
+                {/* Botão flutuante "Ver Proposta Completa" — visível quando há PDF descritivo */}
+                {pdfDescritivo && (
+                  <button
+                    onClick={() => setShowPdfModal(true)}
+                    style={{
+                      position: 'absolute',
+                      bottom: 20,
+                      right: 20,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '11px 20px',
+                      borderRadius: 12,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
+                      color: 'white',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      fontFamily: 'system-ui, sans-serif',
+                      boxShadow: '0 4px 24px rgba(0,0,0,0.55)',
+                      zIndex: 10,
+                      letterSpacing: 0.3,
+                      transition: 'transform 0.15s, box-shadow 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                      (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 32px rgba(0,0,0,0.65)';
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                      (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 24px rgba(0,0,0,0.55)';
+                    }}
+                  >
+                    <FileText size={15} /> Ver Proposta Completa
+                  </button>
+                )}
               </div>
             </div>
           );
