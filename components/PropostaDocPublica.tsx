@@ -7,16 +7,17 @@
  * Fluxo: busca projeto por propostaDocumento.slug → exibe cláusulas →
  * cliente aceita preenchendo nome/email → WOW MOMENT com confetti CSS.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   collection, query, where, getDocs, updateDoc, doc, Timestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { CollectionName, ProjectV2, PropostaDocumento } from '../types';
 import {
   Check, Loader2, AlertCircle, X, Mail, User, ChevronDown,
-  FileText, Download, ExternalLink, Eye,
+  FileText, Download, ExternalLink, Eye, Upload, Image, Camera,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -232,30 +233,24 @@ const WowMoment: React.FC<{
   );
 };
 
-// ── Modal de aceite ───────────────────────────────────────────────────────────
+// ── Modal de aceite / assinatura de contrato ─────────────────────────────────
 const ModalAceite: React.FC<{
   onClose: () => void;
-  onConfirm: (nome: string, email: string) => Promise<void>;
+  onConfirm: (nome: string, email: string, contratoUrls?: string[]) => Promise<void>;
   contratoPdfUrl?: string | null;
-}> = ({ onClose, onConfirm, contratoPdfUrl }) => {
+  projectId: string;
+}> = ({ onClose, onConfirm, contratoPdfUrl, projectId }) => {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [concordo, setConcordo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState('');
 
-  const handleConfirm = async () => {
-    if (!nome.trim()) { setErro('Por favor, informe seu nome completo.'); return; }
-    if (!concordo) { setErro('Você precisa concordar com os termos para continuar.'); return; }
-    setErro('');
-    setSaving(true);
-    try {
-      await onConfirm(nome.trim(), email.trim());
-    } catch {
-      setErro('Erro ao registrar aceite. Tente novamente.');
-      setSaving(false);
-    }
-  };
+  // Upload do contrato assinado
+  const [arquivos, setArquivos] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const fileInputPdfRef = useRef<HTMLInputElement>(null);
+  const fileInputFotoRef = useRef<HTMLInputElement>(null);
 
   // Fechar com ESC
   useEffect(() => {
@@ -263,6 +258,56 @@ const ModalAceite: React.FC<{
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
+
+  const adicionarArquivos = (novos: FileList | null) => {
+    if (!novos) return;
+    setArquivos(prev => [...prev, ...Array.from(novos)]);
+    setErro('');
+  };
+
+  const removerArquivo = (idx: number) => {
+    setArquivos(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const uploadArquivos = async (): Promise<string[]> => {
+    const urls: string[] = [];
+    const total = arquivos.length;
+    for (let i = 0; i < total; i++) {
+      const file = arquivos[i];
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const path = `projects/${projectId}/contrato_assinado/${Date.now()}_${i}.${ext}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file);
+      const url = await getDownloadURL(ref);
+      urls.push(url);
+      setUploadProgress(Math.round(((i + 1) / total) * 100));
+    }
+    return urls;
+  };
+
+  const handleConfirm = async () => {
+    if (!nome.trim()) { setErro('Por favor, informe seu nome completo.'); return; }
+    if (contratoPdfUrl && arquivos.length === 0) {
+      setErro('Envie pelo menos uma foto ou o PDF do contrato assinado.');
+      return;
+    }
+    if (!concordo) { setErro('Você precisa confirmar a assinatura para continuar.'); return; }
+    setErro('');
+    setSaving(true);
+    try {
+      let urls: string[] = [];
+      if (arquivos.length > 0) {
+        setUploadProgress(0);
+        urls = await uploadArquivos();
+        setUploadProgress(null);
+      }
+      await onConfirm(nome.trim(), email.trim(), urls.length > 0 ? urls : undefined);
+    } catch {
+      setErro('Erro ao registrar. Tente novamente.');
+      setSaving(false);
+      setUploadProgress(null);
+    }
+  };
 
   const inputStyle: React.CSSProperties = {
     width: '100%', boxSizing: 'border-box',
@@ -273,114 +318,216 @@ const ModalAceite: React.FC<{
     transition: 'border-color 0.2s',
   };
 
-  // ── Formulário de aceite (reutilizado nos dois layouts) ──────────────────
-  const formAceite = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Nome */}
-      <div style={{ marginBottom: 14, position: 'relative' }}>
-        <label style={{ display: 'block', color: C.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
-          Nome completo *
-        </label>
-        <div style={{ position: 'relative' }}>
-          <User size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input type="text" placeholder="Seu nome completo" value={nome}
-            onChange={e => setNome(e.target.value)} style={inputStyle} />
-        </div>
-      </div>
-      {/* E-mail */}
-      <div style={{ marginBottom: 16, position: 'relative' }}>
-        <label style={{ display: 'block', color: C.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
-          E-mail <span style={{ fontWeight: 400, textTransform: 'none' }}>(opcional)</span>
-        </label>
-        <div style={{ position: 'relative' }}>
-          <Mail size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input type="email" placeholder="seu@email.com" value={email}
-            onChange={e => setEmail(e.target.value)} style={inputStyle} />
-        </div>
-      </div>
-      {/* Checkbox */}
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', marginBottom: 20 }}>
-        <div onClick={() => setConcordo(c => !c)} style={{
-          width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 1,
-          border: `2px solid ${concordo ? C.green : C.border}`,
-          background: concordo ? C.green : 'transparent',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'all 0.2s', cursor: 'pointer',
-        }}>
-          {concordo && <Check size={14} color="white" strokeWidth={3} />}
-        </div>
-        <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5, userSelect: 'none' }}>
-          {contratoPdfUrl
-            ? 'Li o contrato acima e concordo com todos os termos'
-            : 'Li e concordo com todos os termos desta proposta'}
-        </span>
-      </label>
-      {/* Erro */}
-      {erro && (
-        <div style={{ background: '#ef444418', border: '1px solid #ef444444', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <AlertCircle size={15} color="#ef4444" />
-          <span style={{ color: '#ef4444', fontSize: 13 }}>{erro}</span>
-        </div>
-      )}
-      {/* Botão confirmar */}
-      <button onClick={handleConfirm} disabled={saving} style={{
-        width: '100%', padding: '14px 0',
-        background: saving ? `${C.green}88` : C.green,
-        border: 'none', borderRadius: 12, cursor: saving ? 'not-allowed' : 'pointer',
-        color: 'white', fontWeight: 800, fontSize: 16,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-        fontFamily: 'system-ui, sans-serif',
-        transition: 'background 0.2s',
-        boxShadow: saving ? 'none' : `0 4px 20px ${C.green}44`,
-      }}>
-        {saving
-          ? <><Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> Registrando...</>
-          : <><Check size={18} /> Confirmar Aprovação</>}
-      </button>
-    </div>
-  );
+  const labelStyle: React.CSSProperties = {
+    display: 'block', color: C.textMuted, fontSize: 11, fontWeight: 700,
+    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 6,
+  };
 
-  // ── Layout A: com contrato PDF (tela cheia — PDF em cima, form embaixo) ──
+  // ── Layout com contrato PDF (tela cheia com PDF + assinatura) ─────────────
   if (contratoPdfUrl) {
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', background: C.bg, animation: 'fadeIn 0.2s both' }}>
+
         {/* Barra superior */}
-        <div style={{ height: 56, background: C.bgCard2, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', flexShrink: 0 }}>
+        <div style={{ height: 56, background: C.bgCard2, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', flexShrink: 0, gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <MGRLogo size={28} />
-            <span style={{ color: C.text, fontWeight: 700, fontSize: 14, marginLeft: 4 }}>Contrato para Assinatura</span>
+            <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Assinatura de Contrato</span>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer', color: C.textMuted, padding: '6px 10px', display: 'flex', alignItems: 'center' }}>
-            <X size={16} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <a href={contratoPdfUrl} target="_blank" rel="noopener noreferrer" download
+              style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.textMuted, fontSize: 13, textDecoration: 'none', padding: '6px 14px', borderRadius: 8, border: `1px solid ${C.border}`, fontFamily: 'system-ui, sans-serif' }}>
+              <Download size={14} /> Baixar PDF
+            </a>
+            <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer', color: C.textMuted, padding: '6px 10px', display: 'flex', alignItems: 'center' }}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
-        {/* PDF */}
-        <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
-          <iframe src={`${contratoPdfUrl}#toolbar=0&navpanes=0`} style={{ width: '100%', height: '100%', border: 'none' }} title="Contrato" />
-        </div>
-        {/* Form de aceite */}
-        <div style={{ background: C.bgCard2, borderTop: `1px solid ${C.border}`, padding: '20px 24px', flexShrink: 0, maxHeight: '40vh', overflowY: 'auto' }}>
-          <p style={{ color: C.text, fontWeight: 700, fontSize: 15, margin: '0 0 16px' }}>Revisou o contrato? Confirme sua aprovação:</p>
-          {formAceite}
+
+        {/* Corpo scrollável */}
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+
+          {/* Visualizador do contrato */}
+          <div style={{ padding: '24px 20px 0' }}>
+            <p style={{ color: C.textMuted, fontSize: 12, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', margin: '0 0 10px' }}>Contrato de Serviço</p>
+            <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.border}`, background: '#000' }}>
+              <iframe src={`${contratoPdfUrl}#toolbar=0&navpanes=0`}
+                style={{ width: '100%', height: 'min(55vh, 480px)', border: 'none', display: 'block' }}
+                title="Contrato" />
+            </div>
+          </div>
+
+          {/* Instruções de assinatura */}
+          <div style={{ margin: '20px 20px 0', padding: '16px 20px', background: `${C.accent}10`, border: `1px solid ${C.accent}30`, borderRadius: 12 }}>
+            <p style={{ color: C.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase', margin: '0 0 10px' }}>📋 Instruções para Assinatura</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✏️</span>
+                <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5 }}>
+                  <strong style={{ color: C.text }}>Rubrique todas as páginas</strong> — coloque sua rubrica no canto inferior direito de cada folha
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✍️</span>
+                <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5 }}>
+                  <strong style={{ color: C.text }}>Na última página</strong> — assine com seu nome completo e apresente documento de identificação
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>📤</span>
+                <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5 }}>
+                  Após assinar, envie o contrato abaixo — <strong style={{ color: C.text }}>PDF escaneado</strong> ou <strong style={{ color: C.text }}>fotos de todas as páginas</strong>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload do contrato assinado */}
+          <div style={{ margin: '20px 20px 0', padding: '18px 20px', background: C.bgCard2, border: `1px solid ${C.border}`, borderRadius: 12 }}>
+            <p style={{ ...labelStyle, marginBottom: 12 }}>📤 Enviar Contrato Assinado *</p>
+            <div style={{ display: 'flex', gap: 10, marginBottom: arquivos.length > 0 ? 14 : 0, flexWrap: 'wrap' }}>
+              {/* Botão PDF */}
+              <input type="file" accept=".pdf" ref={fileInputPdfRef} className="hidden" style={{ display: 'none' }}
+                onChange={e => adicionarArquivos(e.target.files)} />
+              <button onClick={() => fileInputPdfRef.current?.click()} disabled={saving}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 16px', borderRadius: 10, border: `1.5px dashed ${C.border}`, background: 'transparent', cursor: 'pointer', color: C.textMuted, fontSize: 13, fontFamily: 'system-ui, sans-serif', fontWeight: 600, transition: 'border-color 0.2s, color 0.2s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.accent; (e.currentTarget as HTMLButtonElement).style.color = C.accent; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; (e.currentTarget as HTMLButtonElement).style.color = C.textMuted; }}
+              >
+                <FileText size={15} /> Enviar PDF assinado
+              </button>
+              {/* Botão Fotos */}
+              <input type="file" accept="image/*" multiple ref={fileInputFotoRef} style={{ display: 'none' }}
+                onChange={e => adicionarArquivos(e.target.files)} />
+              <button onClick={() => fileInputFotoRef.current?.click()} disabled={saving}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 16px', borderRadius: 10, border: `1.5px dashed ${C.border}`, background: 'transparent', cursor: 'pointer', color: C.textMuted, fontSize: 13, fontFamily: 'system-ui, sans-serif', fontWeight: 600, transition: 'border-color 0.2s, color 0.2s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#3b82f6'; (e.currentTarget as HTMLButtonElement).style.color = '#3b82f6'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; (e.currentTarget as HTMLButtonElement).style.color = C.textMuted; }}
+              >
+                <Camera size={15} /> Enviar fotos (múltiplas)
+              </button>
+            </div>
+
+            {/* Lista de arquivos selecionados */}
+            {arquivos.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {arquivos.map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: `${C.green}15`, border: `1px solid ${C.green}40`, borderRadius: 8 }}>
+                    {f.type.startsWith('image/') ? <Image size={14} color={C.green} /> : <FileText size={14} color={C.green} />}
+                    <span style={{ color: C.text, fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                    <span style={{ color: C.textMuted, fontSize: 11, flexShrink: 0 }}>{(f.size / 1024).toFixed(0)} KB</span>
+                    {!saving && (
+                      <button onClick={() => removerArquivo(i)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.textMuted, padding: 2, display: 'flex', alignItems: 'center' }}>
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Barra de progresso */}
+            {uploadProgress !== null && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ height: 4, background: C.border, borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', background: C.green, width: `${uploadProgress}%`, transition: 'width 0.3s ease', borderRadius: 2 }} />
+                </div>
+                <p style={{ color: C.textMuted, fontSize: 12, margin: '6px 0 0', textAlign: 'center' }}>Enviando arquivos… {uploadProgress}%</p>
+              </div>
+            )}
+          </div>
+
+          {/* Dados do signatário */}
+          <div style={{ margin: '20px 20px 0' }}>
+            <div style={{ marginBottom: 14, position: 'relative' }}>
+              <label style={labelStyle}>Nome completo *</label>
+              <div style={{ position: 'relative' }}>
+                <User size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                <input type="text" placeholder="Seu nome completo" value={nome} onChange={e => setNome(e.target.value)} style={inputStyle} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 16, position: 'relative' }}>
+              <label style={labelStyle}>E-mail <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                <input type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+              </div>
+            </div>
+          </div>
+
+          {/* Checkbox + botão */}
+          <div style={{ margin: '0 20px 32px' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', marginBottom: 20 }}>
+              <div onClick={() => setConcordo(c => !c)} style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 1, border: `2px solid ${concordo ? C.green : C.border}`, background: concordo ? C.green : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', cursor: 'pointer' }}>
+                {concordo && <Check size={14} color="white" strokeWidth={3} />}
+              </div>
+              <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5, userSelect: 'none' }}>
+                Confirmo que assinei e rubrique o contrato conforme as instruções acima e enviei o arquivo assinado
+              </span>
+            </label>
+
+            {erro && (
+              <div style={{ background: '#ef444418', border: '1px solid #ef444444', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertCircle size={15} color="#ef4444" />
+                <span style={{ color: '#ef4444', fontSize: 13 }}>{erro}</span>
+              </div>
+            )}
+
+            <button onClick={handleConfirm} disabled={saving} style={{ width: '100%', padding: '15px 0', background: saving ? `${C.green}88` : C.green, border: 'none', borderRadius: 12, cursor: saving ? 'not-allowed' : 'pointer', color: 'white', fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: 'system-ui, sans-serif', boxShadow: saving ? 'none' : `0 4px 20px ${C.green}44` }}>
+              {saving
+                ? <><Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />{uploadProgress !== null ? `Enviando arquivos ${uploadProgress}%…` : 'Registrando…'}</>
+                : <><Check size={18} /> Confirmar Assinatura</>}
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // ── Layout B: sem contrato PDF (modal flutuante simples) ─────────────────
+  // ── Sem contrato PDF: modal flutuante simples ─────────────────────────────
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}
       onClick={onClose}>
       <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: '32px 28px', maxWidth: 480, width: '100%', boxShadow: '0 20px 80px rgba(0,0,0,0.6)', animation: 'modalIn 0.3s cubic-bezier(.16,1,.3,1) both', position: 'relative' }}
         onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'transparent', border: 'none', cursor: 'pointer', color: C.textMuted, padding: 4, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'transparent', border: 'none', cursor: 'pointer', color: C.textMuted, padding: 4, borderRadius: 8, display: 'flex', alignItems: 'center' }}>
           <X size={18} />
         </button>
         <h2 style={{ color: C.text, fontSize: 20, fontWeight: 800, margin: '0 0 6px' }}>Confirmar Aprovação</h2>
         <p style={{ color: C.textMuted, fontSize: 14, margin: '0 0 24px', lineHeight: 1.5 }}>
           Para formalizar a aprovação desta proposta, preencha seus dados abaixo.
         </p>
-        {formAceite}
+        {/* Nome */}
+        <div style={{ marginBottom: 16, position: 'relative' }}>
+          <label style={labelStyle}>Nome completo *</label>
+          <div style={{ position: 'relative' }}>
+            <User size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            <input type="text" placeholder="Seu nome completo" value={nome} onChange={e => setNome(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 20, position: 'relative' }}>
+          <label style={labelStyle}>E-mail <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></label>
+          <div style={{ position: 'relative' }}>
+            <Mail size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            <input type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', marginBottom: 24 }}>
+          <div onClick={() => setConcordo(c => !c)} style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 1, border: `2px solid ${concordo ? C.green : C.border}`, background: concordo ? C.green : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', cursor: 'pointer' }}>
+            {concordo && <Check size={14} color="white" strokeWidth={3} />}
+          </div>
+          <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5, userSelect: 'none' }}>Li e concordo com todos os termos desta proposta</span>
+        </label>
+        {erro && (
+          <div style={{ background: '#ef444418', border: '1px solid #ef444444', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertCircle size={15} color="#ef4444" />
+            <span style={{ color: '#ef4444', fontSize: 13 }}>{erro}</span>
+          </div>
+        )}
+        <button onClick={handleConfirm} disabled={saving} style={{ width: '100%', padding: '14px 0', background: saving ? `${C.green}88` : C.green, border: 'none', borderRadius: 12, cursor: saving ? 'not-allowed' : 'pointer', color: 'white', fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: 'system-ui, sans-serif', boxShadow: saving ? 'none' : `0 4px 20px ${C.green}44` }}>
+          {saving ? <><Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> Registrando…</> : <><Check size={18} /> Confirmar Aprovação</>}
+        </button>
       </div>
     </div>
   );
@@ -446,14 +593,18 @@ const PropostaDocPublica: React.FC = () => {
   }, [slug]);
 
   // ── Aceite ────────────────────────────────────────────────────────────────
-  const handleConfirm = useCallback(async (nome: string, email: string) => {
+  const handleConfirm = useCallback(async (nome: string, email: string, contratoUrls?: string[]) => {
     const now = Timestamp.now();
-    await updateDoc(doc(db, CollectionName.PROJECTS_V2, projectId), {
-      'propostaDocumento.status':        'aceito',
-      'propostaDocumento.aceitoEm':      now,
-      'propostaDocumento.aceitoPor':     nome,
+    const updateData: Record<string, unknown> = {
+      'propostaDocumento.status':         'aceito',
+      'propostaDocumento.aceitoEm':       now,
+      'propostaDocumento.aceitoPor':      nome,
       'propostaDocumento.aceitoPorEmail': email,
-    });
+    };
+    if (contratoUrls && contratoUrls.length > 0) {
+      updateData['propostaDocumento.contratoAssinadoUrls'] = contratoUrls;
+    }
+    await updateDoc(doc(db, CollectionName.PROJECTS_V2, projectId), updateData);
     setWowNome(nome);
     setWowData(now.toDate());
     setShowModal(false);
@@ -465,6 +616,7 @@ const PropostaDocPublica: React.FC = () => {
       aceitoEm: now,
       aceitoPor: nome,
       aceitoPorEmail: email,
+      ...(contratoUrls && contratoUrls.length > 0 ? { contratoAssinadoUrls: contratoUrls } : {}),
     } : prev);
   }, [projectId]);
 
@@ -658,6 +810,20 @@ const PropostaDocPublica: React.FC = () => {
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {pdfDescritivo && (
+                    <button
+                      onClick={() => setShowPdfModal(true)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        color: 'white', fontSize: 12, fontFamily: 'system-ui, sans-serif',
+                        padding: '6px 12px', borderRadius: 8, border: 'none',
+                        background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
+                        cursor: 'pointer', fontWeight: 700,
+                        boxShadow: `0 2px 10px ${C.accent}44`,
+                      }}>
+                      <FileText size={13} /> Ver Proposta Descritiva
+                    </button>
+                  )}
                   <a href={openHref} target="_blank" rel="noopener noreferrer"
                     style={{
                       display: 'flex', alignItems: 'center', gap: 6,
@@ -669,8 +835,8 @@ const PropostaDocPublica: React.FC = () => {
                 </div>
               </div>
 
-              {/* Viewer + botão overlay "Ver Proposta Completa" */}
-              <div style={{ background: '#000', position: 'relative' }}>
+              {/* Viewer da apresentação */}
+              <div style={{ background: '#000' }}>
                 <iframe
                   key={viewerSrc}
                   src={viewerSrc}
@@ -679,43 +845,6 @@ const PropostaDocPublica: React.FC = () => {
                   onError={() => setViewerError(true)}
                   {...(isHtml ? { sandbox: 'allow-scripts allow-same-origin allow-popups' } : {})}
                 />
-                {/* Botão flutuante "Ver Proposta Completa" — visível quando há PDF descritivo */}
-                {pdfDescritivo && (
-                  <button
-                    onClick={() => setShowPdfModal(true)}
-                    style={{
-                      position: 'absolute',
-                      bottom: 20,
-                      right: 20,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '11px 20px',
-                      borderRadius: 12,
-                      border: 'none',
-                      cursor: 'pointer',
-                      background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
-                      color: 'white',
-                      fontWeight: 700,
-                      fontSize: 13,
-                      fontFamily: 'system-ui, sans-serif',
-                      boxShadow: '0 4px 24px rgba(0,0,0,0.55)',
-                      zIndex: 10,
-                      letterSpacing: 0.3,
-                      transition: 'transform 0.15s, box-shadow 0.15s',
-                    }}
-                    onMouseEnter={e => {
-                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
-                      (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 32px rgba(0,0,0,0.65)';
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-                      (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 24px rgba(0,0,0,0.55)';
-                    }}
-                  >
-                    <FileText size={15} /> Ver Proposta Completa
-                  </button>
-                )}
               </div>
             </div>
           );
@@ -852,6 +981,7 @@ const PropostaDocPublica: React.FC = () => {
           onClose={() => setShowModal(false)}
           onConfirm={handleConfirm}
           contratoPdfUrl={contratoPdfUrl}
+          projectId={projectId}
         />
       )}
     </div>
