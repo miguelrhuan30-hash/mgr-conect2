@@ -877,6 +877,22 @@ const PropostaDocPublica: React.FC = () => {
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {/* Botão Aceitar Proposta — só quando ainda não aceita e não é rascunho */}
+              {!jaAceita && !eRascunho && (
+                <button
+                  onClick={() => { setShowPdfModal(false); setShowModal(true); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    padding: '8px 16px', borderRadius: 9, border: 'none',
+                    background: `linear-gradient(135deg, ${C.green}, ${C.greenDark})`,
+                    color: 'white', fontWeight: 700, fontSize: 13,
+                    fontFamily: 'system-ui, sans-serif', cursor: 'pointer',
+                    boxShadow: `0 2px 12px ${C.green}44`,
+                    whiteSpace: 'nowrap',
+                  }}>
+                  <Check size={14} strokeWidth={3} /> Aceitar Proposta
+                </button>
+              )}
               <a href={pdfDescritivo} target="_blank" rel="noopener noreferrer" download
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, color: C.textMuted,
