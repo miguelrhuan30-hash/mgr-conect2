@@ -2018,6 +2018,8 @@ export interface PropostaClausula {
 export interface PropostaDocumento {
   slug: string;                         // URL pública: /proposta/:slug
   titulo?: string;                      // título exibido no topo do documento
+  contratoPdfUrl?: string | null;       // PDF do contrato para assinatura
+  contratoPdfPath?: string | null;      // Storage path do contrato
   clausulas: PropostaClausula[];
   status: 'rascunho' | 'publicado' | 'aceito';
   publicadoEm?: Timestamp;

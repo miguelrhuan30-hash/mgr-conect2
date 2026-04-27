@@ -236,7 +236,8 @@ const WowMoment: React.FC<{
 const ModalAceite: React.FC<{
   onClose: () => void;
   onConfirm: (nome: string, email: string) => Promise<void>;
-}> = ({ onClose, onConfirm }) => {
+  contratoPdfUrl?: string | null;
+}> = ({ onClose, onConfirm, contratoPdfUrl }) => {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [concordo, setConcordo] = useState(false);
@@ -272,134 +273,114 @@ const ModalAceite: React.FC<{
     transition: 'border-color 0.2s',
   };
 
+  // ── Formulário de aceite (reutilizado nos dois layouts) ──────────────────
+  const formAceite = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {/* Nome */}
+      <div style={{ marginBottom: 14, position: 'relative' }}>
+        <label style={{ display: 'block', color: C.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+          Nome completo *
+        </label>
+        <div style={{ position: 'relative' }}>
+          <User size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <input type="text" placeholder="Seu nome completo" value={nome}
+            onChange={e => setNome(e.target.value)} style={inputStyle} />
+        </div>
+      </div>
+      {/* E-mail */}
+      <div style={{ marginBottom: 16, position: 'relative' }}>
+        <label style={{ display: 'block', color: C.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+          E-mail <span style={{ fontWeight: 400, textTransform: 'none' }}>(opcional)</span>
+        </label>
+        <div style={{ position: 'relative' }}>
+          <Mail size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <input type="email" placeholder="seu@email.com" value={email}
+            onChange={e => setEmail(e.target.value)} style={inputStyle} />
+        </div>
+      </div>
+      {/* Checkbox */}
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', marginBottom: 20 }}>
+        <div onClick={() => setConcordo(c => !c)} style={{
+          width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 1,
+          border: `2px solid ${concordo ? C.green : C.border}`,
+          background: concordo ? C.green : 'transparent',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.2s', cursor: 'pointer',
+        }}>
+          {concordo && <Check size={14} color="white" strokeWidth={3} />}
+        </div>
+        <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5, userSelect: 'none' }}>
+          {contratoPdfUrl
+            ? 'Li o contrato acima e concordo com todos os termos'
+            : 'Li e concordo com todos os termos desta proposta'}
+        </span>
+      </label>
+      {/* Erro */}
+      {erro && (
+        <div style={{ background: '#ef444418', border: '1px solid #ef444444', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertCircle size={15} color="#ef4444" />
+          <span style={{ color: '#ef4444', fontSize: 13 }}>{erro}</span>
+        </div>
+      )}
+      {/* Botão confirmar */}
+      <button onClick={handleConfirm} disabled={saving} style={{
+        width: '100%', padding: '14px 0',
+        background: saving ? `${C.green}88` : C.green,
+        border: 'none', borderRadius: 12, cursor: saving ? 'not-allowed' : 'pointer',
+        color: 'white', fontWeight: 800, fontSize: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+        fontFamily: 'system-ui, sans-serif',
+        transition: 'background 0.2s',
+        boxShadow: saving ? 'none' : `0 4px 20px ${C.green}44`,
+      }}>
+        {saving
+          ? <><Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> Registrando...</>
+          : <><Check size={18} /> Confirmar Aprovação</>}
+      </button>
+    </div>
+  );
+
+  // ── Layout A: com contrato PDF (tela cheia — PDF em cima, form embaixo) ──
+  if (contratoPdfUrl) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', background: C.bg, animation: 'fadeIn 0.2s both' }}>
+        {/* Barra superior */}
+        <div style={{ height: 56, background: C.bgCard2, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <MGRLogo size={28} />
+            <span style={{ color: C.text, fontWeight: 700, fontSize: 14, marginLeft: 4 }}>Contrato para Assinatura</span>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer', color: C.textMuted, padding: '6px 10px', display: 'flex', alignItems: 'center' }}>
+            <X size={16} />
+          </button>
+        </div>
+        {/* PDF */}
+        <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+          <iframe src={`${contratoPdfUrl}#toolbar=0&navpanes=0`} style={{ width: '100%', height: '100%', border: 'none' }} title="Contrato" />
+        </div>
+        {/* Form de aceite */}
+        <div style={{ background: C.bgCard2, borderTop: `1px solid ${C.border}`, padding: '20px 24px', flexShrink: 0, maxHeight: '40vh', overflowY: 'auto' }}>
+          <p style={{ color: C.text, fontWeight: 700, fontSize: 15, margin: '0 0 16px' }}>Revisou o contrato? Confirme sua aprovação:</p>
+          {formAceite}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Layout B: sem contrato PDF (modal flutuante simples) ─────────────────
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 500,
-        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20, boxSizing: 'border-box',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: C.bgCard, border: `1px solid ${C.border}`,
-          borderRadius: 20, padding: '32px 28px', maxWidth: 480, width: '100%',
-          boxShadow: '0 20px 80px rgba(0,0,0,0.6)',
-          animation: 'modalIn 0.3s cubic-bezier(.16,1,.3,1) both',
-          position: 'relative',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Fechar */}
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute', top: 16, right: 16,
-            background: 'transparent', border: 'none',
-            cursor: 'pointer', color: C.textMuted, padding: 4, borderRadius: 8,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}
+      onClick={onClose}>
+      <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: '32px 28px', maxWidth: 480, width: '100%', boxShadow: '0 20px 80px rgba(0,0,0,0.6)', animation: 'modalIn 0.3s cubic-bezier(.16,1,.3,1) both', position: 'relative' }}
+        onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'transparent', border: 'none', cursor: 'pointer', color: C.textMuted, padding: 4, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <X size={18} />
         </button>
-
-        <h2 style={{ color: C.text, fontSize: 20, fontWeight: 800, margin: '0 0 6px' }}>
-          Confirmar Aceite
-        </h2>
+        <h2 style={{ color: C.text, fontSize: 20, fontWeight: 800, margin: '0 0 6px' }}>Confirmar Aprovação</h2>
         <p style={{ color: C.textMuted, fontSize: 14, margin: '0 0 24px', lineHeight: 1.5 }}>
-          Para formalizar o aceite desta proposta, preencha seus dados abaixo.
+          Para formalizar a aprovação desta proposta, preencha seus dados abaixo.
         </p>
-
-        {/* Nome */}
-        <div style={{ marginBottom: 16, position: 'relative' }}>
-          <label style={{ display: 'block', color: C.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
-            Nome completo *
-          </label>
-          <div style={{ position: 'relative' }}>
-            <User size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-            <input
-              type="text"
-              placeholder="Seu nome completo"
-              value={nome}
-              onChange={e => setNome(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-        </div>
-
-        {/* E-mail */}
-        <div style={{ marginBottom: 20, position: 'relative' }}>
-          <label style={{ display: 'block', color: C.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
-            E-mail <span style={{ color: C.textMuted, fontWeight: 400, textTransform: 'none' }}>(opcional)</span>
-          </label>
-          <div style={{ position: 'relative' }}>
-            <Mail size={16} color={C.textMuted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-            <input
-              type="email"
-              placeholder="seu@email.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-        </div>
-
-        {/* Checkbox */}
-        <label style={{
-          display: 'flex', alignItems: 'flex-start', gap: 12,
-          cursor: 'pointer', marginBottom: 24,
-        }}>
-          <div
-            onClick={() => setConcordo(c => !c)}
-            style={{
-              width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 1,
-              border: `2px solid ${concordo ? C.green : C.border}`,
-              background: concordo ? C.green : 'transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 0.2s', cursor: 'pointer',
-            }}
-          >
-            {concordo && <Check size={14} color="white" strokeWidth={3} />}
-          </div>
-          <span style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.5, userSelect: 'none' }}>
-            Li e concordo com todos os termos desta proposta
-          </span>
-        </label>
-
-        {/* Erro */}
-        {erro && (
-          <div style={{
-            background: '#ef444418', border: '1px solid #ef444444',
-            borderRadius: 10, padding: '10px 14px', marginBottom: 16,
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <AlertCircle size={15} color="#ef4444" />
-            <span style={{ color: '#ef4444', fontSize: 13 }}>{erro}</span>
-          </div>
-        )}
-
-        {/* Botão confirmar */}
-        <button
-          onClick={handleConfirm}
-          disabled={saving}
-          style={{
-            width: '100%', padding: '14px 0',
-            background: saving ? `${C.green}88` : C.green,
-            border: 'none', borderRadius: 12, cursor: saving ? 'not-allowed' : 'pointer',
-            color: 'white', fontWeight: 800, fontSize: 16,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            fontFamily: 'system-ui, sans-serif',
-            transition: 'background 0.2s, transform 0.1s',
-            boxShadow: saving ? 'none' : `0 4px 20px ${C.green}44`,
-          }}
-        >
-          {saving
-            ? <><Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> Registrando...</>
-            : <><Check size={18} /> Confirmar Aceite</>
-          }
-        </button>
+        {formAceite}
       </div>
     </div>
   );
@@ -416,10 +397,11 @@ const PropostaDocPublica: React.FC = () => {
   const [projectNome, setProjectNome]       = useState('');
   const [clienteNome, setClienteNome]       = useState('');
   const [htmlApresentacao, setHtmlApresentacao] = useState<string | null>(null);
-  const [pdfApresentacao, setPdfApresentacao] = useState<string | null>(null);
-  const [pdfDescritivo, setPdfDescritivo]     = useState<string | null>(null);
-  const [slidesSlug, setSlidesSlug]           = useState<string | null>(null);
-  const [viewerError, setViewerError]         = useState(false);
+  const [pdfApresentacao, setPdfApresentacao]   = useState<string | null>(null);
+  const [pdfDescritivo, setPdfDescritivo]       = useState<string | null>(null);
+  const [contratoPdfUrl, setContratoPdfUrl]     = useState<string | null>(null);
+  const [slidesSlug, setSlidesSlug]             = useState<string | null>(null);
+  const [viewerError, setViewerError]           = useState(false);
   const [showModal, setShowModal]           = useState(false);
   const [showPdfModal, setShowPdfModal]     = useState(false);
   const [wowMoment, setWowMoment]           = useState(false);
@@ -447,6 +429,7 @@ const PropostaDocPublica: React.FC = () => {
         setHtmlApresentacao(data.propostaDados?.htmlUrl ?? null);
         setPdfApresentacao(data.propostaDados?.pdfUrl ?? null);
         setPdfDescritivo(data.propostaDados?.pdfDescritivo ?? null);
+        setContratoPdfUrl(data.propostaDocumento?.contratoPdfUrl ?? null);
         // Fallback: slug da apresentação de slides do sistema
         const versoes = data.propostaVersoes;
         if (!data.propostaDados?.pdfUrl && versoes?.length) {
@@ -738,77 +721,12 @@ const PropostaDocPublica: React.FC = () => {
           );
         })()}
 
-        {/* Divisor */}
-        <div style={{ width: 60, height: 3, borderRadius: 2, background: C.accent, marginBottom: 40 }} />
-
-        {/* Cláusulas */}
-        {clausulas.length === 0 ? (
-          <p style={{ color: C.textMuted, textAlign: 'center', padding: '40px 0' }}>
-            Esta proposta ainda não possui cláusulas.
-          </p>
-        ) : (
+        {/* Cláusulas — exibidas apenas se existirem (uso interno/opcional) */}
+        {clausulas.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {clausulas.map((clausula, idx) => (
               <ClausulaCard key={clausula.id} clausula={clausula} index={idx} />
             ))}
-          </div>
-        )}
-
-        {/* ── Botão Ver Proposta Completa ── */}
-        {pdfDescritivo && (
-          <div style={{
-            marginTop: 48, padding: '28px 24px',
-            background: C.bgCard2, border: `1px solid ${C.border}`,
-            borderRadius: 16, textAlign: 'center',
-            animation: 'fadeIn 0.5s 0.3s both',
-          }}>
-            <div style={{
-              width: 48, height: 48, borderRadius: 12,
-              background: `${C.accent}22`, border: `1px solid ${C.accent}40`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 16px',
-            }}>
-              <FileText size={22} color={C.accent} />
-            </div>
-            <p style={{ color: C.text, fontWeight: 700, fontSize: 16, margin: '0 0 8px' }}>
-              Proposta Descritiva Completa
-            </p>
-            <p style={{ color: C.textMuted, fontSize: 14, margin: '0 0 20px', lineHeight: 1.5 }}>
-              Documento completo com detalhes técnicos, escopo e condições comerciais.
-            </p>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button
-                onClick={() => setShowPdfModal(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '12px 24px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                  background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
-                  color: 'white', fontWeight: 700, fontSize: 14,
-                  fontFamily: 'system-ui, sans-serif',
-                  boxShadow: `0 4px 20px ${C.accent}44`,
-                  transition: 'transform 0.15s, box-shadow 0.15s',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
-              >
-                <Eye size={16} /> Ver Proposta Completa
-              </button>
-              <a
-                href={pdfDescritivo} target="_blank" rel="noopener noreferrer" download
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '12px 24px', borderRadius: 10,
-                  border: `1px solid ${C.border}`, textDecoration: 'none',
-                  color: C.textMuted, fontWeight: 600, fontSize: 14,
-                  fontFamily: 'system-ui, sans-serif',
-                  transition: 'border-color 0.2s, color 0.2s',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.color = C.text; (e.currentTarget as HTMLAnchorElement).style.borderColor = C.textMuted; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = C.textMuted; (e.currentTarget as HTMLAnchorElement).style.borderColor = C.border; }}
-              >
-                <Download size={16} /> Baixar PDF
-              </a>
-            </div>
           </div>
         )}
       </main>
@@ -919,7 +837,7 @@ const PropostaDocPublica: React.FC = () => {
               }}
             >
               <Check size={20} strokeWidth={3} />
-              ✅ Aceitar Proposta
+              ✅ Aprovar Proposta
             </button>
             <p style={{ color: C.textMuted, fontSize: 12, margin: 0, textAlign: 'center' }}>
               Ao aceitar, você confirma que leu e concorda com todos os termos desta proposta.
@@ -933,6 +851,7 @@ const PropostaDocPublica: React.FC = () => {
         <ModalAceite
           onClose={() => setShowModal(false)}
           onConfirm={handleConfirm}
+          contratoPdfUrl={contratoPdfUrl}
         />
       )}
     </div>

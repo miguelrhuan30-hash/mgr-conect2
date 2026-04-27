@@ -17,7 +17,8 @@ import {
   updateDoc, deleteDoc, doc, getDocs, serverTimestamp,
   Timestamp, where,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, storage } from '../firebase';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../contexts/AuthContext';
 import {
   CollectionName, ProjectV2, PropostaDocumento, PropostaClausula, ClausulaModelo,
@@ -25,7 +26,7 @@ import {
 import {
   Save, Check, Loader2, Plus, Trash2, ChevronUp, ChevronDown,
   Globe, Copy, ExternalLink, Book, ChevronRight, X, AlertCircle,
-  Edit2, GripVertical,
+  Edit2, GripVertical, Upload, FileText,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -167,6 +168,11 @@ const ProjectPropostaDoc: React.FC<Props> = ({ project }) => {
   const [editandoModelo, setEditandoModelo] = useState<Partial<ClausulaModelo> | null>(null);
   const [savingModelo, setSavingModelo] = useState(false);
 
+  // ── Upload Contrato PDF ──────────────────────────────────────────────────
+  const [uploadProgressContrato, setUploadProgressContrato] = useState<number | null>(null);
+  const [uploadErrorContrato, setUploadErrorContrato] = useState('');
+  const fileInputContratoRef = useRef<HTMLInputElement>(null);
+
   // ── Toasts ───────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const toastCounter = useRef(0);
@@ -244,6 +250,8 @@ const ProjectPropostaDoc: React.FC<Props> = ({ project }) => {
         aceitoPor: existing?.aceitoPor,
         aceitoPorEmail: existing?.aceitoPorEmail,
         mensagemProxPassos: existing?.mensagemProxPassos,
+        contratoPdfUrl: existing?.contratoPdfUrl,
+        contratoPdfPath: existing?.contratoPdfPath,
       };
       await updateDoc(projectRef, { propostaDocumento: updated });
       addToast('Documento salvo com sucesso!');
@@ -310,6 +318,8 @@ const ProjectPropostaDoc: React.FC<Props> = ({ project }) => {
         aceitoPor: existing?.aceitoPor,
         aceitoPorEmail: existing?.aceitoPorEmail,
         mensagemProxPassos: existing?.mensagemProxPassos,
+        contratoPdfUrl: existing?.contratoPdfUrl,
+        contratoPdfPath: existing?.contratoPdfPath,
       };
       await updateDoc(projectRef, { propostaDocumento: updated });
       addToast('Documento publicado! Link gerado.', 'info');
@@ -417,13 +427,49 @@ const ProjectPropostaDoc: React.FC<Props> = ({ project }) => {
     }
   };
 
+  // ── Upload Contrato PDF ───────────────────────────────────────────────────
+  const handleUploadContrato = (file: File) => {
+    if (!file) return;
+    setUploadErrorContrato('');
+    setUploadProgressContrato(0);
+    const path = `projects/${project.id}/contrato.pdf`;
+    const ref = storageRef(storage, path);
+    const task = uploadBytesResumable(ref, file, { contentType: 'application/pdf' });
+    task.on(
+      'state_changed',
+      snap => setUploadProgressContrato(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+      err => { setUploadErrorContrato(err.message); setUploadProgressContrato(null); },
+      async () => {
+        const url = await getDownloadURL(ref);
+        const existing = project.propostaDocumento;
+        const updated: PropostaDocumento = {
+          slug: existing?.slug || '',
+          titulo: existing?.titulo || '',
+          clausulas: existing?.clausulas || [],
+          status: existing?.status || 'rascunho',
+          publicadoEm: existing?.publicadoEm,
+          aceitoEm: existing?.aceitoEm,
+          aceitoPor: existing?.aceitoPor,
+          aceitoPorEmail: existing?.aceitoPorEmail,
+          mensagemProxPassos: existing?.mensagemProxPassos,
+          contratoPdfUrl: url,
+          contratoPdfPath: path,
+        };
+        await updateDoc(projectRef, { propostaDocumento: updated });
+        setUploadProgressContrato(null);
+        addToast('Contrato vinculado com sucesso!');
+      },
+    );
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────
   const doc_ = project.propostaDocumento;
   const isAceito = doc_?.status === 'aceito';
   const isPublicado = doc_?.status === 'publicado' || isAceito;
-  const canPublish = clausulas.length > 0;
+  // Pode publicar com cláusulas OU com contrato PDF vinculado
+  const canPublish = clausulas.length > 0 || !!doc_?.contratoPdfUrl;
 
   return (
     <div className="space-y-4">
@@ -449,6 +495,44 @@ const ProjectPropostaDoc: React.FC<Props> = ({ project }) => {
           </div>
         </div>
       )}
+
+      {/* ── Upload Contrato para Assinatura ────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${doc_?.contratoPdfUrl ? 'bg-emerald-100' : 'bg-orange-50'}`}>
+            <FileText className={`w-3.5 h-3.5 ${doc_?.contratoPdfUrl ? 'text-emerald-600' : 'text-orange-500'}`} />
+          </div>
+          <span className="text-sm font-bold text-gray-800">Contrato para Assinatura (PDF)</span>
+          {doc_?.contratoPdfUrl
+            ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Vinculado</span>
+            : <span className="text-[9px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">Recomendado</span>}
+        </div>
+        <p className="text-xs text-gray-500">
+          Suba o contrato em PDF. Ele será exibido ao cliente antes de aprovar a proposta — o cliente revisa e confirma a assinatura online.
+        </p>
+        {doc_?.contratoPdfUrl && (
+          <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span className="text-xs text-emerald-700 flex-1 truncate">Contrato vinculado ✓</span>
+            <a href={doc_.contratoPdfUrl} target="_blank" rel="noopener noreferrer"
+              className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 flex-shrink-0">
+              <ExternalLink size={13} />
+            </a>
+          </div>
+        )}
+        <input type="file" accept=".pdf" ref={fileInputContratoRef} className="hidden"
+          onChange={e => { if (e.target.files?.[0]) handleUploadContrato(e.target.files[0]); }} />
+        <button
+          onClick={() => fileInputContratoRef.current?.click()}
+          disabled={uploadProgressContrato !== null}
+          className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50 disabled:opacity-50 transition-all w-full justify-center"
+        >
+          {uploadProgressContrato !== null
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgressContrato}%</>
+            : <><Upload className="w-4 h-4" /> {doc_?.contratoPdfUrl ? 'Substituir Contrato' : 'Upload Contrato PDF'}</>}
+        </button>
+        {uploadErrorContrato && <p className="text-xs text-red-600">{uploadErrorContrato}</p>}
+      </div>
 
       {/* ── Header: título + botões principais ─────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-2xl p-4">
@@ -477,7 +561,7 @@ const ProjectPropostaDoc: React.FC<Props> = ({ project }) => {
             <button
               onClick={handlePublicar}
               disabled={publishing || !canPublish}
-              title={!canPublish ? 'Adicione pelo menos 1 cláusula' : undefined}
+              title={!canPublish ? 'Adicione um contrato PDF ou pelo menos 1 cláusula' : undefined}
               className="flex items-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
             >
               {publishing ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
