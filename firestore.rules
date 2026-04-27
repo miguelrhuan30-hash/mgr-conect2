@@ -139,11 +139,31 @@ service cloud.firestore {
 
     // ── Projetos V2 ──
     match /projects_v2/{projectId} {
+      // Leitura autenticada (sistema interno)
       allow read: if isAuthenticated();
+
+      // Leitura pública: proposta com slug publicado (link enviado ao cliente)
+      allow read: if resource.data.get('propostaDocumento', null) != null
+                   && resource.data.propostaDocumento.get('slug', null) != null;
+
       allow create: if isAuthenticated();
+
+      // Atualização autenticada (sistema interno)
       allow update: if isAuthenticated()
         && !request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['createdAt', 'createdBy']);
+
+      // Aceite público: cliente sem login registra aprovação (apenas campos permitidos)
+      allow update: if resource.data.get('propostaDocumento', null) != null
+        && resource.data.propostaDocumento.get('slug', null) != null
+        && resource.data.propostaDocumento.get('status', '') != 'aceito'
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['propostaDocumento'])
+        && request.resource.data.propostaDocumento.diff(resource.data.propostaDocumento)
+            .affectedKeys().hasOnly([
+              'status', 'aceitoEm', 'aceitoPor', 'aceitoPorEmail', 'contratoAssinadoUrls'
+            ]);
+
       allow delete: if isAdmin();
     }
 
