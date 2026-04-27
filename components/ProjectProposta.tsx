@@ -262,17 +262,34 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       `Segue sua proposta comercial para o projeto *${project.nome}*.`,
       '',
     ];
-    // Link principal = /proposta/:slug (domínio MGR) — contém tudo para o cliente
+
+    // Link principal = /proposta/:slug (domínio MGR) — contém tudo
     if (propostaDocLink) {
       linhas.push(`🎯 *Acesse sua proposta completa:*`);
       linhas.push(propostaDocLink);
       linhas.push('');
-      linhas.push('Neste link você encontra a apresentação, os detalhes do projeto e pode aceitar a proposta online. ✅');
+      linhas.push('Neste link você encontra a apresentação, os detalhes e pode aceitar a proposta online. ✅');
+    } else {
+      // Fallback: documento ainda não publicado — envia links disponíveis
+      if (pdfUrl) {
+        linhas.push(`🎨 *Apresentação da proposta:*`);
+        linhas.push(pdfUrl);
+        linhas.push('');
+      } else if (linkSlides) {
+        linhas.push(`🎨 *Apresentação da proposta:*`);
+        linhas.push(linkSlides);
+        linhas.push('');
+      }
+      if (pdfDescritivoUrl) {
+        linhas.push(`📄 *Proposta descritiva (PDF completo):*`);
+        linhas.push(pdfDescritivoUrl);
+        linhas.push('');
+      }
     }
-    linhas.push('');
+
     linhas.push('Ficamos à disposição para qualquer dúvida. Aguardamos sua aprovação! 🙏');
     return linhas.join('\n');
-  }, [project.clientName, project.nome, propostaDocLink]);
+  }, [project.clientName, project.nome, propostaDocLink, pdfUrl, linkSlides, pdfDescritivoUrl]);
 
   // Atualiza mensagem quando links mudam (só se ainda não foi editada manualmente)
   const mensagemEditada = useRef(false);

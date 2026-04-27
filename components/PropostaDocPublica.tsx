@@ -633,10 +633,9 @@ const PropostaDocPublica: React.FC = () => {
           // Se tem PDF → Google Docs Viewer (sem barra lateral do Chrome)
           // Se não → embed dos slides do sistema via /p/:slug
           const isSlidesEmbed = !pdfApresentacao && !!slidesSlug;
+          // PDF direto com hash params para suprimir barra lateral e toolbar do Chrome
           const viewerSrc = pdfApresentacao
-            ? (viewerError
-                ? pdfApresentacao  // fallback direto se Google Docs falhar
-                : `https://docs.google.com/viewer?url=${encodeURIComponent(pdfApresentacao)}&embedded=true`)
+            ? `${pdfApresentacao}#toolbar=0&navpanes=0&view=FitH`
             : `${window.location.origin}/#/p/${slidesSlug}`;
           const openHref = pdfApresentacao || `${window.location.origin}/#/p/${slidesSlug}`;
 
@@ -664,19 +663,6 @@ const PropostaDocPublica: React.FC = () => {
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {pdfApresentacao && (
-                    <button
-                      onClick={() => setViewerError(v => !v)}
-                      style={{
-                        background: 'transparent', border: `1px solid ${C.border}`,
-                        borderRadius: 8, cursor: 'pointer', color: C.textMuted,
-                        padding: '5px 10px', fontSize: 11, fontFamily: 'system-ui, sans-serif',
-                      }}
-                      title="Alternar modo de visualização"
-                    >
-                      {viewerError ? 'Visor MGR' : 'Modo direto'}
-                    </button>
-                  )}
                   <a href={openHref} target="_blank" rel="noopener noreferrer"
                     style={{
                       display: 'flex', alignItems: 'center', gap: 6,
@@ -817,10 +803,10 @@ const PropostaDocPublica: React.FC = () => {
               </button>
             </div>
           </div>
-          {/* iframe PDF via Google Docs Viewer */}
+          {/* iframe PDF direto com hash params */}
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <iframe
-              src={`https://docs.google.com/viewer?url=${encodeURIComponent(pdfDescritivo!)}&embedded=true`}
+              src={`${pdfDescritivo}#toolbar=0&navpanes=0`}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Proposta Descritiva"
             />
