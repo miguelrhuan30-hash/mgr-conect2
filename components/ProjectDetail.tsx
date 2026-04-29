@@ -625,12 +625,7 @@ const ProjectDetail: React.FC = () => {
 
             {/* Contrato */}
             {activeTab === 'contrato' && (
-              <ProjectContrato
-                projectId={project.id}
-                projectNome={project.nome}
-                clientName={project.clientName}
-                valorTotal={project.valorContrato}
-              />
+              <ProjectContrato project={project} />
             )}
 
             {/* Faturamento */}

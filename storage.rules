@@ -19,6 +19,30 @@ service firebase.storage {
                    && request.resource.size <= 30 * 1024 * 1024; // max 30MB
     }
 
+    // ── Contratos de Projeto: leitura pública (cliente sem login baixa para assinar) ──
+    //   projects/{projectId}/contrato.pdf            → contrato original (admin sobe)
+    //   projects/{projectId}/contrato_final.pdf      → contrato carimbado pós-assinatura virtual (cliente público sobe)
+    //   projects/{projectId}/contrato_assinado/...   → uploads de contrato impresso assinado (cliente ou admin)
+    match /projects/{projectId}/contrato.pdf {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.contentType == 'application/pdf'
+                   && request.resource.size <= 30 * 1024 * 1024;
+    }
+    match /projects/{projectId}/contrato_final.pdf {
+      allow read: if true;
+      allow write: if request.resource.contentType == 'application/pdf'
+                   && request.resource.size <= 30 * 1024 * 1024;
+    }
+    match /projects/{projectId}/contrato_assinado/{fileName} {
+      allow read: if true;
+      allow write: if request.resource.size <= 20 * 1024 * 1024
+                   && (
+                     request.resource.contentType == 'application/pdf'
+                     || request.resource.contentType.matches('image/.*')
+                   );
+    }
+
     // ── Currículos de candidatos: upload público pelo site Trabalhe Conosco ──
     // Leitura restrita (link com token usado pelo gestor no banco de candidatos)
     match /candidatos/{candidatoId}/{fileName} {

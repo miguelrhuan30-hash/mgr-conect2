@@ -709,12 +709,7 @@ const FlowAtendimento: React.FC = () => {
         )}
         {faseSelecionada === 'contrato' && !loading && selectedProjectId && selectedProject && (
           <div className="bg-white rounded-2xl border border-gray-200 p-5">
-            <ProjectContrato
-              projectId={selectedProject.id}
-              projectNome={selectedProject.nome}
-              clientName={selectedProject.clientName}
-              valorTotal={selectedProject.valorContrato}
-            />
+            <ProjectContrato project={selectedProject} />
           </div>
         )}
 

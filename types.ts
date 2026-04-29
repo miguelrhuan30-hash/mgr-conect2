@@ -1867,8 +1867,8 @@ export const PROJECT_TRANSITIONS: Record<ProjectPhase, ProjectPhase[]> = {
   em_cotacao:             ['cotacao_recebida', 'nao_aprovado'],
   cotacao_recebida:       ['proposta_enviada', 'em_cotacao', 'nao_aprovado'],
   proposta_enviada:       ['contrato_enviado', 'cotacao_recebida', 'em_levantamento', 'nao_aprovado'],
-  contrato_enviado:       ['contrato_assinado', 'nao_aprovado'],
-  contrato_assinado:      ['em_planejamento'],
+  contrato_enviado:       ['contrato_assinado', 'proposta_enviada', 'nao_aprovado'],
+  contrato_assinado:      ['em_planejamento', 'proposta_enviada'],
   em_planejamento:        ['cronograma_aprovado'],
   cronograma_aprovado:    ['os_distribuidas'],
   os_distribuidas:        ['em_execucao'],
@@ -2015,19 +2015,46 @@ export interface PropostaClausula {
   modeloId?: string;    // referência ao template de origem, se importado do banco
 }
 
+// ── Campo de assinatura no PDF (admin marca posição visualmente) ──
+export interface AssinaturaCampo {
+  page: number;        // 1-indexed
+  xRel: number;        // 0..1 top-left
+  yRel: number;
+  wRel: number;
+  hRel: number;
+}
+
+// ── Resultado da assinatura virtual ──
+export interface AssinaturaDesenho {
+  imagemDataUrl: string;
+  assinadoEm: Timestamp;
+  assinadoPor: string;
+  assinadoPorEmail?: string;
+}
+
 // ── Documento de Proposta — página HTML pública com aceite do cliente ─────────
 export interface PropostaDocumento {
-  slug: string;                         // URL pública: /proposta/:slug
-  titulo?: string;                      // título exibido no topo do documento
-  contratoPdfUrl?: string | null;       // PDF do contrato para assinatura
-  contratoPdfPath?: string | null;      // Storage path do contrato
+  slug: string;
+  titulo?: string;
+  contratoPdfUrl?: string | null;
+  contratoPdfPath?: string | null;
   clausulas: PropostaClausula[];
-  status: 'rascunho' | 'publicado' | 'aceito';
+  // publicado → aceito → assinado
+  status: 'rascunho' | 'publicado' | 'aceito' | 'assinado';
   publicadoEm?: Timestamp;
   aceitoEm?: Timestamp;
-  aceitoPor?: string;                   // nome digitado pelo cliente ao aceitar
-  aceitoPorEmail?: string;             // e-mail opcional do cliente
-  mensagemProxPassos?: string;          // texto exibido no "wow moment" de aceite
+  aceitoPor?: string;
+  aceitoPorEmail?: string;
+  mensagemProxPassos?: string;
+  // Assinatura virtual:
+  assinaturaCampo?: AssinaturaCampo;
+  assinaturaDesenho?: AssinaturaDesenho | null;
+  contratoFinalUrl?: string | null;
+  contratoFinalPath?: string | null;
+  // Upload de contrato impresso (cliente OU admin):
+  contratoAssinadoUrls?: string[];
+  // Quando entrou no status 'assinado' (qualquer caminho):
+  assinadoEm?: Timestamp | null;
 }
 
 // ── Template de cláusula — banco de modelos reutilizáveis ─────────────────────
