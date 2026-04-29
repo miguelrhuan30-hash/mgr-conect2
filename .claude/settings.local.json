@@ -20,7 +20,9 @@
       "Read(//mnt/c/Users/Cliente/Desktop/mgr-conect2/src/**)",
       "Read(//mnt/c/Users/Cliente/Desktop/**)",
       "mcp__4b485324-b7b8-4f5c-a249-1e9df0f603ab__list_recent_files",
-      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f['id']+'|'+f['name']\\) for f in data['files'][:30]]\")"
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f['id']+'|'+f['name']\\) for f in data['files'][:30]]\")",
+      "Read(//tmp/**)",
+      "Bash(wait b3w1fcz4t *)"
     ]
   }
 }

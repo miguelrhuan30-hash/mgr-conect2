@@ -17,7 +17,7 @@ import { db, storage } from '../firebase';
 import { CollectionName, ProjectV2, PropostaDocumento } from '../types';
 import {
   Check, Loader2, AlertCircle, X, Mail, User, ChevronDown,
-  FileText, Download, ExternalLink, Eye, Upload, Image, Camera, Pen,
+  FileText, Download, ExternalLink, Eye, Upload, Image, Camera, Pen, Maximize2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -549,6 +549,7 @@ const PropostaDocPublica: React.FC = () => {
   const [showPdfModal, setShowPdfModal]     = useState(false);
   const [showSignPad, setShowSignPad]       = useState(false);
   const [showUploadAssinado, setShowUploadAssinado] = useState(false);
+  const [fullscreen, setFullscreen]         = useState(false);
   const [wowMoment, setWowMoment]           = useState(false);
   const [wowNome, setWowNome]               = useState('');
   const [wowData, setWowData]               = useState<Date>(new Date());
@@ -709,6 +710,36 @@ const PropostaDocPublica: React.FC = () => {
     ? format(proposta.aceitoEm.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })
     : '';
 
+  // ── Viewer da apresentação (derivação compartilhada com overlay fullscreen) ─
+  const temViewer = !!(htmlApresentacao || pdfApresentacao || slidesSlug);
+  const isHtml = !!htmlApresentacao;
+  const isSlidesEmbed = !htmlApresentacao && !pdfApresentacao && !!slidesSlug;
+  const viewerSrc = htmlApresentacao
+    ? htmlApresentacao
+    : pdfApresentacao
+    ? `${pdfApresentacao}#toolbar=0&navpanes=0&view=FitH`
+    : slidesSlug
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/#/p/${slidesSlug}`
+    : '';
+  const viewerLabel = isHtml
+    ? 'Apresentação da Proposta'
+    : isSlidesEmbed
+    ? 'Apresentação da Proposta'
+    : 'Apresentação da Proposta (PDF)';
+
+  // ESC fecha fullscreen + bloqueia scroll do body enquanto ativo
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [fullscreen]);
+
   return (
     <div style={{
       minHeight: '100vh', background: C.bg,
@@ -850,88 +881,54 @@ const PropostaDocPublica: React.FC = () => {
         )}
 
         {/* ── Viewer Apresentação (HTML, PDF ou Slides do sistema) ── */}
-        {(htmlApresentacao || pdfApresentacao || slidesSlug) && (() => {
-          const isHtml = !!htmlApresentacao;
-          const isSlidesEmbed = !htmlApresentacao && !pdfApresentacao && !!slidesSlug;
-
-          // Prioridade: HTML > PDF > Slides do sistema
-          const viewerSrc = htmlApresentacao
-            ? htmlApresentacao
-            : pdfApresentacao
-            ? `${pdfApresentacao}#toolbar=0&navpanes=0&view=FitH`
-            : `${window.location.origin}/#/p/${slidesSlug}`;
-
-          const openHref = htmlApresentacao || pdfApresentacao || `${window.location.origin}/#/p/${slidesSlug}`;
-
-          const viewerLabel = isHtml
-            ? 'Apresentação da Proposta'
-            : isSlidesEmbed
-            ? 'Apresentação da Proposta'
-            : 'Apresentação da Proposta (PDF)';
-
-          return (
+        {temViewer && (
+          <div style={{
+            marginBottom: 40, borderRadius: 16, overflow: 'hidden',
+            border: `1px solid ${C.border}`, animation: 'fadeIn 0.6s 0.1s both',
+          }}>
+            {/* Barra do viewer */}
             <div style={{
-              marginBottom: 40, borderRadius: 16, overflow: 'hidden',
-              border: `1px solid ${C.border}`, animation: 'fadeIn 0.6s 0.1s both',
+              background: C.bgCard2, padding: '12px 18px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderBottom: `1px solid ${C.border}`,
             }}>
-              {/* Barra do viewer */}
-              <div style={{
-                background: C.bgCard2, padding: '12px 18px',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                borderBottom: `1px solid ${C.border}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: 8,
-                    background: `${C.accent}22`, border: `1px solid ${C.accent}40`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Eye size={15} color={C.accent} />
-                  </div>
-                  <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>
-                    {viewerLabel}
-                  </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: `${C.accent}22`, border: `1px solid ${C.accent}40`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Eye size={15} color={C.accent} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {pdfDescritivo && (
-                    <button
-                      onClick={() => setShowPdfModal(true)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        color: 'white', fontSize: 12, fontFamily: 'system-ui, sans-serif',
-                        padding: '6px 12px', borderRadius: 8, border: 'none',
-                        background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
-                        cursor: 'pointer', fontWeight: 700,
-                        boxShadow: `0 2px 10px ${C.accent}44`,
-                      }}>
-                      <FileText size={13} /> Ver Proposta Descritiva
-                    </button>
-                  )}
-                  <a href={openHref} target="_blank" rel="noopener noreferrer"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      color: C.textMuted, fontSize: 12, textDecoration: 'none',
-                      padding: '6px 12px', borderRadius: 8, border: `1px solid ${C.border}`,
-                    }}>
-                    <ExternalLink size={13} /> Abrir em nova aba
-                  </a>
-                </div>
+                <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>
+                  {viewerLabel}
+                </span>
               </div>
-
-              {/* Viewer da apresentação */}
-              <div style={{ background: '#000' }}>
-                <iframe
-                  key={viewerSrc}
-                  src={viewerSrc}
-                  style={{ width: '100%', height: 'min(80vh, 640px)', border: 'none', display: 'block' }}
-                  title="Apresentação da Proposta"
-                  onError={() => setViewerError(true)}
-                  {...(isHtml ? { sandbox: 'allow-scripts allow-same-origin allow-popups' } : {})}
-                />
-              </div>
+              <button
+                onClick={() => setFullscreen(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  color: C.textMuted, fontSize: 12, fontFamily: 'system-ui, sans-serif',
+                  padding: '6px 12px', borderRadius: 8, border: `1px solid ${C.border}`,
+                  background: 'transparent', cursor: 'pointer',
+                }}>
+                <Maximize2 size={13} /> Tela cheia
+              </button>
             </div>
-          );
-        })()}
+
+            {/* Viewer da apresentação */}
+            <div style={{ background: '#000' }}>
+              <iframe
+                key={viewerSrc}
+                src={viewerSrc}
+                style={{ width: '100%', height: 'min(80vh, 640px)', border: 'none', display: 'block' }}
+                title="Apresentação da Proposta"
+                onError={() => setViewerError(true)}
+                {...(isHtml ? { sandbox: 'allow-scripts allow-same-origin allow-popups' } : {})}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Cláusulas — exibidas apenas se existirem (uso interno/opcional) */}
         {clausulas.length > 0 && (
@@ -942,6 +939,48 @@ const PropostaDocPublica: React.FC = () => {
           </div>
         )}
       </main>
+
+      {/* ── Overlay Tela cheia da Apresentação ───────────────────────────────── */}
+      {fullscreen && temViewer && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 600,
+          background: '#000', display: 'flex', flexDirection: 'column',
+          animation: 'fadeIn 0.2s both',
+        }}>
+          <div style={{
+            height: 48, flexShrink: 0,
+            background: C.bgCard2, borderBottom: `1px solid ${C.border}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0 16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Eye size={14} color={C.accent} />
+              <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>
+                {viewerLabel}
+              </span>
+            </div>
+            <button
+              onClick={() => setFullscreen(false)}
+              title="Sair da tela cheia (ESC)"
+              style={{
+                background: 'transparent', border: `1px solid ${C.border}`,
+                borderRadius: 8, cursor: 'pointer', color: C.textMuted,
+                padding: '6px 10px', display: 'flex', alignItems: 'center',
+              }}>
+              <X size={16} />
+            </button>
+          </div>
+          <div style={{ flex: 1, background: '#000', overflow: 'hidden' }}>
+            <iframe
+              key={`fs-${viewerSrc}`}
+              src={viewerSrc}
+              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+              title="Apresentação da Proposta — Tela cheia"
+              {...(isHtml ? { sandbox: 'allow-scripts allow-same-origin allow-popups' } : {})}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── Modal PDF Descritivo ── */}
       {showPdfModal && pdfDescritivo && (
@@ -1031,8 +1070,8 @@ const PropostaDocPublica: React.FC = () => {
         </div>
       )}
 
-      {/* ── Rodapé com botão de aceite ──────────────────────────────────────── */}
-      {podeAceitar && (
+      {/* ── Rodapé fixo: Ver Proposta Descritiva + Aprovar Proposta ─────────── */}
+      {(podeAceitar || pdfDescritivo) && (
         <div style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200,
           background: `${C.bg}f5`, backdropFilter: 'blur(20px)',
@@ -1043,33 +1082,68 @@ const PropostaDocPublica: React.FC = () => {
             maxWidth: 800, margin: '0 auto',
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
           }}>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                background: `linear-gradient(135deg, ${C.green}, ${C.greenDark})`,
-                border: 'none', borderRadius: 14, cursor: 'pointer',
-                color: 'white', fontWeight: 800, fontSize: 17,
-                padding: '16px 48px', width: '100%', maxWidth: 440,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                fontFamily: 'system-ui, sans-serif',
-                boxShadow: `0 6px 30px ${C.green}44`,
-                transition: 'transform 0.15s, box-shadow 0.15s',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
-                (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 10px 40px ${C.green}55`;
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-                (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 6px 30px ${C.green}44`;
-              }}
-            >
-              <Check size={20} strokeWidth={3} />
-              ✅ Aprovar Proposta
-            </button>
-            <p style={{ color: C.textMuted, fontSize: 12, margin: 0, textAlign: 'center' }}>
-              Ao aceitar, você confirma que leu e concorda com todos os termos desta proposta.
-            </p>
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center',
+              width: '100%',
+            }}>
+              {pdfDescritivo && (
+                <button
+                  onClick={() => setShowPdfModal(true)}
+                  style={{
+                    background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
+                    border: 'none', borderRadius: 14, cursor: 'pointer',
+                    color: 'white', fontWeight: 800, fontSize: 15,
+                    padding: '14px 24px',
+                    flex: podeAceitar ? '1 1 220px' : '1 1 280px',
+                    maxWidth: podeAceitar ? 280 : 440,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    fontFamily: 'system-ui, sans-serif',
+                    boxShadow: `0 4px 20px ${C.accent}44`,
+                    transition: 'transform 0.15s, box-shadow 0.15s',
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                  }}
+                >
+                  <FileText size={17} /> Ver Proposta Descritiva
+                </button>
+              )}
+              {podeAceitar && (
+                <button
+                  onClick={() => setShowModal(true)}
+                  style={{
+                    background: `linear-gradient(135deg, ${C.green}, ${C.greenDark})`,
+                    border: 'none', borderRadius: 14, cursor: 'pointer',
+                    color: 'white', fontWeight: 800, fontSize: 17,
+                    padding: '16px 32px',
+                    flex: '1 1 280px', maxWidth: 440,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    fontFamily: 'system-ui, sans-serif',
+                    boxShadow: `0 6px 30px ${C.green}44`,
+                    transition: 'transform 0.15s, box-shadow 0.15s',
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 10px 40px ${C.green}55`;
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 6px 30px ${C.green}44`;
+                  }}
+                >
+                  <Check size={20} strokeWidth={3} />
+                  ✅ Aprovar Proposta
+                </button>
+              )}
+            </div>
+            {podeAceitar && (
+              <p style={{ color: C.textMuted, fontSize: 12, margin: 0, textAlign: 'center' }}>
+                Ao aceitar, você confirma que leu e concorda com todos os termos desta proposta.
+              </p>
+            )}
           </div>
         </div>
       )}
