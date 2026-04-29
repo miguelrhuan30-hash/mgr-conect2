@@ -1,315 +1,453 @@
 /**
- * components/ProjectContrato.tsx — Sprint 2
+ * components/ProjectContrato.tsx
  *
- * Gestão de contrato do projeto: criação de template texto,
- * envio por link, upload de contrato assinado.
+ * Painel da Fase 4 (Contrato) — opera sobre `project.propostaDocumento`.
+ *
+ * Sub-status (em propostaDocumento.status):
+ *   publicado → aguardando aprovação do cliente
+ *   aceito    → cliente aprovou, aguardando assinatura
+ *   assinado  → contrato assinado (auto-avança para fase contrato_assinado)
+ *
+ * Toda ação que o cliente pode fazer no link público tem espelho aqui (admin
+ * executando em nome do cliente — cobre fluxos de WhatsApp/presencial).
+ *
+ * Também suporta o retrocesso "🔄 Cliente pediu ajustes" → volta para Proposta.
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  FileText, Send, Upload, CheckCircle2, AlertCircle,
-  Loader2, ExternalLink, Download, Pen,
+  FileText, CheckCircle2, AlertCircle, Loader2, ExternalLink,
+  Download, Pen, Upload, RefreshCw, ArrowRight, ArrowLeft, Info, X,
 } from 'lucide-react';
-import { useProjectContrato } from '../hooks/useProjectContrato';
-import type { ContratoStatus } from '../types';
+import {
+  doc, updateDoc, serverTimestamp, Timestamp,
+} from 'firebase/firestore';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import { CollectionName, ProjectV2, AssinaturaCampo } from '../types';
+import { useProject } from '../hooks/useProject';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import SignaturePadModal from './SignaturePadModal';
+import ContratoSignatureFieldEditor from './ContratoSignatureFieldEditor';
 
 interface Props {
-  projectId: string;
-  projectNome: string;
-  clientName: string;
-  valorTotal?: number;
+  project: ProjectV2;
 }
-
-const fmtCurrency = (v: number) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const fmtDate = (ts: any) => {
   if (!ts) return '—';
-  try { return format(ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000), "dd/MM/yyyy", { locale: ptBR }); }
+  try { return format(ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }); }
   catch { return '—'; }
 };
 
-const STATUS_CONFIG: Record<ContratoStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  rascunho:   { label: 'Rascunho',    color: 'bg-gray-100 text-gray-600 border-gray-200',         icon: <FileText className="w-4 h-4" /> },
-  enviado:    { label: 'Enviado',     color: 'bg-blue-100 text-blue-700 border-blue-200',          icon: <Send className="w-4 h-4" /> },
-  visualizado:{ label: 'Visualizado', color: 'bg-purple-100 text-purple-700 border-purple-200',    icon: <ExternalLink className="w-4 h-4" /> },
-  assinado:   { label: 'Assinado',    color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: <CheckCircle2 className="w-4 h-4" /> },
-  recusado:   { label: 'Recusado',    color: 'bg-red-100 text-red-600 border-red-200',             icon: <AlertCircle className="w-4 h-4" /> },
+type SubStatus = 'publicado' | 'aceito' | 'assinado';
+
+const STATUS_CONFIG: Record<SubStatus, { label: string; color: string; descricao: string }> = {
+  publicado: { label: 'Aguardando aprovação',      color: 'bg-blue-100 text-blue-700 border-blue-200',          descricao: 'Cliente pode ver a apresentação e clicar em "Aceitar Proposta" no link público.' },
+  aceito:    { label: 'Aceito — aguardando assinatura', color: 'bg-amber-100 text-amber-700 border-amber-200',  descricao: 'Cliente aprovou a proposta. Falta assinar o contrato (virtualmente ou via upload).' },
+  assinado:  { label: 'Contrato assinado',         color: 'bg-emerald-100 text-emerald-700 border-emerald-200', descricao: 'Tudo pronto. O card avança automaticamente para Planejamento.' },
 };
 
-const TEMPLATE_PADRAO = (nome: string, cliente: string, valor: number) => `
-CONTRATO DE PRESTAÇÃO DE SERVIÇOS — PROJETO DE REFRIGERAÇÃO
+const ProjectContrato: React.FC<Props> = ({ project }) => {
+  const { advancePhase } = useProject();
+  const propostaDoc = project.propostaDocumento;
+  const status: SubStatus = (propostaDoc?.status === 'aceito' || propostaDoc?.status === 'assinado')
+    ? propostaDoc.status
+    : 'publicado';
 
-Contratante: ${cliente}
-Projeto: ${nome}
-Valor Total: ${fmtCurrency(valor)}
-Data: ${format(new Date(), 'dd/MM/yyyy', { locale: ptBR })}
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showSignPad, setShowSignPad] = useState(false);
+  const [showCampoEditor, setShowCampoEditor] = useState(false);
+  const [showVoltar, setShowVoltar] = useState(false);
+  const [voltarMotivo, setVoltarMotivo] = useState('');
+  const [showAceiteModal, setShowAceiteModal] = useState(false);
+  const [aceiteNome, setAceiteNome] = useState(project.clientName || '');
+  const [aceiteEmail, setAceiteEmail] = useState('');
 
-CLÁUSULAS
+  const uploadAssinadoRef = useRef<HTMLInputElement>(null);
 
-1. DO OBJETO
-O presente contrato tem como objeto a execução do projeto de refrigeração denominado "${nome}", 
-conforme especificações técnicas apresentadas na proposta comercial aprovada pelo Contratante.
+  const projectRef = doc(db, CollectionName.PROJECTS_V2, project.id);
+  const linkPublico = propostaDoc?.slug
+    ? `${window.location.origin}/#/proposta/${propostaDoc.slug}`
+    : '';
 
-2. DO PRAZO
-O prazo de execução dos serviços será definido no cronograma aprovado entre as partes, 
-a contar da data de assinatura deste instrumento e do recebimento do sinal.
+  // ── Auto-avanço quando status vira 'assinado' ──────────────────────────────
+  useEffect(() => {
+    if (project.fase === 'contrato_enviado' && propostaDoc?.status === 'assinado') {
+      advancePhase(project.id, 'contrato_assinado', 'Contrato assinado — avanço automático');
+    }
+  }, [propostaDoc?.status, project.fase, project.id, advancePhase]);
 
-3. DO VALOR E FORMA DE PAGAMENTO
-O valor total dos serviços é de ${fmtCurrency(valor)}, a ser pago conforme cronograma de parcelas 
-estabelecido na proposta aprovada.
-
-4. DAS OBRIGAÇÕES DO CONTRATANTE
-d) Fornecer acesso às instalações para execução dos serviços.
-e) Efetuar os pagamentos nas datas acordadas.
-
-5. DAS OBRIGAÇÕES DA CONTRATADA
-a) Executar os serviços com qualidade e dentro das especificações técnicas.
-b) Respeitar as normas de segurança (NR-10, NR-18).
-c) Emitir relatório fotográfico de conclusão.
-
-6. DA GARANTIA
-Os equipamentos instalados possuem garantia conforme especificação do fabricante. 
-Os serviços de instalação são garantidos por 6 (seis) meses a partir da entrega.
-
-7. DO FORO
-As partes elegem o foro da comarca de Indaiatuba/SP para dirimir quaisquer controvérsias.
-
-___________________________________        ___________________________________
-Contratante: ${cliente}                    MGR Refrigeração Industrial Ltda
-Data: ____/____/________                   CNPJ: __________________________
-`.trim();
-
-const ProjectContrato: React.FC<Props> = ({ projectId, projectNome, clientName, valorTotal = 0 }) => {
-  const { contrato, loading, createContrato, updateContrato, marcarEnviado, uploadContratoAssinado, uploadContratoPDF } = useProjectContrato(projectId);
-  const [textoContrato, setTextoContrato] = useState('');
-  const [valorContrato, setValorContrato] = useState(valorTotal);
-  const [linkPublico, setLinkPublico] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [uploadingAssinado, setUploadingAssinado] = useState(false);
-  const [uploadingPDF, setUploadingPDF] = useState(false);
-  const [showEditor, setShowEditor] = useState(false);
-  const assinadoRef = useRef<HTMLInputElement>(null);
-  const pdfRef = useRef<HTMLInputElement>(null);
-
-  const handleCreate = async () => {
-    setSaving(true);
+  // ── Ações da retaguarda (espelhos das ações do cliente) ────────────────────
+  const handleRegistrarAceite = async () => {
+    if (!aceiteNome.trim()) return;
+    setBusy('aceite');
     try {
-      const texto = textoContrato.trim() || TEMPLATE_PADRAO(projectNome, clientName, valorContrato);
-      await createContrato({
-        projectId,
-        projectNome,
-        clientId: '',
-        clientName,
-        valorContrato,
-        textoContrato: texto,
-        linkPublico: linkPublico.trim() || null,
-      } as any);
-      setShowEditor(false);
-    } finally { setSaving(false); }
+      await updateDoc(projectRef, {
+        'propostaDocumento.status': 'aceito',
+        'propostaDocumento.aceitoEm': Timestamp.now(),
+        'propostaDocumento.aceitoPor': aceiteNome.trim(),
+        'propostaDocumento.aceitoPorEmail': aceiteEmail.trim(),
+        updatedAt: serverTimestamp(),
+      });
+      setShowAceiteModal(false);
+    } finally {
+      setBusy(null);
+    }
   };
 
-  const handleUploadAssinado = async (file: File) => {
-    if (!contrato) return;
-    setUploadingAssinado(true);
-    try { await uploadContratoAssinado(contrato.id, file); }
-    finally { setUploadingAssinado(false); }
+  const handleVirtualSignedSaved = async ({ contratoFinalUrl, contratoFinalPath, imagemDataUrl }: {
+    contratoFinalUrl: string; contratoFinalPath: string; imagemDataUrl: string;
+  }) => {
+    await updateDoc(projectRef, {
+      'propostaDocumento.contratoFinalUrl': contratoFinalUrl,
+      'propostaDocumento.contratoFinalPath': contratoFinalPath,
+      'propostaDocumento.assinaturaDesenho': {
+        imagemDataUrl,
+        assinadoEm: Timestamp.now(),
+        assinadoPor: propostaDoc?.aceitoPor || project.clientName,
+        assinadoPorEmail: propostaDoc?.aceitoPorEmail || '',
+      },
+      'propostaDocumento.status': 'assinado',
+      'propostaDocumento.assinadoEm': Timestamp.now(),
+      updatedAt: serverTimestamp(),
+    });
+    setShowSignPad(false);
   };
 
-  const handleUploadPDF = async (file: File) => {
-    if (!contrato) return;
-    setUploadingPDF(true);
-    try { await uploadContratoPDF(contrato.id, file); }
-    finally { setUploadingPDF(false); }
+  const handleUploadAssinadoExterno = async (file: File) => {
+    setBusy('upload-assinado');
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+      const path = `projects/${project.id}/contrato_assinado/${Date.now()}.${ext}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file);
+      const url = await getDownloadURL(ref);
+      const urlsAnteriores = propostaDoc?.contratoAssinadoUrls || [];
+      await updateDoc(projectRef, {
+        'propostaDocumento.contratoAssinadoUrls': [...urlsAnteriores, url],
+        'propostaDocumento.status': 'assinado',
+        'propostaDocumento.assinadoEm': Timestamp.now(),
+        updatedAt: serverTimestamp(),
+      });
+    } finally {
+      setBusy(null);
+    }
   };
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-brand-600" /></div>;
+  const handleVoltarParaProposta = async () => {
+    if (!voltarMotivo.trim()) return;
+    setBusy('voltar');
+    try {
+      // Reseta sub-status e zera assinatura virtual (se houve) — preserva contratoPdfUrl
+      const updates: Record<string, any> = {
+        'propostaDocumento.status': 'publicado',
+        updatedAt: serverTimestamp(),
+      };
+      if (propostaDoc?.assinaturaDesenho) updates['propostaDocumento.assinaturaDesenho'] = null;
+      if (propostaDoc?.contratoFinalUrl) {
+        updates['propostaDocumento.contratoFinalUrl'] = null;
+        updates['propostaDocumento.contratoFinalPath'] = null;
+      }
+      if (propostaDoc?.assinadoEm) updates['propostaDocumento.assinadoEm'] = null;
+      await updateDoc(projectRef, updates);
 
-  /* ── Estado: Sem contrato ── */
-  if (!contrato) {
+      const result = await advancePhase(
+        project.id, 'proposta_enviada',
+        `Cliente pediu ajustes na proposta: ${voltarMotivo}`,
+      );
+      if (!result.success) {
+        alert(`Erro ao retornar para Proposta: ${result.error}`);
+      }
+      setShowVoltar(false);
+      setVoltarMotivo('');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleSaveAssinaturaCampo = async (campo: AssinaturaCampo) => {
+    await updateDoc(projectRef, {
+      'propostaDocumento.assinaturaCampo': campo,
+      updatedAt: serverTimestamp(),
+    });
+    setShowCampoEditor(false);
+  };
+
+  const handleAvancarManual = async () => {
+    setBusy('avancar');
+    try {
+      const result = await advancePhase(project.id, 'contrato_assinado', 'Avanço manual após assinatura');
+      if (!result.success) alert(result.error || 'Erro');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // ── Estado: sem propostaDocumento ──────────────────────────────────────────
+  if (!propostaDoc || !propostaDoc.slug) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-gray-900 flex items-center gap-2">📝 Contrato</h3>
-        </div>
-
-        {!showEditor ? (
-          <div className="text-center py-10 text-gray-400">
-            <FileText className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-            <p className="text-sm font-medium">Nenhum contrato criado.</p>
-            <p className="text-xs text-gray-400 mt-1">Crie o contrato com base no template padrão ou escreva um personalizado.</p>
-            <button onClick={() => {
-              setTextoContrato(TEMPLATE_PADRAO(projectNome, clientName, valorTotal));
-              setValorContrato(valorTotal);
-              setShowEditor(true);
-            }}
-              className="mt-4 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 flex items-center gap-2 mx-auto">
-              <FileText className="w-4 h-4" />
-              Criar Contrato
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">Valor do Contrato (R$)</label>
-                <input type="number" value={valorContrato} onChange={e => {
-                  const v = Number(e.target.value);
-                  setValorContrato(v);
-                  setTextoContrato(TEMPLATE_PADRAO(projectNome, clientName, v));
-                }}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">Link de Apresentação/Proposta (opcional)</label>
-                <input value={linkPublico} onChange={e => setLinkPublico(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"
-                  placeholder="https://..." />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-gray-600 block mb-1">Texto do Contrato</label>
-              <textarea value={textoContrato} onChange={e => setTextoContrato(e.target.value)} rows={16}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-mono resize-y"
-                placeholder="Texto do contrato..." />
-            </div>
-
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowEditor(false)}
-                className="px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
-                Cancelar
-              </button>
-              <button onClick={handleCreate} disabled={saving}
-                className="px-5 py-2 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1">
-                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Salvar Contrato
-              </button>
-            </div>
-          </div>
-        )}
+      <div className="text-center py-10 text-gray-500">
+        <AlertCircle className="w-10 h-10 mx-auto mb-3 text-amber-400" />
+        <p className="text-sm font-medium">Este projeto não tem documento de proposta vinculado.</p>
+        <p className="text-xs text-gray-400 mt-1">Volte para a Fase Proposta e suba o contrato no Passo 3 antes de avançar.</p>
       </div>
     );
   }
 
-  /* ── Estado: Contrato criado ── */
-  const statusCfg = STATUS_CONFIG[contrato.status as ContratoStatus];
+  const statusCfg = STATUS_CONFIG[status];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-gray-900 flex items-center gap-2">📝 Contrato</h3>
-        <span className={`text-xs font-bold px-3 py-1 rounded-full border flex items-center gap-1.5 ${statusCfg.color}`}>
-          {statusCfg.icon}{statusCfg.label}
+    <div className="space-y-5">
+
+      {/* Header com status */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="font-extrabold text-gray-900 flex items-center gap-2 text-base">
+            📝 Contrato
+          </h3>
+          <p className="text-xs text-gray-400 mt-0.5">{project.nome} · {project.clientName}</p>
+        </div>
+        <span className={`text-xs font-bold px-3 py-1.5 rounded-full border ${statusCfg.color}`}>
+          {statusCfg.label}
         </span>
       </div>
 
-      {/* Info resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {[
-          { label: 'Cliente', value: contrato.clientName },
-          { label: 'Valor Contrato', value: fmtCurrency(Number(contrato.variaveis?.valorContrato) || 0) },
-          { label: 'Criado em', value: fmtDate(contrato.criadoEm) },
-          ...(contrato.enviadoEm ? [{ label: 'Enviado em', value: fmtDate(contrato.enviadoEm) }] : []),
-          ...(contrato.assinadoEm ? [{ label: 'Assinado em', value: fmtDate(contrato.assinadoEm) }] : []),
-        ].map(f => (
-          <div key={f.label} className="bg-gray-50 rounded-xl p-3">
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{f.label}</p>
-            <p className="text-sm font-bold text-gray-900 mt-0.5">{f.value}</p>
-          </div>
-        ))}
+      {/* Banner descritivo do status */}
+      <div className="rounded-2xl p-4 bg-gray-50 border border-gray-200 flex items-start gap-3">
+        <Info className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
+        <div className="text-xs text-gray-700 leading-relaxed">{statusCfg.descricao}</div>
       </div>
 
       {/* Timeline */}
-      <div className="flex items-center gap-2">
-        {(['rascunho', 'enviado', 'assinado'] as ContratoStatus[]).map((s, i, arr) => {
-          const stages = ['rascunho', 'enviado', 'assinado'];
-          const currentIdx = stages.indexOf(contrato.status);
-          const done = i <= currentIdx;
+      <div className="flex items-center gap-2 bg-white border border-gray-100 rounded-2xl px-5 py-3">
+        {(['publicado', 'aceito', 'assinado'] as SubStatus[]).map((s, i, arr) => {
+          const idx = ['publicado', 'aceito', 'assinado'].indexOf(status);
+          const done = i <= idx;
           return (
             <React.Fragment key={s}>
-              <div className="flex items-center gap-1.5">
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-all ${done ? 'bg-brand-600 border-brand-600 text-white' : 'border-gray-200 text-gray-400'}`}>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold flex-shrink-0 ${done ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-400'}`}>
                   {done ? '✓' : i + 1}
                 </div>
-                <span className={`text-xs font-medium ${done ? 'text-brand-700' : 'text-gray-400'}`}>
+                <span className={`text-xs font-bold hidden sm:block truncate ${done ? 'text-emerald-700' : 'text-gray-400'}`}>
                   {STATUS_CONFIG[s].label}
                 </span>
               </div>
-              {i < arr.length - 1 && <div className={`flex-1 h-0.5 ${i < currentIdx ? 'bg-brand-500' : 'bg-gray-200'}`} />}
+              {i < arr.length - 1 && <div className={`h-0.5 flex-1 max-w-12 rounded-full ${i < idx ? 'bg-emerald-300' : 'bg-gray-100'}`} />}
             </React.Fragment>
           );
         })}
       </div>
 
-      {/* Ações by status */}
-      <div className="flex flex-wrap gap-2">
-        {/* Ver/baixar contrato */}
-        {contrato.documentoPdfUrl ? (
-          <a href={contrato.documentoPdfUrl} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-50">
-            <Download className="w-3.5 h-3.5" /> Baixar Contrato
-          </a>
+      {/* Resumo das datas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {[
+          { label: 'Publicado', value: fmtDate(propostaDoc.publicadoEm) },
+          ...(propostaDoc.aceitoEm ? [{ label: 'Aceito por',    value: `${propostaDoc.aceitoPor || '—'} · ${fmtDate(propostaDoc.aceitoEm)}` }] : []),
+          ...(propostaDoc.assinadoEm ? [{ label: 'Assinado em', value: fmtDate(propostaDoc.assinadoEm) }] : []),
+        ].map(f => (
+          <div key={f.label} className="bg-gray-50 rounded-xl p-3">
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{f.label}</p>
+            <p className="text-sm font-bold text-gray-900 mt-0.5 break-words">{f.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Link público + contrato PDF */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+        <p className="text-xs font-bold text-gray-700">Link público do cliente</p>
+        {linkPublico ? (
+          <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2">
+            <span className="text-xs font-mono text-indigo-700 truncate flex-1">{linkPublico}</span>
+            <button onClick={() => navigator.clipboard.writeText(linkPublico)}
+              className="text-[10px] font-bold text-indigo-700 hover:underline flex-shrink-0">
+              Copiar
+            </button>
+            <a href={linkPublico} target="_blank" rel="noopener noreferrer"
+              className="p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-600 flex-shrink-0">
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
         ) : (
-          <button onClick={() => pdfRef.current?.click()} disabled={uploadingPDF}
-            className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50">
-            {uploadingPDF ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            Upload PDF Contrato
-          </button>
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+            Slug não definido. Volte para a Proposta e publique o documento.
+          </p>
         )}
 
-        {/* Marcar como enviado */}
-        {contrato.status === 'rascunho' && (
-          <button onClick={() => marcarEnviado(contrato.id)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">
-            <Send className="w-3.5 h-3.5" /> Marcar como Enviado
-          </button>
-        )}
-
-        {/* Link público da apresentação */}
-        {contrato.variaveis?.linkPublico && (
-          <a href={contrato.variaveis.linkPublico} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-2 border border-brand-200 text-brand-600 rounded-xl text-xs font-bold hover:bg-brand-50">
-            <ExternalLink className="w-3.5 h-3.5" /> Ver Apresentação
-          </a>
-        )}
-
-        {/* Upload assinado */}
-        {['rascunho', 'enviado'].includes(contrato.status) && (
-          <button onClick={() => assinadoRef.current?.click()} disabled={uploadingAssinado}
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 disabled:opacity-50">
-            {uploadingAssinado ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pen className="w-3.5 h-3.5" />}
-            Upload Assinado
-          </button>
-        )}
-
-        {/* Contrato assinado — link */}
-        {contrato.documentoAssinadoUrl && (
-          <a href={contrato.documentoAssinadoUrl} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-100">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Ver Contrato Assinado
-          </a>
+        {propostaDoc.contratoPdfUrl ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <a href={propostaDoc.contratoPdfUrl} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-50">
+              <Download className="w-3.5 h-3.5" /> Baixar Contrato Original
+            </a>
+            <button onClick={() => setShowCampoEditor(true)}
+              className="flex items-center gap-1.5 px-3 py-2 border border-purple-200 text-purple-700 rounded-xl text-xs font-bold hover:bg-purple-50">
+              <Pen className="w-3.5 h-3.5" />
+              {propostaDoc.assinaturaCampo ? 'Redesenhar campo de assinatura' : 'Marcar campo de assinatura'}
+            </button>
+            {propostaDoc.contratoFinalUrl && (
+              <a href={propostaDoc.contratoFinalUrl} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-100">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Contrato Assinado (virtual)
+              </a>
+            )}
+            {(propostaDoc.contratoAssinadoUrls || []).map((u, i) => (
+              <a key={u} href={u} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-100">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Anexo Assinado #{i + 1}
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+            ⚠️ Sem PDF de contrato vinculado. Volte para a Proposta (Passo 3) e suba o contrato.
+          </p>
         )}
       </div>
 
-      {/* Texto do contrato (colapsável) */}
-      {contrato.conteudoHtml && (
-        <details className="bg-gray-50 rounded-xl border border-gray-200">
-          <summary className="px-4 py-3 cursor-pointer text-xs font-bold text-gray-600 select-none">
-            📄 Ver texto do contrato
-          </summary>
-          <pre className="px-4 pb-4 text-xs text-gray-700 font-mono whitespace-pre-wrap leading-relaxed">
-            {contrato.conteudoHtml}
-          </pre>
-        </details>
+      {/* Ações da retaguarda — espelhos das ações do cliente */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+        <p className="text-xs font-bold text-gray-700">
+          Ações da retaguarda
+          <span className="text-[10px] font-normal text-gray-400 ml-2">
+            (use quando o cliente fechar por WhatsApp / presencialmente)
+          </span>
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          {/* Registrar aceite externo */}
+          {status === 'publicado' && (
+            <button onClick={() => setShowAceiteModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Registrar aceite (em nome do cliente)
+            </button>
+          )}
+
+          {/* Assinar virtualmente em nome do cliente */}
+          {status === 'aceito' && propostaDoc.contratoPdfUrl && (
+            <button onClick={() => setShowSignPad(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">
+              <Pen className="w-3.5 h-3.5" /> Assinar virtualmente (em nome do cliente)
+            </button>
+          )}
+
+          {/* Upload de contrato assinado externo */}
+          {(status === 'aceito' || status === 'publicado') && (
+            <>
+              <input ref={uploadAssinadoRef} type="file" accept="application/pdf,image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadAssinadoExterno(f); e.target.value = ''; }} />
+              <button onClick={() => uploadAssinadoRef.current?.click()} disabled={busy === 'upload-assinado'}
+                className="flex items-center gap-1.5 px-3 py-2 border border-emerald-300 text-emerald-700 bg-white rounded-xl text-xs font-bold hover:bg-emerald-50 disabled:opacity-50">
+                {busy === 'upload-assinado'
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Upload className="w-3.5 h-3.5" />}
+                Upload contrato assinado (externo)
+              </button>
+            </>
+          )}
+
+          {/* Cliente pediu ajustes — sempre disponível */}
+          <button onClick={() => setShowVoltar(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 text-amber-700 bg-white rounded-xl text-xs font-bold hover:bg-amber-50">
+            <RefreshCw className="w-3.5 h-3.5" /> 🔄 Cliente pediu ajustes
+          </button>
+
+          {/* Avanço manual quando assinado (fallback) */}
+          {status === 'assinado' && project.fase === 'contrato_enviado' && (
+            <button onClick={handleAvancarManual} disabled={busy === 'avancar'}
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 disabled:opacity-50">
+              {busy === 'avancar' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+              Avançar para Planejamento
+            </button>
+          )}
+        </div>
+
+        {/* Painel "voltar para Proposta" */}
+        {showVoltar && (
+          <div className="rounded-xl p-3 bg-amber-50 border border-amber-200 space-y-2">
+            <p className="text-xs font-bold text-amber-900">O que o cliente pediu para ajustar?</p>
+            <textarea value={voltarMotivo} onChange={e => setVoltarMotivo(e.target.value)}
+              rows={2} placeholder="Ex: alteração de prazo, escopo a mais, condição de pagamento..."
+              className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-amber-300" />
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={handleVoltarParaProposta} disabled={!voltarMotivo.trim() || busy === 'voltar'}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 disabled:opacity-50">
+                {busy === 'voltar' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowLeft className="w-3.5 h-3.5" />}
+                Voltar para Proposta
+              </button>
+              <button onClick={() => { setShowVoltar(false); setVoltarMotivo(''); }}
+                className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs">
+                <X className="w-3.5 h-3.5" /> Cancelar
+              </button>
+            </div>
+            {status === 'assinado' && (
+              <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+                ⚠️ Este contrato já foi assinado. Voltar agora <strong>resetará</strong> a assinatura virtual e o status (mantém anexos externos no histórico).
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Modal de aceite (em nome do cliente) */}
+      {showAceiteModal && (
+        <div className="fixed inset-0 z-[500] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-extrabold text-gray-900">Registrar Aceite</h3>
+              <button onClick={() => setShowAceiteModal(false)}><X className="w-4 h-4 text-gray-400" /></button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Use isto quando o cliente confirmou a aceitação fora do sistema (WhatsApp, telefone, presencial).
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">Nome de quem aceitou *</label>
+                <input value={aceiteNome} onChange={e => setAceiteNome(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">E-mail (opcional)</label>
+                <input value={aceiteEmail} onChange={e => setAceiteEmail(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4 justify-end">
+              <button onClick={() => setShowAceiteModal(false)}
+                className="px-4 py-2 border border-gray-200 rounded-xl text-sm">
+                Cancelar
+              </button>
+              <button onClick={handleRegistrarAceite} disabled={!aceiteNome.trim() || busy === 'aceite'}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
+                {busy === 'aceite' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Registrar Aceite
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Hidden inputs */}
-      <input ref={assinadoRef} type="file" accept="application/pdf,image/*" className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadAssinado(f); e.target.value = ''; }} />
-      <input ref={pdfRef} type="file" accept="application/pdf" className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadPDF(f); e.target.value = ''; }} />
+      {/* Modais de assinatura/campo */}
+      {showSignPad && propostaDoc.contratoPdfUrl && (
+        <SignaturePadModal
+          projectId={project.id}
+          contratoPdfUrl={propostaDoc.contratoPdfUrl}
+          assinaturaCampo={propostaDoc.assinaturaCampo}
+          signerNome={propostaDoc.aceitoPor || project.clientName}
+          onClose={() => setShowSignPad(false)}
+          onSigned={handleVirtualSignedSaved}
+        />
+      )}
+
+      {showCampoEditor && propostaDoc.contratoPdfUrl && (
+        <ContratoSignatureFieldEditor
+          contratoPdfUrl={propostaDoc.contratoPdfUrl}
+          initial={propostaDoc.assinaturaCampo}
+          onClose={() => setShowCampoEditor(false)}
+          onSave={handleSaveAssinaturaCampo}
+        />
+      )}
     </div>
   );
 };

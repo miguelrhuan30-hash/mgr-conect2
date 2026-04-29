@@ -26,7 +26,7 @@ import {
   Save, Check, Loader2, Send, Copy, ExternalLink, Link2,
   MessageCircle, ArrowRight, ArrowLeft, RefreshCw, AlertCircle,
   ChevronDown, ChevronUp, Upload, FileText, Play, Plus,
-  Presentation as PresentIcon, X, Trash2, Eye, FileCode,
+  Presentation as PresentIcon, X, Trash2, Eye, FileCode, Pen,
 } from 'lucide-react';
 import {
   collection, query, orderBy, onSnapshot, addDoc,
@@ -44,7 +44,8 @@ import {
 } from '../types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import ProjectPropostaDoc from './ProjectPropostaDoc';
+import ContratoSignatureFieldEditor from './ContratoSignatureFieldEditor';
+import type { AssinaturaCampo } from '../types';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
@@ -236,7 +237,6 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [secaoPdf, setSecaoPdf] = useState(true);
   const [secaoDoc, setSecaoDoc] = useState(true);
   const [secaoEnvio, setSecaoEnvio] = useState(true);
-  const [secaoAprovacao, setSecaoAprovacao] = useState(true);
 
   // Upload PDF Apresentação
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -250,6 +250,12 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [pdfDescritivoUrl, setPdfDescritivoUrl] = useState(dados.pdfDescritivo || '');
   const [pdfDescritivoExtUrl, setPdfDescritivoExtUrl] = useState(dados.pdfDescritivo || '');
   const fileInputDescRef = useRef<HTMLInputElement>(null);
+
+  // Upload Contrato PDF (Passo 3)
+  const [uploadProgressContrato, setUploadProgressContrato] = useState<number | null>(null);
+  const [uploadErrorContrato, setUploadErrorContrato] = useState('');
+  const fileInputContratoRef = useRef<HTMLInputElement>(null);
+  const [showCampoEditor, setShowCampoEditor] = useState(false);
 
   // Upload HTML Apresentação
   const [uploadProgressHtml, setUploadProgressHtml] = useState<number | null>(null);
@@ -265,9 +271,6 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const [copied, setCopied] = useState(false);
   const [avancandoContrato, setAvancandoContrato] = useState(false);
   const [contratoAvancado, setContratoAvancado] = useState(false);
-  const [voltando, setVoltando] = useState(false);
-  const [showVoltarOpcoes, setShowVoltarOpcoes] = useState(false);
-  const [revisaoMotivo, setRevisaoMotivo] = useState('');
 
   // Link do documento de proposta HTML (cláusulas) — só quando publicado
   const propostaDocLink = useMemo(() => {
@@ -490,6 +493,45 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
     } finally { setSaving(false); }
   };
 
+  // ── Upload Contrato PDF (Passo 3) ──────────────────────────────────────────
+  // Grava direto em propostaDocumento.contratoPdfUrl/Path (não em propostaDados).
+  const handleUploadContrato = (file: File) => {
+    if (!file) return;
+    setUploadErrorContrato('');
+    setUploadProgressContrato(0);
+    const path = `projects/${project.id}/contrato.pdf`;
+    const ref = storageRef(storage, path);
+    const task = uploadBytesResumable(ref, file, { contentType: 'application/pdf' });
+    task.on(
+      'state_changed',
+      snap => setUploadProgressContrato(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+      err => { setUploadErrorContrato(err.message); setUploadProgressContrato(null); },
+      async () => {
+        try {
+          const url = await getDownloadURL(ref);
+          await garantirPropostaSlug();
+          await updateDoc(doc(db, CollectionName.PROJECTS_V2, project.id), {
+            'propostaDocumento.contratoPdfUrl': url,
+            'propostaDocumento.contratoPdfPath': path,
+            updatedAt: serverTimestamp(),
+          });
+          setUploadProgressContrato(null);
+        } catch (e: any) {
+          setUploadErrorContrato(e?.message || 'Erro ao salvar contrato');
+          setUploadProgressContrato(null);
+        }
+      },
+    );
+  };
+
+  const handleSaveAssinaturaCampo = async (campo: AssinaturaCampo) => {
+    await updateDoc(doc(db, CollectionName.PROJECTS_V2, project.id), {
+      'propostaDocumento.assinaturaCampo': campo,
+      updatedAt: serverTimestamp(),
+    });
+    setShowCampoEditor(false);
+  };
+
   // ── Upload HTML Apresentação ───────────────────────────────────────────────
   const handleUploadHtml = (file: File) => {
     if (!file) return;
@@ -537,20 +579,33 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
     setTimeout(() => setCopied(false), 2500);
   };
 
-  // ── Aprovação → Contrato ───────────────────────────────────────────────────
-  const handleAvançarContrato = async () => {
-    if (!window.confirm('Confirmar aprovação do cliente? O projeto avançará para a fase de Contrato.')) return;
+  // ── Apresentação Enviada → Contrato ────────────────────────────────────────
+  // Avança para a Fase Contrato. A aprovação do cliente acontece DENTRO da Fase Contrato
+  // (cliente clica "Aceitar Proposta" no link público; status muda para 'aceito' e libera assinatura).
+  const handleApresentacaoEnviada = async () => {
+    if (!window.confirm('Confirmar que a apresentação foi enviada ao cliente?\n\nO card avança para Contrato (status: aguardando aprovação do cliente).')) return;
     setAvancandoContrato(true);
     try {
+      // Garante slug + status='publicado' (link público fica acessível ao cliente)
+      await garantirPropostaSlug();
+      const statusAtual = project.propostaDocumento?.status;
+      if (!statusAtual || statusAtual === 'rascunho') {
+        await updateDoc(doc(db, CollectionName.PROJECTS_V2, project.id), {
+          'propostaDocumento.status': 'publicado',
+          'propostaDocumento.publicadoEm': Timestamp.now(),
+          updatedAt: serverTimestamp(),
+        });
+      }
       const novoDados: PropostaDados = {
-        ...dados, status: 'aprovado', aprovadoEm: Timestamp.now() as any,
+        ...dados, status: 'enviado',
+        enviadoEm: dados.enviadoEm || (Timestamp.now() as any),
       };
       await updateProject(project.id, { propostaDados: novoDados as any });
       setDados(novoDados);
 
       const result = await advancePhase(
         project.id, 'contrato_enviado',
-        'Proposta aprovada pelo cliente — avançando para Contrato',
+        'Apresentação enviada ao cliente — avançando para Contrato (aguardando aprovação)',
       );
       if (!result.success) {
         alert(`Não foi possível avançar: ${result.error || 'Erro desconhecido'}`);
@@ -564,40 +619,14 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
     }
   };
 
-  // ── Revisão → Voltar ───────────────────────────────────────────────────────
-  const handleVoltar = async (fase: ProjectPhase) => {
-    if (!revisaoMotivo.trim()) {
-      alert('Descreva o que o cliente pediu para ajustar.');
-      return;
-    }
-    setVoltando(true);
-    try {
-      const novoDados: PropostaDados = { ...dados, status: 'revisao', revisaoMotivo };
-      await updateProject(project.id, { propostaDados: novoDados as any });
-      setDados(novoDados);
-
-      const label = fase === 'cotacao_recebida' ? 'Cotação' : 'Prancheta';
-      const result = await advancePhase(
-        project.id, fase,
-        `Revisão — retornando para ${label}: ${revisaoMotivo}`,
-      );
-      if (!result.success) alert(`Erro ao retornar: ${result.error}`);
-    } catch (err: any) {
-      alert(`Erro: ${err?.message || String(err)}`);
-    } finally {
-      setVoltando(false);
-      setShowVoltarOpcoes(false);
-    }
-  };
-
   // ── Confirmação final ──────────────────────────────────────────────────────
   if (contratoAvancado) {
     return (
       <div className="rounded-2xl p-6 bg-emerald-50 border border-emerald-300 flex items-center gap-4">
         <Check className="w-8 h-8 text-emerald-600 flex-shrink-0" />
         <div>
-          <p className="text-base font-extrabold text-emerald-800">🎉 Proposta aprovada! Avançando para Contrato.</p>
-          <p className="text-sm text-emerald-600 mt-1">Acesse a fase de Contrato para gerar e enviar o contrato ao cliente.</p>
+          <p className="text-base font-extrabold text-emerald-800">🎉 Apresentação enviada! Avançando para Contrato.</p>
+          <p className="text-sm text-emerald-600 mt-1">O cliente pode aceitar e assinar pelo link público. Acompanhe pelo painel da fase Contrato.</p>
         </div>
       </div>
     );
@@ -609,16 +638,15 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
   const temHtml = !!(htmlApresUrl);
   const temPdfDescritivo = !!(pdfDescritivoUrl);
   const temSlideLink = !!linkSlides;
-  const temDocPublicado = !!project.propostaDocumento?.slug &&
-    project.propostaDocumento.status !== 'rascunho';
+  const temContratoPdf = !!project.propostaDocumento?.contratoPdfUrl;
+  const temAssinaturaCampo = !!project.propostaDocumento?.assinaturaCampo;
 
   // ── Passos de progresso ────────────────────────────────────────────────────
   const steps = [
-    { n: 1, label: 'Slides',    done: temApresentacao,                                            icon: '🎨' },
-    { n: 2, label: 'PDF',       done: temPdf,                                                     icon: '📄' },
-    { n: 3, label: 'Documento', done: temDocPublicado,                                            icon: '📋' },
-    { n: 4, label: 'Envio',     done: dados.status === 'enviado' || dados.status === 'aprovado',  icon: '📱' },
-    { n: 5, label: 'Aprovação', done: dados.status === 'aprovado',                               icon: '✅' },
+    { n: 1, label: 'Slides',   done: temApresentacao || temPdf || temHtml,                        icon: '🎨' },
+    { n: 2, label: 'PDF',      done: temPdfDescritivo,                                            icon: '📄' },
+    { n: 3, label: 'Contrato', done: temContratoPdf,                                              icon: '📋' },
+    { n: 4, label: 'Envio',    done: dados.status === 'enviado' || dados.status === 'aprovado',   icon: '📱' },
   ];
 
   return (
@@ -930,34 +958,88 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
         )}
       </div>
 
-      {/* ══ PASSO 3: Documento Comercial (Cláusulas HTML) ══ */}
+      {/* ══ PASSO 3: Contrato (PDF para assinatura) ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
         <button onClick={() => setSecaoDoc(!secaoDoc)}
           className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temDocPublicado ? 'bg-emerald-100' : 'bg-purple-100'}`}>
-              <FileText className={`w-3.5 h-3.5 ${temDocPublicado ? 'text-emerald-600' : 'text-purple-500'}`} />
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${temContratoPdf ? 'bg-emerald-100' : 'bg-purple-100'}`}>
+              <FileText className={`w-3.5 h-3.5 ${temContratoPdf ? 'text-emerald-600' : 'text-purple-500'}`} />
             </div>
-            <span className="text-sm font-bold text-gray-800">Passo 3 — Documento Comercial</span>
-            {temDocPublicado
-              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">✓ Publicado</span>
-              : project.propostaDocumento?.clausulas?.length
-                ? <span className="text-[9px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-bold">Rascunho</span>
-                : <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">Cláusulas + Aceite</span>
-            }
+            <span className="text-sm font-bold text-gray-800">Passo 3 — Contrato</span>
+            {temContratoPdf
+              ? <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">
+                  ✓ Vinculado{temAssinaturaCampo ? ' · campo definido' : ''}
+                </span>
+              : <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">PDF para assinatura</span>}
           </div>
           {secaoDoc ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
 
         {secaoDoc && (
-          <div className="px-5 pb-5 border-t border-gray-100 pt-4">
-            <p className="text-xs text-gray-500 mb-4">
-              Crie o documento com cláusulas personalizadas, publique e envie o link ao cliente para leitura e aceite formal online.
+          <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-3">
+            <p className="text-xs text-gray-500">
+              Suba o PDF do contrato. Ele será disponibilizado junto com a apresentação para o cliente assinar online (canvas)
+              ou imprimir/escanear.
             </p>
-            <ProjectPropostaDoc project={project} />
+
+            {temContratoPdf && (
+              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span className="text-xs text-emerald-700 flex-1 truncate">Contrato vinculado ✓</span>
+                <a href={project.propostaDocumento?.contratoPdfUrl || '#'} target="_blank" rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 flex-shrink-0">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            )}
+
+            <input type="file" accept=".pdf" ref={fileInputContratoRef} className="hidden"
+              onChange={e => { if (e.target.files?.[0]) handleUploadContrato(e.target.files[0]); }} />
+            <button onClick={() => fileInputContratoRef.current?.click()} disabled={uploadProgressContrato !== null}
+              className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-600 hover:border-purple-400 hover:text-purple-600 hover:bg-purple-50 disabled:opacity-50 transition-all w-full justify-center">
+              {uploadProgressContrato !== null
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgressContrato}%</>
+                : <><Upload className="w-4 h-4" /> {temContratoPdf ? 'Substituir Contrato' : 'Upload Contrato PDF'}</>}
+            </button>
+            {uploadErrorContrato && <p className="text-xs text-red-600">{uploadErrorContrato}</p>}
+
+            {temContratoPdf && (
+              <div className="rounded-xl p-3 bg-purple-50 border border-purple-200 space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-base">✍️</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-purple-900">
+                      {temAssinaturaCampo
+                        ? `Campo de assinatura definido na página ${project.propostaDocumento?.assinaturaCampo?.page}`
+                        : 'Defina onde o cliente assina'}
+                    </p>
+                    <p className="text-[10px] text-purple-700 mt-0.5">
+                      {temAssinaturaCampo
+                        ? 'O cliente desenha a assinatura e o sistema carimba nessa posição. Você pode redesenhar a qualquer momento.'
+                        : 'Marque visualmente o retângulo onde a assinatura virtual do cliente será carimbada no PDF.'}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setShowCampoEditor(true)}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700">
+                  <Pen className="w-3.5 h-3.5" />
+                  {temAssinaturaCampo ? 'Redesenhar campo de assinatura' : 'Marcar campo de assinatura no PDF'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {showCampoEditor && project.propostaDocumento?.contratoPdfUrl && (
+        <ContratoSignatureFieldEditor
+          contratoPdfUrl={project.propostaDocumento.contratoPdfUrl}
+          initial={project.propostaDocumento.assinaturaCampo}
+          onClose={() => setShowCampoEditor(false)}
+          onSave={handleSaveAssinaturaCampo}
+        />
+      )}
 
       {/* ══ PASSO 4: Envio ao Cliente ══ */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
@@ -1032,100 +1114,33 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
                 </button>
               </div>
             </div>
-          </div>
-        )}
-      </div>
 
-      {/* ══ PASSO 5: Aprovação ══ */}
-      {faseAtual === 'proposta_enviada' && dados.status !== 'aprovado' && (
-        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-          <button onClick={() => setSecaoAprovacao(!secaoAprovacao)}
-            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-emerald-100 rounded-lg flex items-center justify-center">
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-              </div>
-              <span className="text-sm font-bold text-gray-800">Passo 5 — Aprovação do Cliente</span>
-            </div>
-            {secaoAprovacao ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-          </button>
-
-          {secaoAprovacao && (
-            <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-4">
-
-              {/* Aprovar */}
-              <div className="rounded-xl p-4 bg-emerald-50 border border-emerald-200 space-y-3">
+            {/* Avançar para Contrato — apresentação enviada */}
+            {faseAtual === 'proposta_enviada' && (
+              <div className="rounded-xl p-4 bg-emerald-50 border border-emerald-200 space-y-3 mt-2">
                 <div>
-                  <p className="text-sm font-bold text-emerald-900">✅ Cliente aprovou a proposta?</p>
-                  <p className="text-xs text-emerald-700 mt-0.5">Registre a aprovação para avançar para a fase de Contrato.</p>
+                  <p className="text-sm font-bold text-emerald-900">✅ Apresentação enviada ao cliente?</p>
+                  <p className="text-xs text-emerald-700 mt-0.5">
+                    Avance para Contrato. A aprovação do cliente acontece dentro da Fase Contrato — ele aceita e assina pelo link público,
+                    ou você registra externamente pela retaguarda.
+                  </p>
+                  {!temContratoPdf && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mt-2">
+                      ⚠️ Você ainda não vinculou o PDF do contrato no Passo 3. Sem isso o cliente só conseguirá ver a apresentação, não assinar.
+                    </p>
+                  )}
                 </div>
-                <button onClick={handleAvançarContrato} disabled={avancandoContrato}
+                <button onClick={handleApresentacaoEnviada} disabled={avancandoContrato}
                   className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm">
                   {avancandoContrato
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Avançando...</>
-                    : <><ArrowRight className="w-4 h-4" /> Cliente Aprovou — Avançar para Contrato</>}
+                    : <><ArrowRight className="w-4 h-4" /> Apresentação Enviada — Avançar para Contrato</>}
                 </button>
               </div>
-
-              {/* Revisão */}
-              <div className="rounded-xl p-4 bg-amber-50 border border-amber-200 space-y-3">
-                <div>
-                  <p className="text-sm font-bold text-amber-900">🔄 Cliente pediu ajustes?</p>
-                  <p className="text-xs text-amber-700 mt-0.5">Volte para a fase adequada, ajuste e reenvie uma nova proposta.</p>
-                </div>
-
-                {!showVoltarOpcoes ? (
-                  <button onClick={() => setShowVoltarOpcoes(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 border border-amber-300 text-amber-700 bg-white rounded-xl text-sm font-bold hover:bg-amber-100 transition-colors">
-                    <RefreshCw className="w-4 h-4" /> Solicitar Revisão
-                  </button>
-                ) : (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-xs font-bold text-amber-800 block mb-1.5">O que o cliente pediu para ajustar? *</label>
-                      <textarea
-                        value={revisaoMotivo}
-                        onChange={e => setRevisaoMotivo(e.target.value)}
-                        rows={2}
-                        placeholder="Ex: Prazo de pagamento diferente; Incluir mais serviços..."
-                        className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:ring-2 focus:ring-amber-300 bg-white" />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={() => handleVoltar('cotacao_recebida')} disabled={voltando || !revisaoMotivo.trim()}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 disabled:opacity-50 transition-colors">
-                        {voltando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowLeft className="w-4 h-4" />}
-                        ← Revisar Cotações
-                      </button>
-                      <button onClick={() => handleVoltar('em_levantamento')} disabled={voltando || !revisaoMotivo.trim()}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                        {voltando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowLeft className="w-4 h-4" />}
-                        ← Revisar Prancheta
-                      </button>
-                      <button onClick={() => { setShowVoltarOpcoes(false); setRevisaoMotivo(''); }}
-                        className="flex items-center gap-1.5 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors">
-                        <X className="w-4 h-4" /> Cancelar
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Status aprovado */}
-      {dados.status === 'aprovado' && (
-        <div className="rounded-2xl p-4 bg-emerald-50 border border-emerald-200 flex items-center gap-3">
-          <Check className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-          <div>
-            <p className="text-sm font-bold text-emerald-800">Proposta aprovada pelo cliente</p>
-            {dados.aprovadoEm && (
-              <p className="text-xs text-emerald-600 mt-0.5">{fmtDate(dados.aprovadoEm)}</p>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
     </div>
   );
