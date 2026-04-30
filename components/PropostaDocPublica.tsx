@@ -653,6 +653,19 @@ const PropostaDocPublica: React.FC = () => {
     setWowMoment(true);
   }, [projectId, proposta, wowNome, clienteNome]);
 
+  // ESC fecha fullscreen + bloqueia scroll do body enquanto ativo
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [fullscreen]);
+
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) return (
     <div style={{
@@ -726,19 +739,6 @@ const PropostaDocPublica: React.FC = () => {
     : isSlidesEmbed
     ? 'Apresentação da Proposta'
     : 'Apresentação da Proposta (PDF)';
-
-  // ESC fecha fullscreen + bloqueia scroll do body enquanto ativo
-  useEffect(() => {
-    if (!fullscreen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [fullscreen]);
 
   return (
     <div style={{
