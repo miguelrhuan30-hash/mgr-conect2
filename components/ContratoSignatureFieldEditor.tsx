@@ -12,9 +12,12 @@ import 'react-pdf/dist/Page/TextLayer.css';
 import { ChevronLeft, ChevronRight, Check, Loader2, X, RotateCcw } from 'lucide-react';
 import type { AssinaturaCampo } from '../types';
 
-// Worker do pdfjs servido pelo bundler/CDN.
-// react-pdf 10.x usa pdfjs-dist 5.x; o worker é .mjs.
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Worker do pdfjs via import.meta.url — Vite resolve o caminho local corretamente.
+// Evita dependência de CDN externa (unpkg) que pode falhar por CORS ou indisponibilidade.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 interface Props {
   contratoPdfUrl: string;
@@ -32,6 +35,7 @@ const ContratoSignatureFieldEditor: React.FC<Props> = ({
   const [campo, setCampo] = useState<AssinaturaCampo | null>(initial || null);
   const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -199,10 +203,17 @@ const ContratoSignatureFieldEditor: React.FC<Props> = ({
           }}>
           <Document
             file={contratoPdfUrl}
-            onLoadSuccess={onLoadSuccess}
-            loading={<div style={{ color: '#94a3b8', padding: 40 }}>
-              <Loader2 size={20} className="animate-spin" />
+            onLoadSuccess={(pdf) => { setLoadError(null); onLoadSuccess(pdf); }}
+            onLoadError={(err) => setLoadError(err.message || 'Erro ao carregar o PDF')}
+            loading={<div style={{ color: '#94a3b8', padding: 40, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Loader2 size={20} className="animate-spin" /> Carregando PDF…
             </div>}
+            error={
+              <div style={{ color: '#f87171', padding: 40, textAlign: 'center', maxWidth: 400 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>❌ Não foi possível carregar o PDF</div>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>{loadError || 'Verifique se o arquivo foi enviado corretamente.'}</div>
+              </div>
+            }
           >
             <Page
               pageNumber={pageNum}
