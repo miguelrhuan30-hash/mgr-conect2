@@ -7,7 +7,46 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import LoadingScreen from './components/LoadingScreen';
 import { PermissionSet, CollectionName } from './types';
-import { ShieldAlert, LogOut, Clock, Lock } from 'lucide-react';
+import { ShieldAlert, LogOut, Clock, Lock, AlertCircle } from 'lucide-react';
+
+// ─────────────────────────────────────────────
+// ERROR BOUNDARY — Rotas Públicas
+// Captura qualquer erro de render nas páginas públicas e exibe
+// mensagem amigável em vez de tela branca.
+// ─────────────────────────────────────────────
+class PublicErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error.message };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: '100vh', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          background: '#0a1628', color: '#94a3b8', gap: 16,
+          fontFamily: 'system-ui, sans-serif',
+        }}>
+          <AlertCircle size={48} color="#ef4444" />
+          <h1 style={{ color: 'white', fontSize: 22, fontWeight: 800, margin: 0 }}>
+            Erro ao carregar a apresentação
+          </h1>
+          <p style={{ margin: 0, fontSize: 14 }}>
+            Tente recarregar a página. Se o problema persistir, solicite um novo link.
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — Módulos existentes
@@ -455,9 +494,9 @@ const App: React.FC = () => (
     <Router>
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
-          <Route path="/p/:slug" element={<ApresentacaoPublica />} />
-          <Route path="/proposta/:slug" element={<PropostaDocPublica />} />
-          <Route path="/orcamentos/:id" element={<OrcamentoPublico />} />
+          <Route path="/p/:slug" element={<PublicErrorBoundary><ApresentacaoPublica /></PublicErrorBoundary>} />
+          <Route path="/proposta/:slug" element={<PublicErrorBoundary><PropostaDocPublica /></PublicErrorBoundary>} />
+          <Route path="/orcamentos/:id" element={<PublicErrorBoundary><OrcamentoPublico /></PublicErrorBoundary>} />
           <Route path="*" element={<AppContent />} />
         </Routes>
       </Suspense>

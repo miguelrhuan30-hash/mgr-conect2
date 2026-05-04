@@ -272,7 +272,7 @@ export const SlideDeliverables: React.FC<{ data: DeliverablesData; tema: TemaCon
       gridTemplateColumns: `repeat(${Math.min(data.items.length, 4) <= 2 ? 2 : Math.min(data.items.length, 4) <= 3 ? 3 : 4}, 1fr)`,
       gap: '3% 2%', flex: 1,
     }}>
-      {data.items.map((item, i) => (
+      {(data.items ?? []).map((item, i) => (
         <div key={item.id} className={`slide-anim-in slide-delay-${Math.min(i + 2, 6)}`} style={{
           background: tema.cardBg, border: `1px solid ${tema.border}`,
           borderLeft: `3px solid ${tema.accent}`,
@@ -334,7 +334,7 @@ export const SlideTimeline: React.FC<{ data: TimelineData; tema: TemaConfig }> =
     {/* Timeline horizontal */}
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', overflowX: 'hidden' }}>
       <div style={{ display: 'flex', width: '100%', alignItems: 'flex-start', gap: 0 }}>
-        {data.fases.map((fase, i) => (
+        {(data.fases ?? []).map((fase, i) => (
           <div key={fase.id} className={`slide-anim-${i % 2 === 0 ? 'in' : 'fade'} slide-delay-${Math.min(i + 2, 6)}`}
             style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
             {/* Connector line */}

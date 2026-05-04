@@ -152,7 +152,7 @@ const ApresentacaoPublica: React.FC = () => {
 
   // ── Slides visíveis ──
   const visibleSlides: SlideData[] = presentation
-    ? [...presentation.slides].sort((a, b) => a.order - b.order).filter(s => s.visible !== false)
+    ? [...(presentation.slides ?? [])].sort((a, b) => a.order - b.order).filter(s => s.visible !== false)
     : [];
 
   const total = visibleSlides.length;
