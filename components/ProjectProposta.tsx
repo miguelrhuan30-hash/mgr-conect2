@@ -1035,6 +1035,7 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       {showCampoEditor && project.propostaDocumento?.contratoPdfUrl && (
         <ContratoSignatureFieldEditor
           contratoPdfUrl={project.propostaDocumento.contratoPdfUrl}
+          contratoPdfPath={project.propostaDocumento.contratoPdfPath ?? undefined}
           initial={project.propostaDocumento.assinaturaCampo}
           onClose={() => setShowCampoEditor(false)}
           onSave={handleSaveAssinaturaCampo}

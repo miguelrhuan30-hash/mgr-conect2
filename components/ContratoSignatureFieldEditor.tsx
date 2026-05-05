@@ -5,11 +5,13 @@
  * Usa react-pdf para renderizar o PDF e captura o retângulo desenhado pelo admin
  * (clique e arraste). Salva em coordenadas relativas (0..1) para `assinaturaCampo`.
  */
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { ChevronLeft, ChevronRight, Check, Loader2, X, RotateCcw } from 'lucide-react';
+import { ref as storageRef, getBytes } from 'firebase/storage';
+import { storage } from '../firebase';
 import type { AssinaturaCampo } from '../types';
 
 // Worker do pdfjs via import.meta.url — Vite resolve o caminho local corretamente.
@@ -21,13 +23,20 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 interface Props {
   contratoPdfUrl: string;
+  /**
+   * Caminho no Firebase Storage (ex.: `projects/<id>/contrato.pdf`).
+   * Quando informado, baixamos o PDF via SDK do Firebase (getBytes) — mais robusto
+   * que `fetch` direto na download URL, que pode falhar por CORS no bucket
+   * `*.firebasestorage.app`. Cai no `contratoPdfUrl` como fallback.
+   */
+  contratoPdfPath?: string | null;
   initial?: AssinaturaCampo;
   onClose: () => void;
   onSave: (campo: AssinaturaCampo) => Promise<void> | void;
 }
 
 const ContratoSignatureFieldEditor: React.FC<Props> = ({
-  contratoPdfUrl, initial, onClose, onSave,
+  contratoPdfUrl, contratoPdfPath, initial, onClose, onSave,
 }) => {
   const [numPages, setNumPages] = useState(0);
   const [pageNum, setPageNum] = useState(initial?.page || 1);
@@ -36,6 +45,35 @@ const ContratoSignatureFieldEditor: React.FC<Props> = ({
   const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
+  const [fetchingBytes, setFetchingBytes] = useState<boolean>(!!contratoPdfPath);
+
+  // Baixa o PDF via SDK do Firebase quando temos o path — contorna CORS do
+  // download URL no bucket `*.firebasestorage.app`. Se não houver path,
+  // o react-pdf cuida via URL como antes.
+  useEffect(() => {
+    let cancelled = false;
+    if (!contratoPdfPath) { setFetchingBytes(false); return; }
+    setFetchingBytes(true);
+    setLoadError(null);
+    getBytes(storageRef(storage, contratoPdfPath))
+      .then((buf) => {
+        if (cancelled) return;
+        setPdfBytes(new Uint8Array(buf));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err?.message || 'Erro ao baixar o PDF do Storage');
+      })
+      .finally(() => { if (!cancelled) setFetchingBytes(false); });
+    return () => { cancelled = true; };
+  }, [contratoPdfPath]);
+
+  // `file` precisa ser estável (objeto memoizado) para o react-pdf não re-fetchar.
+  const documentFile = useMemo(() => {
+    if (pdfBytes) return { data: pdfBytes };
+    return contratoPdfUrl;
+  }, [pdfBytes, contratoPdfUrl]);
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -202,11 +240,11 @@ const ContratoSignatureFieldEditor: React.FC<Props> = ({
             boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
           }}>
           <Document
-            file={contratoPdfUrl}
+            file={documentFile}
             onLoadSuccess={(pdf) => { setLoadError(null); onLoadSuccess(pdf); }}
             onLoadError={(err) => setLoadError(err.message || 'Erro ao carregar o PDF')}
             loading={<div style={{ color: '#94a3b8', padding: 40, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Loader2 size={20} className="animate-spin" /> Carregando PDF…
+              <Loader2 size={20} className="animate-spin" /> {fetchingBytes ? 'Baixando PDF…' : 'Carregando PDF…'}
             </div>}
             error={
               <div style={{ color: '#f87171', padding: 40, textAlign: 'center', maxWidth: 400 }}>

@@ -443,6 +443,7 @@ const ProjectContrato: React.FC<Props> = ({ project }) => {
       {showCampoEditor && propostaDoc.contratoPdfUrl && (
         <ContratoSignatureFieldEditor
           contratoPdfUrl={propostaDoc.contratoPdfUrl}
+          contratoPdfPath={propostaDoc.contratoPdfPath ?? undefined}
           initial={propostaDoc.assinaturaCampo}
           onClose={() => setShowCampoEditor(false)}
           onSave={handleSaveAssinaturaCampo}
