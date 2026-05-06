@@ -132,7 +132,7 @@ function Ico({ name, size = 24, color = 'currentColor' }) {
 // =====================================================================
 // Props: active = 'home' | 'ciclo' | 'sobre' | 'trabalhe' | 'contato' | null
 const MGR_HOME = '/';
-const MGR_LOGIN = 'https://mgr-connect-app.web.app/#/login';
+const MGR_LOGIN = 'https://app.mgrrefrigeracao.com.br/#/login';
 const MGR_WHATS = 'https://wa.me/5519983073630';
 const MGR_TEL = '+5519983073630';
 const MGR_EMAIL = 'administrativo.mgr@gmail.com';
