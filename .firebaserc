@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "mgr-conect2"
-  }
+  },
+  "targets": {
+    "mgr-conect2": {
+      "hosting": {
+        "site": [
+          "mgr-conect2"
+        ],
+        "app": [
+          "mgr-connect-app"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
