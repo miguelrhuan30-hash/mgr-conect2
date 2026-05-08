@@ -148,7 +148,11 @@ function MGRHeader({ active = null }) {
   const cicloItems = [
     ['Turnkey Completo', 'turnkey-completo.html'],
     ['Retrofit Turnkey', 'retrofit-turnkey.html'],
+    ['Câmara Fria Industrial', 'camara-fria-industrial.html'],
+    ['Construção Isopainel', 'construcao-isopainel.html'],
+    ['Sala Limpa Industrial', 'sala-limpa-industrial.html'],
     ['Anti-Downtime', 'anti-downtime.html'],
+    ['Manutenção Preventiva', 'manutencaopreventiva.html'],
     ['Manutenção Corretiva', 'manutencao-corretiva.html'],
     ['Soluções MGR', 'solucoes-mgr.html'],
   ];
@@ -227,6 +231,9 @@ function MGRFooter() {
   const cicloLinks = [
     ['Turnkey Completo', 'turnkey-completo.html'],
     ['Retrofit Turnkey', 'retrofit-turnkey.html'],
+    ['Câmara Fria Industrial', 'camara-fria-industrial.html'],
+    ['Construção Isopainel', 'construcao-isopainel.html'],
+    ['Sala Limpa Industrial', 'sala-limpa-industrial.html'],
     ['Anti-Downtime · Contratos 24/7', 'anti-downtime.html'],
     ['Manutenção Corretiva', 'manutencao-corretiva.html'],
     ['Manutenção Preventiva', 'manutencaopreventiva.html'],
