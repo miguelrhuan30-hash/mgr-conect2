@@ -229,6 +229,7 @@ function MGRFooter() {
     ['Retrofit Turnkey', 'retrofit-turnkey.html'],
     ['Anti-Downtime · Contratos 24/7', 'anti-downtime.html'],
     ['Manutenção Corretiva', 'manutencao-corretiva.html'],
+    ['Manutenção Preventiva', 'manutencaopreventiva.html'],
     ['Soluções MGR · PCM, Hack, Connect', 'solucoes-mgr.html'],
   ];
   const empresaLinks = [
