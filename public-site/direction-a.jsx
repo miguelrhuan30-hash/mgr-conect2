@@ -46,7 +46,7 @@ function A_Hero() {
         <div style={{ marginTop: 80, borderRadius: 8, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
           <img
             loading="lazy"
-            src="assets/equipe-mgr.png"
+            src="assets/equipe-mgr.webp"
             alt="Especialistas de Campo MGR · equipe em Indaiatuba, SP"
             style={{ display: 'block', width: '100%', height: 'auto' }}
           />
@@ -149,7 +149,7 @@ function A_About() {
           <div style={{ aspectRatio: '4/5', width: '100%', overflow: 'hidden', borderRadius: 4 }}>
             <img
               loading="lazy"
-              src="assets/fundadores-mgr.jpg"
+              src="assets/fundadores-mgr.webp"
               alt="Fundadores Marcos Giovani & Guilherme Macri"
               style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
             />
@@ -263,7 +263,7 @@ function CarouselPhotos({ photos, accent }) {
         {photos.map(function(ph, i) {
           return (
             <div key={i} data-ci={i} className="carousel-item">
-              <img src={ph.src} alt={ph.label}
+              <img src={ph.src} alt={ph.label} loading="lazy"
                 style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
               <div style={{
                 position: 'absolute', left: 14, top: 14,
@@ -313,7 +313,7 @@ function A_Portfolio() {
       cat: 'Câmara fria · Estoque de distribuição',
       name: 'Diso Distribuidora',
       year: '2024',
-      img: 'assets/diso-camara-nestle.png',
+      img: 'assets/diso-camara-nestle.webp',
       location: 'São Paulo · SP',
       status: 'Projeto entregue',
       resumo: (
@@ -325,8 +325,8 @@ function A_Portfolio() {
   ];
 
   const secundarios = [
-    { cat: 'Casa de máquinas · Refrigeração comercial', name: 'Croissant & Cia · Indaiatuba', year: '2023', img: 'assets/croissant-casa-maquinas.png' },
-    { cat: 'Câmara fria de congelados · Armazenamento', name: 'Salgados Neves · São Paulo', year: '2024', img: 'assets/salgados-neves-camara.png' },
+    { cat: 'Casa de máquinas · Refrigeração comercial', name: 'Croissant & Cia · Indaiatuba', year: '2023', img: 'assets/croissant-casa-maquinas.webp' },
+    { cat: 'Câmara fria de congelados · Armazenamento', name: 'Salgados Neves · São Paulo', year: '2024', img: 'assets/salgados-neves-camara.webp' },
     { cat: 'Câmaras de pescado', name: 'Indaiá Pescados', year: '2024' },
     { cat: 'Primeira planta industrial', name: 'Brasa Burguer', year: '2023' },
   ];
@@ -349,8 +349,8 @@ function A_Portfolio() {
       ],
       tags: ['Fábrica completa', 'Estoque refrigerado', 'Salas climatizadas', 'Sala limpa', 'Isopainéis', 'Casa de máquinas', 'Rack paralelo'],
       photos: [
-        { src: 'assets/sorvetao-fachada.png', label: 'Atacadão dos Sorvetes · fachada entregue', tag: '01' },
-        { src: 'assets/sorvetao-casa-maquinas.png', label: 'Casa de máquinas · rack de compressores', tag: '02' },
+        { src: 'assets/sorvetao-fachada.webp', label: 'Atacadão dos Sorvetes · fachada entregue', tag: '01' },
+        { src: 'assets/sorvetao-casa-maquinas.webp', label: 'Casa de máquinas · rack de compressores', tag: '02' },
       ],
     },
     {
@@ -370,10 +370,10 @@ function A_Portfolio() {
       ],
       tags: ['Câmara fria', 'Painéis isotérmicos', 'CEASA', 'Boxes refrigerados', 'Obra completa'],
       photos: [
-        { src: 'assets/tropsabor-fachada.png', label: 'Fachada do box entregue', tag: '01' },
-        { src: 'assets/tropsabor-obra-paineis.png', label: 'Montagem dos painéis isotérmicos', tag: '02' },
-        { src: 'assets/tropsabor-interior.png', label: 'Face interna acabada', tag: '03' },
-        { src: 'assets/tropsabor-galpao.png', label: 'Galpão preparado para montagem', tag: '04' },
+        { src: 'assets/tropsabor-fachada.webp', label: 'Fachada do box entregue', tag: '01' },
+        { src: 'assets/tropsabor-obra-paineis.webp', label: 'Montagem dos painéis isotérmicos', tag: '02' },
+        { src: 'assets/tropsabor-interior.webp', label: 'Face interna acabada', tag: '03' },
+        { src: 'assets/tropsabor-galpao.webp', label: 'Galpão preparado para montagem', tag: '04' },
       ],
     },
     {
@@ -393,10 +393,10 @@ function A_Portfolio() {
       ],
       tags: ['Câmara fria', 'Pós-colheita', 'Floricultura', 'Painéis isotérmicos', 'Controle de umidade', 'Obra completa'],
       photos: [
-        { src: 'assets/ecoflora-montagem.png', label: 'Equipe MGR no topo da câmara em montagem', tag: '01' },
-        { src: 'assets/ecoflora-estrutura.png', label: 'Estrutura aberta — painéis em posição', tag: '02' },
-        { src: 'assets/ecoflora-flores.png', label: 'Produto final condicionado · orquídeas', tag: '03' },
-        { src: 'assets/ecoflora-unidade.png', label: 'Unidade Filomena — fachada externa', tag: '04' },
+        { src: 'assets/ecoflora-montagem.webp', label: 'Equipe MGR no topo da câmara em montagem', tag: '01' },
+        { src: 'assets/ecoflora-estrutura.webp', label: 'Estrutura aberta — painéis em posição', tag: '02' },
+        { src: 'assets/ecoflora-flores.webp', label: 'Produto final condicionado · orquídeas', tag: '03' },
+        { src: 'assets/ecoflora-unidade.webp', label: 'Unidade Filomena — fachada externa', tag: '04' },
       ],
     },
   ];
@@ -513,12 +513,12 @@ function A_Portfolio() {
         <div style={{ fontSize: 11, color: MGR.cinzaMedio, letterSpacing: 1.8, textTransform: 'uppercase', fontFamily: MGR.mono, marginBottom: 28 }}>
           ● Mais parceiros de operação
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
+        <div className="proj-sec" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
           {secundarios.map((p, i) => (
             <div key={i}>
               {p.img ? (
                 <div style={{ position: 'relative', width: '100%', height: 260, overflow: 'hidden', borderRadius: 4, background: MGR.azulEscuro }}>
-                  <img src={p.img} alt={p.name}
+                  <img src={p.img} alt={p.name} loading="lazy"
                     style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
                 </div>
               ) : (
@@ -540,7 +540,7 @@ function A_Portfolio() {
       <div style={{ marginTop: 80, padding: '56px 64px', background: MGR.azulClaro, borderLeft: `4px solid ${MGR.azul}` }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 48, alignItems: 'center' }}>
           <img
-            src="assets/felipe-indaia-pescados.png"
+            src="assets/felipe-indaia-pescados.webp"
             alt="Felipe · CEO · Indaia Pescados"
             style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', objectPosition: 'center top', borderRadius: 12, display: 'block' }}
           />

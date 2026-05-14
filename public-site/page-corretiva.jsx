@@ -50,7 +50,7 @@ function CR_Hero() {
             </div>
           </div>
           <div className="hero-img" style={{ position: 'relative', minHeight: 460, borderRadius: 8, overflow: 'hidden', background: '#0a1a2a', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
-            <img loading="lazy" src="assets/croissant-casa-maquinas.png" alt="Especialista de Campo MGR em atendimento"
+            <img loading="lazy" src="assets/croissant-casa-maquinas.webp" alt="Especialista de Campo MGR em atendimento"
               style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
             <div style={{ position: 'absolute', left: 20, bottom: 20, background: 'rgba(13,59,94,0.92)', border: '1px solid rgba(255,255,255,0.12)', padding: '12px 16px', borderRadius: 6 }}>
               <div style={{ fontFamily: MGR.mono, fontSize: 10, color: MGR.laranja, letterSpacing: 1.5, fontWeight: 600 }}>● EM CAMPO</div>

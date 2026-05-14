@@ -48,7 +48,7 @@ function AD_Hero() {
             </div>
           </div>
           <div className="hero-img" style={{ position: 'relative', minHeight: 460, borderRadius: 8, overflow: 'hidden', background: '#0a1a2a', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
-            <img loading="lazy" src="assets/sorvetao-casa-maquinas.png" alt="Casa de máquinas MGR em operação contínua"
+            <img loading="lazy" src="assets/sorvetao-casa-maquinas.webp" alt="Casa de máquinas MGR em operação contínua"
               style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, filter: 'brightness(0.85)' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(13,59,94,0) 30%, rgba(13,59,94,0.55) 100%)' }} />
             <div style={{ position: 'absolute', left: 20, bottom: 20, right: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 12 }}>

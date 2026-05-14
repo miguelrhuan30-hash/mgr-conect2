@@ -15,6 +15,26 @@
       background: #0d3b5e;
     }
 
+    /* ── grids intrínsecos (auto-fit) ───────────────────────── */
+    /* Card grids com gap visível → colunas se ajustam sozinhas */
+    .grid-3[style*="gap: 24"],
+    .grid-3[style*="gap: 16"] {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)) !important;
+    }
+    /* Grid de projetos secundários na home */
+    .proj-sec {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)) !important;
+    }
+
+    /* ── timelines — rolar horizontalmente em vez de quebrar ── */
+    .timeline, .timeline-7 {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .timeline::-webkit-scrollbar,
+    .timeline-7::-webkit-scrollbar { display: none; }
+
     /* ── componentes UI ─────────────────────────────────────── */
     .hamburger-btn { display: none !important; }
     .mobile-nav {
@@ -159,7 +179,7 @@ function MGRLogo({ size = 48, inverse = false, descritivo = false }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontFamily: MGR.sans }}>
       <img
-        src="assets/mgr-logo.png"
+        src="assets/mgr-logo.webp"
         alt="MGR Soluções e Tecnologia da Refrigeração"
         className="header-logo-img"
         style={{

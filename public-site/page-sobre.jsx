@@ -35,7 +35,7 @@ function S_Hero() {
             </a>
           </div>
           <div style={{ position: 'relative', minHeight: 420, borderRadius: 8, overflow: 'hidden', background: '#0a1a2a', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
-            <img loading="lazy" src="assets/equipe-mgr.png" alt="Equipe MGR em obra" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, filter: 'brightness(0.55)' }} />
+            <img loading="lazy" src="assets/equipe-mgr.webp" alt="Equipe MGR em obra" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, filter: 'brightness(0.55)' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(13,59,94,0.3) 0%, rgba(13,59,94,0.7) 100%)' }} />
             <div style={{ position: 'absolute', left: 24, bottom: 24, right: 24, fontFamily: MGR.mono, fontSize: 11, color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5 }}>
               <span style={{ color: MGR.laranja }}>●</span> EQUIPE MGR · INDAIATUBA/SP
@@ -218,7 +218,7 @@ function S_Time() {
       </div>
       <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.7fr', gap: 32, alignItems: 'stretch' }}>
         <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: MGR.azulEscuro, minHeight: 420 }}>
-          <img loading="lazy" src="assets/equipe-mgr.png" alt="Time MGR" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, filter: 'brightness(0.85)' }} />
+          <img loading="lazy" src="assets/equipe-mgr.webp" alt="Time MGR" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, filter: 'brightness(0.85)' }} />
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(13,59,94,0) 30%, rgba(13,59,94,0.85) 100%)' }} />
           <div style={{ position: 'absolute', left: 28, right: 28, bottom: 28, color: '#fff' }}>
             <div style={{ fontFamily: MGR.mono, fontSize: 10, color: MGR.laranja, letterSpacing: 1.5, fontWeight: 600, marginBottom: 12 }}>● TIME MGR</div>
@@ -229,7 +229,7 @@ function S_Time() {
         </div>
         <div style={{ background: MGR.cinzaClaro, padding: '32px 32px 36px', borderRadius: 8, borderTop: `3px solid ${MGR.acento}`, display: 'flex', flexDirection: 'column' }}>
           <div style={{ width: '100%', aspectRatio: '1', background: MGR.azul, borderRadius: 6, position: 'relative', overflow: 'hidden', marginBottom: 20 }}>
-            <img loading="lazy" src="assets/fundadores-mgr.jpg" alt="Guilherme — Sócio e COO" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'right center', position: 'absolute', inset: 0 }} />
+            <img loading="lazy" src="assets/fundadores-mgr.webp" alt="Guilherme — Sócio e COO" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'right center', position: 'absolute', inset: 0 }} />
           </div>
           <div style={{ fontFamily: MGR.mono, fontSize: 10, color: MGR.acento, letterSpacing: 1.5, fontWeight: 600, marginBottom: 8 }}>SÓCIO · COO</div>
           <h3 style={{ fontSize: 24, fontWeight: 600, color: MGR.grafite, margin: '0 0 12px', letterSpacing: -0.4 }}>Guilherme</h3>

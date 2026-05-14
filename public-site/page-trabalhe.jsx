@@ -35,7 +35,7 @@ function T_Hero() {
             </a>
           </div>
           <div style={{ position: 'relative', minHeight: 440, borderRadius: 8, overflow: 'hidden', background: '#0a1a2a', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
-            <img loading="lazy" src="assets/equipe-mgr.png" alt="Time MGR" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, filter: 'brightness(0.8)' }} />
+            <img loading="lazy" src="assets/equipe-mgr.webp" alt="Time MGR" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, filter: 'brightness(0.8)' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(13,59,94,0) 30%, rgba(13,59,94,0.6) 100%)' }} />
             <div style={{ position: 'absolute', left: 24, bottom: 24, fontFamily: MGR.mono, fontSize: 11, color: '#fff', letterSpacing: 1.5 }}>
               <span style={{ color: MGR.laranja }}>●</span> TIME MGR · INDAIATUBA/SP
