@@ -2,6 +2,19 @@
 (function() {
   const s = document.createElement('style');
   s.textContent = `
+    /* ── carousel de fotos ──────────────────────────────────── */
+    .photo-carousel-scroll::-webkit-scrollbar { display: none; }
+    .carousel-item {
+      flex: 0 0 560px;
+      height: 380px;
+      flex-shrink: 0;
+      scroll-snap-align: start;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      background: #0d3b5e;
+    }
+
     /* ── componentes UI ─────────────────────────────────────── */
     .hamburger-btn { display: none !important; }
     .mobile-nav {
@@ -46,6 +59,9 @@
       /* Alturas fixas fotos */
       [style*="height: 460px"] { height: 260px !important; }
       [style*="gridTemplateRows"][style*="220px"] { grid-template-rows: 160px 160px !important; }
+      /* Carousel + foto destaque */
+      .carousel-item { flex: 0 0 75vw; height: 300px; }
+      .feat-photo { min-height: 360px !important; }
     }
 
     /* ══ MOBILE ≤ 640px ═══════════════════════════════════════ */
@@ -77,6 +93,9 @@
         aspect-ratio: 16/9 !important;
         min-height: 180px !important;
       }
+      /* Carousel + foto destaque mobile */
+      .carousel-item { flex: 0 0 85vw; height: 220px; }
+      .feat-photo { min-height: 220px !important; }
       /* Reset row span */
       [style*="grid-row:"], [style*="gridRow"] { grid-row: auto !important; }
 

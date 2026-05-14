@@ -224,6 +224,89 @@ function A_Why() {
   );
 }
 
+function CarouselPhotos({ photos, accent }) {
+  const [active, setActive] = React.useState(0);
+  const wrapRef = React.useRef(null);
+
+  React.useEffect(function() {
+    const el = wrapRef.current;
+    if (!el) return;
+    const items = el.querySelectorAll('[data-ci]');
+    const obs = new IntersectionObserver(
+      function(entries) {
+        entries.forEach(function(e) {
+          if (e.isIntersecting && e.intersectionRatio >= 0.5) {
+            setActive(parseInt(e.target.dataset.ci, 10));
+          }
+        });
+      },
+      { root: el, threshold: 0.5 }
+    );
+    items.forEach(function(item) { obs.observe(item); });
+    return function() { obs.disconnect(); };
+  }, []);
+
+  const ac = accent || '#D4792A';
+
+  return (
+    <div>
+      <div ref={wrapRef} className="photo-carousel-scroll" style={{
+        display: 'flex',
+        overflowX: 'auto',
+        scrollSnapType: 'x mandatory',
+        scrollBehavior: 'smooth',
+        gap: 12,
+        WebkitOverflowScrolling: 'touch',
+        msOverflowStyle: 'none',
+        scrollbarWidth: 'none',
+      }}>
+        {photos.map(function(ph, i) {
+          return (
+            <div key={i} data-ci={i} className="carousel-item">
+              <img src={ph.src} alt={ph.label}
+                style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
+              <div style={{
+                position: 'absolute', left: 14, top: 14,
+                background: i === 0 ? ac : 'rgba(13,59,94,0.9)',
+                color: '#fff', fontFamily: 'monospace', fontSize: 10,
+                letterSpacing: 1.5, padding: '4px 10px', fontWeight: 600,
+              }}>{ph.tag}</div>
+              <div style={{
+                position: 'absolute', left: 14, bottom: 14, right: 14,
+                background: 'rgba(0,0,0,0.58)', color: '#fff', fontSize: 12,
+                padding: '6px 10px', borderRadius: 2,
+              }}>{ph.label}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {photos.map(function(_, i) {
+            return (
+              <div key={i} style={{
+                width: i === active ? 22 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: i === active ? ac : '#ccc',
+                transition: 'all 0.25s ease',
+              }} />
+            );
+          })}
+        </div>
+        {active < photos.length - 1
+          ? <span style={{ fontSize: 11, color: '#888', display: 'flex', alignItems: 'center', gap: 4 }}>
+              arraste para ver mais <span style={{ fontSize: 16, lineHeight: 1 }}>›</span>
+            </span>
+          : photos.length > 1
+            ? <span style={{ fontSize: 11, color: '#aaa' }}>{photos.length} de {photos.length} fotos</span>
+            : null
+        }
+      </div>
+    </div>
+  );
+}
+
 function A_Portfolio() {
   const featured = [
     {
@@ -336,7 +419,7 @@ function A_Portfolio() {
       {featured.map((feat, idx) => {
         const reverse = idx % 2 === 1;
         const Photo = (
-          <div key="photo" style={{ position: 'relative', background: MGR.azulEscuro, overflow: 'hidden', borderRadius: 4, minHeight: 560 }}>
+          <div key="photo" className="feat-photo" style={{ position: 'relative', background: MGR.azulEscuro, overflow: 'hidden', borderRadius: 4, minHeight: 560 }}>
             <img src={feat.img} alt={`${feat.name} — ${feat.cat}`}
               style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', position: 'absolute', inset: 0 }} />
             <div style={{ position: 'absolute', top: 20, left: 20, background: MGR.laranja, color: '#fff', padding: '8px 14px', fontFamily: MGR.mono, fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase', fontWeight: 600 }}>
@@ -411,87 +494,7 @@ function A_Portfolio() {
             </div>
           </div>
 
-          {/* Mosaico adaptativo: 2 fotos = split; 3-4 fotos = L-shape; 5+ = hero + grid */}
-          {cs.photos.length === 2 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, height: 460 }}>
-              {cs.photos.map((ph, i) => (
-                <div key={i} style={{ position: 'relative', overflow: 'hidden', borderRadius: 4, background: MGR.azulEscuro }}>
-                  <img src={ph.src} alt={ph.label}
-                    style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                  <div style={{ position: 'absolute', left: 16, top: 16, background: i === 0 ? MGR.laranja : 'rgba(13,59,94,0.92)', color: '#fff', fontFamily: MGR.mono, fontSize: 10, letterSpacing: 1.5, padding: '4px 10px', fontWeight: 600 }}>
-                    {ph.tag}
-                  </div>
-                  <div style={{ position: 'absolute', left: 16, bottom: 16, right: 16, color: '#fff', fontSize: 12, fontWeight: 500, background: 'rgba(0,0,0,0.55)', padding: '6px 10px', borderRadius: 2 }}>
-                    {ph.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : cs.photos.length >= 5 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr 1fr', gridTemplateRows: '220px 220px', gap: 12 }}>
-              <div style={{ gridRow: 'span 2', position: 'relative', overflow: 'hidden', borderRadius: 4, background: MGR.azulEscuro }}>
-                <img src={cs.photos[0].src} alt={cs.photos[0].label}
-                  style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                <div style={{ position: 'absolute', left: 16, bottom: 16, right: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <span style={{ background: MGR.laranja, color: '#fff', fontFamily: MGR.mono, fontSize: 10, letterSpacing: 1.5, padding: '4px 8px', fontWeight: 600 }}>
-                    {cs.photos[0].tag}
-                  </span>
-                  <span style={{ color: '#fff', fontSize: 12, fontWeight: 500, background: 'rgba(0,0,0,0.55)', padding: '4px 10px', borderRadius: 2 }}>
-                    {cs.photos[0].label}
-                  </span>
-                </div>
-              </div>
-              {cs.photos.slice(1).map((ph, i) => (
-                <div key={i} style={{ position: 'relative', overflow: 'hidden', borderRadius: 4, background: MGR.azulEscuro }}>
-                  <img src={ph.src} alt={ph.label}
-                    style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                  <div style={{ position: 'absolute', left: 10, top: 10, background: 'rgba(13,59,94,0.88)', color: '#fff', fontFamily: MGR.mono, fontSize: 10, letterSpacing: 1.5, padding: '3px 8px', fontWeight: 600 }}>
-                    {ph.tag}
-                  </div>
-                  <div style={{ position: 'absolute', left: 10, bottom: 10, right: 10, color: '#fff', fontSize: 11, fontWeight: 500, background: 'rgba(0,0,0,0.55)', padding: '4px 8px', borderRadius: 2 }}>
-                    {ph.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gridTemplateRows: '230px 230px', gap: 12 }}>
-              <div style={{ gridRow: 'span 2', position: 'relative', overflow: 'hidden', borderRadius: 4, background: MGR.azulEscuro }}>
-                <img src={cs.photos[0].src} alt={cs.photos[0].label}
-                  style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                <div style={{ position: 'absolute', left: 16, bottom: 16, right: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <span style={{ background: MGR.laranja, color: '#fff', fontFamily: MGR.mono, fontSize: 10, letterSpacing: 1.5, padding: '4px 8px', fontWeight: 600 }}>
-                    {cs.photos[0].tag}
-                  </span>
-                  <span style={{ color: '#fff', fontSize: 12, fontWeight: 500, background: 'rgba(0,0,0,0.55)', padding: '4px 10px', borderRadius: 2 }}>
-                    {cs.photos[0].label}
-                  </span>
-                </div>
-              </div>
-              <div style={{ gridColumn: 'span 2', position: 'relative', overflow: 'hidden', borderRadius: 4, background: MGR.azulEscuro }}>
-                <img src={cs.photos[1].src} alt={cs.photos[1].label}
-                  style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                <div style={{ position: 'absolute', left: 10, top: 10, background: 'rgba(13,59,94,0.88)', color: '#fff', fontFamily: MGR.mono, fontSize: 10, letterSpacing: 1.5, padding: '3px 8px', fontWeight: 600 }}>
-                  {cs.photos[1].tag}
-                </div>
-                <div style={{ position: 'absolute', left: 10, bottom: 10, right: 10, color: '#fff', fontSize: 11, fontWeight: 500, background: 'rgba(0,0,0,0.55)', padding: '4px 8px', borderRadius: 2 }}>
-                  {cs.photos[1].label}
-                </div>
-              </div>
-              {cs.photos.slice(2).map((ph, i) => (
-                <div key={i} style={{ position: 'relative', overflow: 'hidden', borderRadius: 4, background: MGR.azulEscuro }}>
-                  <img src={ph.src} alt={ph.label}
-                    style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                  <div style={{ position: 'absolute', left: 10, top: 10, background: 'rgba(13,59,94,0.88)', color: '#fff', fontFamily: MGR.mono, fontSize: 10, letterSpacing: 1.5, padding: '3px 8px', fontWeight: 600 }}>
-                    {ph.tag}
-                  </div>
-                  <div style={{ position: 'absolute', left: 10, bottom: 10, right: 10, color: '#fff', fontSize: 11, fontWeight: 500, background: 'rgba(0,0,0,0.55)', padding: '4px 8px', borderRadius: 2 }}>
-                    {ph.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <CarouselPhotos photos={cs.photos} accent={MGR.laranja} />
 
           {/* specs row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, marginTop: 32, background: '#fff', borderRadius: 4 }}>

@@ -28,7 +28,7 @@
         },
         {
           "source": "**/*.html",
-          "headers": [{ "key": "Cache-Control", "value": "public, max-age=300" }]
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
         },
         {
           "source": "/sitemap.xml",
