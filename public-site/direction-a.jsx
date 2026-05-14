@@ -19,7 +19,7 @@ function A_Hero() {
         <SectionTag num="01" label="Continuidade operacional · Engenharia de frio" color={MGR.laranja} />
 
         <h1 style={{
-          fontFamily: MGR.sans, fontWeight: 700, fontSize: 82, lineHeight: 0.98, letterSpacing: -2.2,
+          fontFamily: MGR.sans, fontWeight: 700, fontSize: 'clamp(34px, 8vw, 82px)', lineHeight: 1.02, letterSpacing: 'clamp(-0.5px, -0.3vw, -2.2px)',
           color: '#fff', margin: 0, maxWidth: 1100,
         }}>
           Refrigeração industrial é o sistema nervoso<br />
@@ -61,7 +61,7 @@ function A_Hero() {
             ['100%', 'técnicos próprios'],
           ].map(([n, l], i) => (
             <div key={i} style={{ padding: '28px 0', borderLeft: i ? `1px solid rgba(255,255,255,0.08)` : 'none', paddingLeft: i ? 36 : 0 }}>
-              <div style={{ fontSize: 42, fontWeight: 700, color: '#fff', letterSpacing: -1.2, lineHeight: 1 }}>{n}</div>
+              <div style={{ fontSize: 'clamp(28px, 5vw, 42px)', fontWeight: 700, color: '#fff', letterSpacing: -0.8, lineHeight: 1 }}>{n}</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 8, letterSpacing: 0.3 }}>{l}</div>
             </div>
           ))}
@@ -76,7 +76,7 @@ function A_Manifesto() {
     <section className="pad" style={{ background: MGR.branco, padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 1100 }}>
         <SectionTag num="02" label="Manifesto" color={MGR.azul} />
-        <p style={{ fontSize: 42, lineHeight: 1.2, color: MGR.grafite, letterSpacing: -0.8, fontWeight: 400, margin: 0 }}>
+        <p style={{ fontSize: 'clamp(22px, 5vw, 42px)', lineHeight: 1.3, color: MGR.grafite, letterSpacing: -0.3, fontWeight: 400, margin: 0 }}>
           Quando funciona, ninguém percebe. <span style={{ color: MGR.cinzaMedio }}>Quando falha, tudo para — produção, estoque, faturamento.</span> A MGR existe para garantir que isso <span style={{ color: MGR.acento, fontWeight: 600 }}>nunca aconteça</span>.
         </p>
         <div style={{ display: 'flex', gap: 16, marginTop: 40, color: MGR.cinzaMedio, fontSize: 14 }}>
@@ -100,7 +100,7 @@ function A_Services() {
       <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 80, marginBottom: 72 }}>
         <div>
           <SectionTag num="03" label="Serviços" color={MGR.azul} />
-          <h2 style={{ fontSize: 52, fontWeight: 600, letterSpacing: -1.5, color: MGR.grafite, margin: 0, lineHeight: 1.02 }}>
+          <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 600, letterSpacing: -1, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
             O Ciclo de Vida MGR.
           </h2>
         </div>
@@ -161,7 +161,7 @@ function A_About() {
         </div>
         <div>
           <SectionTag num="04" label="Sobre" color={MGR.azul} />
-          <h2 style={{ fontSize: 48, fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: '0 0 32px', lineHeight: 1.05 }}>
+          <h2 style={{ fontSize: 'clamp(26px, 5vw, 48px)', fontWeight: 600, letterSpacing: -0.8, color: MGR.grafite, margin: '0 0 28px', lineHeight: 1.05 }}>
             Engenharia brasileira <span style={{ color: MGR.azul }}>de classe mundial.</span>
           </h2>
           <p style={{ fontSize: 17, lineHeight: 1.7, color: MGR.cinzaMedio, marginBottom: 20 }}>
@@ -203,7 +203,7 @@ function A_Why() {
     <section className="pad" style={{ background: MGR.azulEscuro, color: '#fff', padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 780, marginBottom: 72 }}>
         <SectionTag num="05" label="Por que a MGR" color={MGR.laranja} />
-        <h2 style={{ fontSize: 52, fontWeight: 600, letterSpacing: -1.5, color: '#fff', margin: 0, lineHeight: 1.02 }}>
+        <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 600, letterSpacing: -1, color: '#fff', margin: 0, lineHeight: 1.05 }}>
           Seus concorrentes torcem para o equipamento funcionar.<br />
           <span style={{ color: MGR.laranja }}>Você sabe que funciona.</span>
         </h2>
@@ -323,7 +323,7 @@ function A_Portfolio() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', marginBottom: 56 }}>
         <div>
           <SectionTag num="06" label="Parceiros de Operação" color={MGR.azul} />
-          <h2 style={{ fontSize: 52, fontWeight: 600, letterSpacing: -1.5, color: MGR.grafite, margin: 0, lineHeight: 1 }}>
+          <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 600, letterSpacing: -1, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
             Projetos entregues.
           </h2>
         </div>
@@ -347,7 +347,7 @@ function A_Portfolio() {
         const Info = (
           <div key="info" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '16px 8px' }}>
             <Chip color={MGR.azul} bg={MGR.azulClaro} border={false} size="sm">{feat.status}</Chip>
-            <h3 style={{ fontSize: 52, fontWeight: 600, color: MGR.grafite, letterSpacing: -1.4, margin: '20px 0 12px', lineHeight: 1 }}>
+            <h3 style={{ fontSize: 'clamp(26px, 5vw, 52px)', fontWeight: 600, color: MGR.grafite, letterSpacing: -0.8, margin: '16px 0 12px', lineHeight: 1.05 }}>
               {feat.name}
             </h3>
             <div style={{ fontSize: 15, color: MGR.azul, fontWeight: 600, letterSpacing: 0.4, marginBottom: 28 }}>
@@ -392,7 +392,7 @@ function A_Portfolio() {
                 <Chip color={MGR.azul} bg="#fff" border={false} size="sm">Case study</Chip>
                 <Chip color={MGR.laranja} bg="#fff" border={false} size="sm">{cs.status}</Chip>
               </div>
-              <h3 style={{ fontSize: 48, fontWeight: 600, color: MGR.grafite, letterSpacing: -1.2, margin: '0 0 10px', lineHeight: 1 }}>
+              <h3 style={{ fontSize: 'clamp(24px, 5vw, 48px)', fontWeight: 600, color: MGR.grafite, letterSpacing: -0.8, margin: '0 0 10px', lineHeight: 1.05 }}>
                 {cs.name}
               </h3>
               <div style={{ fontSize: 15, color: MGR.azul, fontWeight: 600, letterSpacing: 0.4 }}>
@@ -562,7 +562,7 @@ function A_Connect() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: 72, alignItems: 'center' }}>
         <div>
           <SectionTag num="07" label="Tecnologia própria" color={MGR.laranja} />
-          <h2 style={{ fontSize: 52, fontWeight: 600, letterSpacing: -1.5, color: '#fff', margin: '0 0 24px', lineHeight: 1.02 }}>
+          <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 600, letterSpacing: -1, color: '#fff', margin: '0 0 24px', lineHeight: 1.05 }}>
             MGR Connect.<br />
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>Sua refrigeração, em tempo real.</span>
           </h2>
@@ -652,7 +652,7 @@ function A_CTA() {
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 80, alignItems: 'start' }}>
         <div>
           <SectionTag num="08" label="Solicitar Visita de Valor" color={MGR.laranja} />
-          <h2 style={{ fontSize: 56, fontWeight: 600, letterSpacing: -1.6, color: '#fff', margin: '0 0 24px', lineHeight: 1.02 }}>
+          <h2 style={{ fontSize: 'clamp(30px, 6vw, 56px)', fontWeight: 600, letterSpacing: -1, color: '#fff', margin: '0 0 24px', lineHeight: 1.05 }}>
             Comece pelo diagnóstico da sua operação.
           </h2>
           <p style={{ fontSize: 17, lineHeight: 1.65, color: 'rgba(255,255,255,0.78)', marginBottom: 40, maxWidth: 520 }}>

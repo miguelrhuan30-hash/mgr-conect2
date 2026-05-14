@@ -1,4 +1,4 @@
-// MGR · Sobre — Página institucional
+﻿// MGR · Sobre — Página institucional
 const WHATS_S = 'https://wa.me/5519983073630';
 
 function S_Nav() {
@@ -24,7 +24,7 @@ function S_Hero() {
         <SectionTag num="MGR" label="Institucional" color={MGR.laranja} />
         <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 56, alignItems: 'center' }}>
           <div>
-            <h1 className="h1" style={{ fontFamily: MGR.sans, fontWeight: 700, fontSize: 76, lineHeight: 0.98, letterSpacing: -2.4, color: '#fff', margin: 0 }}>
+            <h1 className="h1" style={{ fontFamily: MGR.sans, fontWeight: 700, fontSize: 'clamp(32px, 8vw, 76px)', lineHeight: 1.02, letterSpacing: 'clamp(-0.5px, -0.3vw, -2.4px)', color: '#fff', margin: 0 }}>
               +20 anos garantindo que <span style={{ color: MGR.laranja }}>nenhum negócio pare por falha de refrigeração.</span>
             </h1>
             <p style={{ fontSize: 19, lineHeight: 1.55, color: 'rgba(255,255,255,0.78)', margin: '32px 0 40px', maxWidth: 620 }}>
@@ -52,7 +52,7 @@ function S_Manifesto() {
     <section id="manifesto" className="pad" style={{ background: MGR.branco, padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 1100 }}>
         <SectionTag num="01" label="Manifesto MGR" color={MGR.azul} />
-        <p className="h-edit" style={{ fontSize: 44, lineHeight: 1.2, color: MGR.grafite, letterSpacing: -1, fontWeight: 400, margin: 0 }}>
+        <p className="h-edit" style={{ fontSize: 'clamp(24px, 5vw, 44px)', lineHeight: 1.2, color: MGR.grafite, letterSpacing: -1, fontWeight: 400, margin: 0 }}>
           Refrigeração industrial é o sistema nervoso invisível de toda operação. <span style={{ color: MGR.cinzaMedio }}>Quando funciona, ninguém percebe. Quando falha, tudo para — produção, estoque, faturamento.</span>
           <br /><br />
           A MGR existe para garantir que isso nunca aconteça.
@@ -77,7 +77,7 @@ function S_Historia() {
     <section id="historia" className="pad" style={{ background: MGR.cinzaClaro, padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 920, marginBottom: 56 }}>
         <SectionTag num="02" label="Nossa história" color={MGR.azul} />
-        <h2 className="h2" style={{ fontSize: 48, fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
+        <h2 className="h2" style={{ fontSize: 'clamp(26px, 5vw, 48px)', fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
           De refrigeração a soluções e <span style={{ color: MGR.azul }}>tecnologia da refrigeração.</span>
         </h2>
         <p style={{ fontSize: 17, lineHeight: 1.65, color: MGR.cinzaMedio, marginTop: 24 }}>
@@ -109,7 +109,7 @@ function S_Proposito() {
     <section id="proposito" className="pad" style={{ background: MGR.branco, padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 920, marginBottom: 56 }}>
         <SectionTag num="03" label="Propósito · Missão · Visão" color={MGR.azul} />
-        <h2 className="h2" style={{ fontSize: 44, fontWeight: 600, letterSpacing: -1.3, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
+        <h2 className="h2" style={{ fontSize: 'clamp(24px, 5vw, 44px)', fontWeight: 600, letterSpacing: -1.3, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
           Por que existimos. Para onde vamos.
         </h2>
       </div>
@@ -139,7 +139,7 @@ function S_Valores() {
     <section id="valores" className="pad" style={{ background: MGR.cinzaClaro, padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 920, marginBottom: 56 }}>
         <SectionTag num="04" label="Nossos valores" color={MGR.azul} />
-        <h2 className="h2" style={{ fontSize: 48, fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
+        <h2 className="h2" style={{ fontSize: 'clamp(26px, 5vw, 48px)', fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
           Quatro pilares. Uma cultura técnica.
         </h2>
       </div>
@@ -189,7 +189,7 @@ function S_Numeros() {
     <section id="numeros" className="pad" style={{ background: MGR.azulEscuro, color: '#fff', padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 920, marginBottom: 56 }}>
         <SectionTag num="05" label="Números que nos definem" color={MGR.laranja} />
-        <h2 className="h2" style={{ fontSize: 44, fontWeight: 600, letterSpacing: -1.3, color: '#fff', margin: 0, lineHeight: 1.05 }}>
+        <h2 className="h2" style={{ fontSize: 'clamp(24px, 5vw, 44px)', fontWeight: 600, letterSpacing: -1.3, color: '#fff', margin: 0, lineHeight: 1.05 }}>
           Dado é o melhor argumento.
         </h2>
       </div>
@@ -212,7 +212,7 @@ function S_Time() {
     <section id="time" className="pad" style={{ background: MGR.branco, padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 920, marginBottom: 56 }}>
         <SectionTag num="06" label="Nosso time" color={MGR.azul} />
-        <h2 className="h2" style={{ fontSize: 48, fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
+        <h2 className="h2" style={{ fontSize: 'clamp(26px, 5vw, 48px)', fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
           Quem está por trás da MGR.
         </h2>
       </div>
@@ -254,7 +254,7 @@ function S_Parceiros() {
     <section id="parceiros" className="pad" style={{ background: MGR.cinzaClaro, padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 920, marginBottom: 56 }}>
         <SectionTag num="07" label="Parceiros" color={MGR.azul} />
-        <h2 className="h2" style={{ fontSize: 48, fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
+        <h2 className="h2" style={{ fontSize: 'clamp(26px, 5vw, 48px)', fontWeight: 600, letterSpacing: -1.4, color: MGR.grafite, margin: 0, lineHeight: 1.05 }}>
           Quem conta com a continuidade MGR.
         </h2>
       </div>
@@ -327,7 +327,7 @@ function S_Futuro() {
     <section id="futuro" className="pad" style={{ background: MGR.azulEscuro, color: '#fff', padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ maxWidth: 920, marginBottom: 56 }}>
         <SectionTag num="09" label="Visão de futuro" color={MGR.laranja} />
-        <h2 className="h2" style={{ fontSize: 48, fontWeight: 600, letterSpacing: -1.4, color: '#fff', margin: 0, lineHeight: 1.05 }}>
+        <h2 className="h2" style={{ fontSize: 'clamp(26px, 5vw, 48px)', fontWeight: 600, letterSpacing: -1.4, color: '#fff', margin: 0, lineHeight: 1.05 }}>
           Para onde estamos indo.
         </h2>
         <p style={{ fontSize: 17, lineHeight: 1.65, color: 'rgba(255,255,255,0.7)', marginTop: 24, maxWidth: 760 }}>
