@@ -1,3 +1,24 @@
+// Injeta CSS responsivo global (hamburger, footer grid, logo mobile)
+(function() {
+  const s = document.createElement('style');
+  s.textContent = `
+    .hamburger-btn { display: none !important; }
+    .mobile-nav { display: none; position: absolute; top: 100%; left: 0; right: 0; background: rgba(13,59,94,0.99); backdrop-filter: blur(16px); border-top: 1px solid rgba(255,255,255,0.12); z-index: 200; }
+    .mobile-nav.open { display: block; }
+    @media (max-width: 1100px) {
+      .hamburger-btn { display: flex !important; align-items: center; justify-content: center; background: transparent; border: 1px solid rgba(255,255,255,0.28); border-radius: 8px; padding: 9px; cursor: pointer; color: white; flex-shrink: 0; }
+      .header-cta-secondary { display: none !important; }
+      .header-logo-img { height: 64px !important; width: auto !important; }
+      .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 32px !important; }
+    }
+    @media (max-width: 640px) {
+      .header-logo-img { height: 52px !important; }
+      .footer-grid { grid-template-columns: 1fr !important; gap: 28px !important; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
+
 // Tokens oficiais do Brand Guide MGR + helpers compartilhados
 const MGR = {
   // Primárias
@@ -33,11 +54,11 @@ function MGRLogo({ size = 48, inverse = false, descritivo = false }) {
       <img
         src="assets/mgr-logo.png"
         alt="MGR Soluções e Tecnologia da Refrigeração"
+        className="header-logo-img"
         style={{
           height: size,
           width: 'auto',
           display: 'block',
-          // inverte cores escuras do wordmark quando sobre fundo escuro — mantém laranja
           filter: inverse ? 'brightness(1.15)' : 'none',
           flexShrink: 0,
         }}
@@ -139,6 +160,7 @@ const MGR_EMAIL = 'administrativo.mgr@gmail.com';
 
 function MGRHeader({ active = null }) {
   const [openCiclo, setOpenCiclo] = React.useState(false);
+  const [openMobile, setOpenMobile] = React.useState(false);
   const linkBase = { fontSize: 15, color: 'rgba(255,255,255,0.78)', fontWeight: 500, padding: '6px 2px', position: 'relative', whiteSpace: 'nowrap', transition: 'color .15s ease' };
   const linkActive = { color: '#fff', fontWeight: 600 };
   const Underline = ({ show }) => (
@@ -153,9 +175,22 @@ function MGRHeader({ active = null }) {
     ['Soluções MGR', 'solucoes-mgr.html'],
   ];
 
+  const allNavItems = [
+    { label: 'Início', href: MGR_HOME },
+    { label: 'Turnkey Completo', href: 'turnkey-completo.html' },
+    { label: 'Retrofit Turnkey', href: 'retrofit-turnkey.html' },
+    { label: 'Anti-Downtime', href: 'anti-downtime.html' },
+    { label: 'Manutenção Corretiva', href: 'manutencao-corretiva.html' },
+    { label: 'Soluções MGR', href: 'solucoes-mgr.html' },
+    { label: 'Sobre', href: 'sobre.html' },
+    { label: 'Trabalhe Conosco', href: 'trabalhe-conosco.html' },
+    { label: 'Contato', href: `${MGR_HOME}#contato` },
+    { label: 'Acessar Sistema', href: MGR_LOGIN, accent: true },
+  ];
+
   return (
     <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(13,59,94,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(255,255,255,0.10)', boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }}>
-      <div className="pad" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '22px 56px', fontFamily: MGR.sans, gap: 32 }}>
+      <div className="pad" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 56px', fontFamily: MGR.sans, gap: 24, position: 'relative' }}>
         <a href={MGR_HOME} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }} aria-label="Voltar para a home MGR">
           <MGRLogo inverse size={232} />
         </a>
@@ -166,7 +201,6 @@ function MGRHeader({ active = null }) {
             <Underline show={active === 'home'} />
           </a>
 
-          {/* Ciclo de Vida com dropdown */}
           <div
             onMouseEnter={() => setOpenCiclo(true)}
             onMouseLeave={() => setOpenCiclo(false)}
@@ -207,13 +241,41 @@ function MGRHeader({ active = null }) {
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <a href={MGR_LOGIN} style={{ color: 'rgba(255,255,255,0.85)', padding: '13px 18px', fontSize: 13.5, fontWeight: 500, fontFamily: MGR.sans, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8, letterSpacing: 0.2, border: '1px solid rgba(255,255,255,0.22)' }}>
+          <a href={MGR_LOGIN} className="header-cta-secondary" style={{ color: 'rgba(255,255,255,0.85)', padding: '11px 16px', fontSize: 13.5, fontWeight: 500, fontFamily: MGR.sans, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8, letterSpacing: 0.2, border: '1px solid rgba(255,255,255,0.22)' }}>
             Acessar Sistema
           </a>
-          <a href={MGR_WHATS} target="_blank" rel="noopener" style={{ background: MGR.acento, color: '#fff', padding: '13px 22px', fontSize: 13.5, fontWeight: 600, fontFamily: MGR.sans, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8, letterSpacing: 0.2 }}>
+          <a href={MGR_WHATS} target="_blank" rel="noopener" style={{ background: MGR.acento, color: '#fff', padding: '11px 20px', fontSize: 13.5, fontWeight: 600, fontFamily: MGR.sans, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8, letterSpacing: 0.2 }}>
             Visita de Valor
             <Ico name="arrow" size={14} />
           </a>
+          {/* Hamburger — visível apenas em mobile via CSS */}
+          <button
+            className="hamburger-btn"
+            aria-label={openMobile ? 'Fechar menu' : 'Abrir menu'}
+            onClick={() => setOpenMobile(o => !o)}
+          >
+            {openMobile
+              ? <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round"><path d="M6 6 L18 18 M6 18 L18 6"/></svg>
+              : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round"><path d="M4 6 H20 M4 12 H20 M4 18 H20"/></svg>
+            }
+          </button>
+        </div>
+
+        {/* Menu mobile — dropdown */}
+        <div className={`mobile-nav${openMobile ? ' open' : ''}`}>
+          <div style={{ padding: '12px 20px 20px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {allNavItems.map(({ label, href, accent }, i) => (
+              <a key={i} href={href} onClick={() => setOpenMobile(false)}
+                style={{
+                  display: 'block', padding: '13px 16px', fontSize: 15, fontWeight: accent ? 600 : 500,
+                  color: accent ? MGR.acento : 'rgba(255,255,255,0.85)',
+                  borderRadius: 8, borderBottom: i < allNavItems.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none',
+                  letterSpacing: 0.1,
+                }}>
+                {label}
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -239,16 +301,16 @@ function MGRFooter() {
   return (
     <footer style={{ background: MGR.preto, color: 'rgba(255,255,255,0.7)', padding: '80px 56px 32px', fontFamily: MGR.sans }} className="pad">
       <div style={{ maxWidth: 1280, margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1.2fr', gap: 48, marginBottom: 56 }} className="grid-footer">
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1.2fr', gap: 48, marginBottom: 56 }} className="grid-footer footer-grid">
           {/* Coluna 1 — Marca e endereço */}
           <div>
             <div style={{ marginBottom: 24 }}><MGRLogo inverse size={200} /></div>
             <div style={{ fontSize: 13, lineHeight: 1.7, color: 'rgba(255,255,255,0.55)' }}>
               MGR Soluções e Tecnologia<br />
               da Refrigeração Ltda<br /><br />
-              Rua Elza Capanesi Zambonini, 251<br />
-              Jardim Casablanca · Indaiatuba/SP<br />
-              CEP 13.338-212<br /><br />
+              R. Alberto Magnusson, 440<br />
+              Comercial Vitoria Martini<br />
+              Indaiatuba - SP · 13347-633<br /><br />
               <span style={{ fontFamily: MGR.mono, fontSize: 11, letterSpacing: 0.5, color: 'rgba(255,255,255,0.4)' }}>
                 CNPJ 38.062.685/0001-73<br />
                 IE 353.426.803.110

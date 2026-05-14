@@ -536,14 +536,18 @@ function A_Portfolio() {
       {/* Depoimento */}
       <div style={{ marginTop: 80, padding: '56px 64px', background: MGR.azulClaro, borderLeft: `4px solid ${MGR.azul}` }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 48, alignItems: 'center' }}>
-          <MGRPhoto label="Gestor parceiro" tone="claro" aspect="1/1" />
+          <img
+            src="assets/felipe-indaia-pescados.png"
+            alt="Felipe · CEO · Indaia Pescados"
+            style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 12, display: 'block' }}
+          />
           <div>
             <div style={{ fontSize: 11, color: MGR.azul, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 600, marginBottom: 16 }}>Depoimento</div>
-            <p style={{ fontSize: 24, lineHeight: 1.4, color: MGR.grafite, margin: '0 0 24px', letterSpacing: -0.3, fontWeight: 500 }}>
-              "A câmara fria projetada pela MGR reduziu nosso consumo energético em <span style={{ color: MGR.acento }}>28%</span> e não tivemos uma única parada em 2 anos."
+            <p style={{ fontSize: 22, lineHeight: 1.5, color: MGR.grafite, margin: '0 0 24px', letterSpacing: -0.3, fontWeight: 500 }}>
+              "A MGR é nossa parceira estratégica desde a concepção da nossa primeira câmara fria. Ao longo de oito anos de colaboração, eles foram responsáveis por projetar, construir e evoluir toda a nossa infraestrutura de refrigeração. Com 5 câmaras construídas, 3 retrofits tecnológicos e a implementação de um túnel de congelamento, a expertise técnica da MGR tornou-se um pilar fundamental para o crescimento sustentável da nossa empresa."
             </p>
             <div style={{ fontSize: 14, color: MGR.cinzaMedio }}>
-              <strong style={{ color: MGR.grafite }}>[Nome do gestor]</strong> · Gerente Industrial · [Empresa parceira]
+              <strong style={{ color: MGR.grafite }}>Felipe</strong> · CEO · Indaia Pescados
             </div>
           </div>
         </div>

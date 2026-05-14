@@ -8,7 +8,7 @@ import { useEffect } from 'react';
  */
 const LandingPage = () => {
   useEffect(() => {
-    window.location.replace('/site/');
+    window.location.replace('https://mgrrefrigeracao.com.br/');
   }, []);
   return null;
 };
