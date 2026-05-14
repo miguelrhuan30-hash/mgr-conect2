@@ -1,4 +1,4 @@
-// Direção A — INSTITUCIONAL TÉCNICO
+﻿// Direção A — INSTITUCIONAL TÉCNICO
 // Azul dominante #0D3B5E + laranja de ação. Dados em destaque. Pose "engenharia sênior".
 
 function A_Nav() {
@@ -80,7 +80,7 @@ function A_Manifesto() {
           Quando funciona, ninguém percebe. <span style={{ color: MGR.cinzaMedio }}>Quando falha, tudo para — produção, estoque, faturamento.</span> A MGR existe para garantir que isso <span style={{ color: MGR.acento, fontWeight: 600 }}>nunca aconteça</span>.
         </p>
         <div style={{ display: 'flex', gap: 16, marginTop: 40, color: MGR.cinzaMedio, fontSize: 14 }}>
-          <span>— Marcos Giovanni, fundador MGR</span>
+          <span>— Marcos Giovani, fundador MGR</span>
         </div>
       </div>
     </section>
@@ -165,10 +165,10 @@ function A_About() {
             Engenharia brasileira <span style={{ color: MGR.azul }}>de classe mundial.</span>
           </h2>
           <p style={{ fontSize: 17, lineHeight: 1.7, color: MGR.cinzaMedio, marginBottom: 20 }}>
-            Marcos Giovanni passou uma década resolvendo problemas complexos de refrigeração industrial para grandes marcas. Percebeu que o mercado tratava refrigeração como commodity. Ele enxergava diferente.
+            Marcos Giovani passou uma década resolvendo problemas complexos de refrigeração industrial para grandes marcas. Percebeu que o mercado tratava refrigeração como commodity. Ele enxergava diferente.
           </p>
           <p style={{ fontSize: 17, lineHeight: 1.7, color: MGR.cinzaMedio, marginBottom: 40 }}>
-            Em 2026, a MGR uniu forças com a GERTEK de Guilherme Macri. Nasceu a <strong style={{ color: MGR.grafite }}>MGR Soluções e Tecnologia da Refrigeração</strong> — a empresa mais completa do mercado, do projeto à operação contínua.
+            Em 2026, a MGR uniu forças com a Gtec de Guilherme Macri. Nasceu a <strong style={{ color: MGR.grafite }}>MGR Soluções e Tecnologia da Refrigeração</strong> — a empresa mais completa do mercado, do projeto à operação contínua.
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0, borderTop: `1px solid ${MGR.cinzaClaro}`, borderBottom: `1px solid ${MGR.cinzaClaro}` }}>
