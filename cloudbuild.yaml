@@ -20,7 +20,16 @@ steps:
       - 'push'
       - 'us-west1-docker.pkg.dev/gen-lang-client-0227796366/cloud-run-source-deploy/mgr-conect2/mgr-conect-2'
 
-  # 3 — Deploy to Cloud Run
+  # 3 — Deploy site institucional ao Firebase Hosting (public-site/)
+  - name: 'node:20-slim'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        npm install -g firebase-tools --quiet
+        firebase deploy --only hosting:site --project mgr-conect2 --non-interactive
+
+  # 4 — Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
