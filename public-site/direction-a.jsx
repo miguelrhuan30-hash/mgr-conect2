@@ -149,9 +149,9 @@ function A_About() {
           <div style={{ aspectRatio: '4/5', width: '100%', overflow: 'hidden', borderRadius: 4 }}>
             <img
               loading="lazy"
-              src="assets/fundadores-mgr.png"
-              alt="Fundadores Marcos Giovanni & Guilherme Macri"
-              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+              src="assets/fundadores-mgr.jpg"
+              alt="Fundadores Marcos Giovani & Guilherme Macri"
+              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
             />
           </div>
           <div style={{ position: 'absolute', bottom: -24, left: -24, background: MGR.laranja, color: '#fff', padding: '20px 28px', fontWeight: 600 }}>
@@ -539,7 +539,7 @@ function A_Portfolio() {
           <img
             src="assets/felipe-indaia-pescados.png"
             alt="Felipe · CEO · Indaia Pescados"
-            style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 12, display: 'block' }}
+            style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', objectPosition: 'center top', borderRadius: 12, display: 'block' }}
           />
           <div>
             <div style={{ fontSize: 11, color: MGR.azul, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 600, marginBottom: 16 }}>Depoimento</div>
