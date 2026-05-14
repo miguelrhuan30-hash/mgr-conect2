@@ -229,7 +229,7 @@ function S_Time() {
         </div>
         <div style={{ background: MGR.cinzaClaro, padding: '32px 32px 36px', borderRadius: 8, borderTop: `3px solid ${MGR.acento}`, display: 'flex', flexDirection: 'column' }}>
           <div style={{ width: '100%', aspectRatio: '1', background: MGR.azul, borderRadius: 6, position: 'relative', overflow: 'hidden', marginBottom: 20 }}>
-            <img loading="lazy" src="assets/fundadores-mgr.png" alt="Guilherme — Sócio e COO" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'right center', position: 'absolute', inset: 0 }} />
+            <img loading="lazy" src="assets/fundadores-mgr.jpg" alt="Guilherme — Sócio e COO" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'right center', position: 'absolute', inset: 0 }} />
           </div>
           <div style={{ fontFamily: MGR.mono, fontSize: 10, color: MGR.acento, letterSpacing: 1.5, fontWeight: 600, marginBottom: 8 }}>SÓCIO · COO</div>
           <h3 style={{ fontSize: 24, fontWeight: 600, color: MGR.grafite, margin: '0 0 12px', letterSpacing: -0.4 }}>Guilherme</h3>
