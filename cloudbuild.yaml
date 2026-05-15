@@ -23,6 +23,7 @@ steps:
   # 3 — Deploy site institucional ao Firebase Hosting (public-site/)
   - name: 'node:20-slim'
     entrypoint: 'bash'
+    allowFailure: true
     args:
       - '-c'
       - |
