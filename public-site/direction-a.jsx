@@ -53,7 +53,7 @@ function A_Hero() {
         </div>
 
         {/* Trust strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, marginTop: 40, borderTop: `1px solid rgba(255,255,255,0.1)`, borderBottom: `1px solid rgba(255,255,255,0.1)` }}>
+        <div className="trust-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, marginTop: 40, borderTop: `1px solid rgba(255,255,255,0.1)`, borderBottom: `1px solid rgba(255,255,255,0.1)` }}>
           {[
             ['+20', 'anos em campo'],
             ['+200', 'projetos entregues'],

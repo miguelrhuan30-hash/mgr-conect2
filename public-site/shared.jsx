@@ -102,6 +102,23 @@
         grid-template-columns: 1fr !important;
         gap: 20px !important;
       }
+      /* Trust strip (4 stats) → 2×2 no mobile; especificidade (0,2,1) para superar .pad div[style*=repeat(4] */
+      .pad div.trust-strip {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0 !important;
+      }
+      .trust-strip > * {
+        border-left: none !important;
+        padding-left: 16px !important;
+        border-top: 1px solid rgba(255,255,255,0.08) !important;
+        padding-top: 20px !important;
+        padding-bottom: 20px !important;
+      }
+      .trust-strip > *:first-child,
+      .trust-strip > *:nth-child(2) {
+        border-top: none !important;
+        padding-top: 28px !important;
+      }
 
       /* Seções — paddings */
       [style*="120px 56px"] { padding: 48px 20px !important; }
