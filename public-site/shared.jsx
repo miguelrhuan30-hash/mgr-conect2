@@ -151,16 +151,11 @@
       /* Números da trust strip */
       div[style*="font-size: 42px"] { font-size: clamp(28px, 7vw, 42px) !important; }
 
-      /* CTA buttons → largura total */
-      section button, section a[style*="border-radius: 8px"] {
+      /* CTA buttons → largura total (exclui hamburger) */
+      section button:not(.hamburger-btn), section a[style*="border-radius: 8px"] {
         width: 100% !important; justify-content: center !important; box-sizing: border-box !important;
       }
 
-      /* Grids de botões lado a lado → coluna */
-      div[style*="display: flex"][style*="gap: 12px"] {
-        flex-direction: column !important;
-        align-items: stretch !important;
-      }
     }
   `;
   document.head.appendChild(s);
@@ -337,7 +332,7 @@ function MGRHeader({ active = null }) {
 
   return (
     <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(13,59,94,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(255,255,255,0.10)', boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }}>
-      <div className="pad header-inner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 56px', fontFamily: MGR.sans, gap: 24, position: 'relative' }}>
+      <div className="header-inner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 56px', fontFamily: MGR.sans, gap: 24, position: 'relative' }}>
 
         {/* ESQUERDA — hamburger (mobile, fica antes do logo) + logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
