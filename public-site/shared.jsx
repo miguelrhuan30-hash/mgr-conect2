@@ -463,7 +463,7 @@ function MGRFooter() {
             <div style={{ fontSize: 13, lineHeight: 1.7, color: 'rgba(255,255,255,0.55)' }}>
               MGR Soluções e Tecnologia<br />
               da Refrigeração Ltda<br /><br />
-              R. Alberto Magnusson, 440<br />
+              R. Alberto Magnusson, 448<br />
               Comercial Vitoria Martini<br />
               Indaiatuba - SP · 13347-633<br /><br />
               <span style={{ fontFamily: MGR.mono, fontSize: 11, letterSpacing: 0.5, color: 'rgba(255,255,255,0.4)' }}>

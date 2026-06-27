@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>MGR — Redirecionando...</title>
+<style>
+  body { margin: 0; background: #0D1B2A; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; }
+  .logo { color: #D4792A; font-size: 1.4rem; font-weight: 800; letter-spacing: 0.05em; }
+  .sub  { color: #6B7280; font-size: 0.75rem; margin-top: 6px; text-align: center; }
+</style>
+</head>
+<body>
+<div style="text-align:center">
+  <div class="logo">MGR</div>
+  <div class="sub">Redirecionando...</div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script>
+  // ─────────────────────────────────────────────────────
+  // CONFIGURAÇÃO: atualizar "campaign" e "redirectTarget"
+  // sempre que trocar o destino do /card
+  // ─────────────────────────────────────────────────────
+  var CAMPAIGN      = 'fispal_2026';
+  var REDIRECT_TO   = '/Fispal?utm_source=qrcode_cartao&utm_medium=print&utm_campaign=fispal2026';
+  // ─────────────────────────────────────────────────────
+
+  firebase.initializeApp({
+    apiKey:            "AIzaSyDgIijdFVs2_ti7rqndRZhKI3QYpkOlwsg",
+    authDomain:        "mgrrefrigeracao.com.br",
+    projectId:         "mgr-conect2",
+    storageBucket:     "mgr-conect2.firebasestorage.app",
+    messagingSenderId: "94240285880",
+    appId:             "1:94240285880:web:8fad80b8c49c7f7280c04d"
+  });
+
+  // Loga acesso (fire-and-forget — não bloqueia o redirect)
+  try {
+    firebase.firestore().collection('card_accesses').add({
+      timestamp:      firebase.firestore.FieldValue.serverTimestamp(),
+      campaign:       CAMPAIGN,
+      redirectTarget: REDIRECT_TO.split('?')[0],
+      referrer:       document.referrer.slice(0, 200) || null,
+      userAgent:      navigator.userAgent.slice(0, 200)
+    });
+  } catch (e) { /* silencioso — não impede o redirect */ }
+
+  // Redireciona imediatamente
+  window.location.replace(REDIRECT_TO);
+</script>
+</body>
+</html>

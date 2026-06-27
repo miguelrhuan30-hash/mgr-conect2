@@ -327,8 +327,8 @@ function A_Portfolio() {
   const secundarios = [
     { cat: 'Casa de máquinas · Refrigeração comercial', name: 'Croissant & Cia · Indaiatuba', year: '2023', img: 'assets/croissant-casa-maquinas.webp' },
     { cat: 'Câmara fria de congelados · Armazenamento', name: 'Salgados Neves · São Paulo', year: '2024', img: 'assets/salgados-neves-camara.webp' },
-    { cat: 'Câmaras de pescado', name: 'Indaiá Pescados', year: '2024' },
-    { cat: 'Primeira planta industrial', name: 'Brasa Burguer', year: '2023' },
+    { cat: 'Câmaras de pescado', name: 'Indaiá Pescados', year: '2024', img: 'assets/indaia-camara-fria.webp' },
+    { cat: 'Refeitório climatizado · Isopainel modular', name: 'Croissant & Cia', year: '2023', img: 'assets/croissant-refeitorio.webp' },
   ];
 
   const caseStudies = [
@@ -615,6 +615,73 @@ function A_Connect() {
   );
 }
 
+function A_Midia() {
+  const videoId = 'tv-vpMSgB9s';
+  const startSec = 369; // 6:09
+  const [playing, setPlaying] = React.useState(false);
+  return (
+    <section id="midia" className="pad" style={{ background: '#F5F7FA', fontFamily: MGR.sans, padding: '100px 56px' }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <SectionTag num="08" label="MGR na Mídia" color={MGR.azul} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.7fr', gap: 64, alignItems: 'center', marginTop: 32 }}>
+          <div>
+            <h2 style={{ fontSize: 'clamp(26px, 4.5vw, 44px)', fontWeight: 600, letterSpacing: -0.8, color: MGR.grafite, margin: '0 0 20px', lineHeight: 1.1 }}>
+              MGR na mídia:<br />
+              <span style={{ color: MGR.azul }}>podcast de refrigeração industrial.</span>
+            </h2>
+            <p style={{ fontSize: 16, lineHeight: 1.65, color: '#6b7280', marginBottom: 32, maxWidth: 460 }}>
+              Nossos fundadores explicam como zero downtime deixou de ser slogan e virou cláusula contratual — e por que a diferença entre custo e prejuízo está na manutenção que você não vê.
+            </p>
+            <a
+              href={`https://www.youtube.com/watch?v=${videoId}&t=${startSec}s`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 10, background: '#FF0000', color: '#fff', padding: '12px 24px', borderRadius: 8, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}
+            >
+              <svg width="18" height="14" viewBox="0 0 18 14" fill="currentColor">
+                <path d="M17.6 2.2C17.4 1.5 16.8.9 16.1.7 14.8.3 9 .3 9 .3S3.2.3 1.9.7C1.2.9.6 1.5.4 2.2 0 3.6 0 6.5 0 6.5s0 2.9.4 4.3c.2.7.8 1.3 1.5 1.5C3.2 12.7 9 12.7 9 12.7s5.8 0 7.1-.4c.7-.2 1.3-.8 1.5-1.5.4-1.4.4-4.3.4-4.3s0-2.9-.4-4.3zm-10.4 7V5.3l4.7 1.9-4.7 1.9z" />
+              </svg>
+              Assistir no YouTube
+            </a>
+          </div>
+          <div
+            onClick={() => setPlaying(true)}
+            style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 12, boxShadow: '0 12px 48px rgba(13,59,94,0.18)', cursor: playing ? 'default' : 'pointer' }}
+          >
+            {playing ? (
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${videoId}?start=${startSec}&rel=0&modestbranding=1&color=white&autoplay=1`}
+                title="MGR Refrigeração Industrial — Podcast"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
+              />
+            ) : (
+              <>
+                <img
+                  src="assets/podcast-capa.webp"
+                  alt="MGR Refrigeração Industrial — Podcast"
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                {/* barra base */}
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+                  <div style={{ width: 34, height: 34, background: '#FF0000', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+                  </div>
+                  <div>
+                    <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>Assistir o podcast</div>
+                    <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>Inicia em 6:09</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function A_CTA() {
   const [form, setForm] = React.useState({ nome: '', empresa: '', telefone: '', descricao: '' });
   const [status, setStatus] = React.useState('idle'); // idle | loading | success | error
@@ -654,7 +721,7 @@ function A_CTA() {
     <section className="pad" style={{ background: MGR.azul, color: '#fff', padding: '120px 56px', fontFamily: MGR.sans }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 80, alignItems: 'start' }}>
         <div>
-          <SectionTag num="08" label="Solicitar Visita de Valor" color={MGR.laranja} />
+          <SectionTag num="09" label="Solicitar Visita de Valor" color={MGR.laranja} />
           <h2 style={{ fontSize: 'clamp(30px, 6vw, 56px)', fontWeight: 600, letterSpacing: -1, color: '#fff', margin: '0 0 24px', lineHeight: 1.05 }}>
             Comece pelo diagnóstico da sua operação.
           </h2>
@@ -756,6 +823,21 @@ function A_FooterDead() {
 }
 
 function DirectionA() {
+  React.useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash) return;
+    const el = document.querySelector(hash);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      // retry after a short delay in case the element isn't mounted yet
+      setTimeout(() => {
+        const el2 = document.querySelector(hash);
+        if (el2) el2.scrollIntoView({ behavior: 'smooth' });
+      }, 300);
+    }
+  }, []);
+
   return (
     <div style={{ background: '#fff', color: MGR.grafite }}>
       <A_Hero />
@@ -764,6 +846,7 @@ function DirectionA() {
       <A_About />
       <A_Why />
       <A_Portfolio />
+      <A_Midia />
       <A_CTA />
       <A_Footer />
     </div>
