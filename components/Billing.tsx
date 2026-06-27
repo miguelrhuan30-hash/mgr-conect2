@@ -10,10 +10,12 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Analytics } from '../utils/mgr-analytics';
-import { Task, WorkflowStatus as WS, CollectionName, Receivable } from '../types';
+import { Task, WorkflowStatus as WS, CollectionName, Receivable, STATUS_OS_LABELS, OSStatusFinal } from '../types';
+import { normalizeStatusOS } from '../services/osService';
 import {
     Receipt, FileCheck, Clock, CheckCircle2, AlertTriangle,
-    DollarSign, Loader2, X, Save, Calendar, ChevronLeft, ChevronRight
+    DollarSign, Loader2, X, Save, Calendar, ChevronLeft, ChevronRight,
+    FolderOpen
 } from 'lucide-react';
 import {
     format, differenceInCalendarDays, startOfMonth, endOfMonth,
@@ -48,8 +50,9 @@ const InvoiceModal: React.FC<{ task: Task; onClose: () => void }> = ({ task, onC
                 updatedAt: serverTimestamp(),
             });
             await addDoc(collection(db, CollectionName.RECEIVABLES), {
-                taskId: task.id, taskCode: task.code || task.id,
+                taskId: task.id, taskCode: (task as any).numeroOS || task.code || task.id,
                 clientId: task.clientId || '', clientName: task.clientName || 'N/A',
+                projectId: (task as any).projectId || null,
                 assigneeName: task.assigneeName || '', valor,
                 metodoPagamento: form.metodoPagamento, previsaoPagamento: previsao,
                 status: 'pendente' as const, observacoes: form.observacoes || undefined,
@@ -67,9 +70,14 @@ const InvoiceModal: React.FC<{ task: Task; onClose: () => void }> = ({ task, onC
                     <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600">
-                    <p className="font-bold">{task.code || task.id.slice(0,8)}</p>
+                    <p className="font-bold">{(task as any).numeroOS || task.code || task.id.slice(0,8)}</p>
                     <p>{task.title}</p>
                     {task.clientName && <p className="text-gray-400">{task.clientName}</p>}
+                    {(task as any).projectId && (
+                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-full text-[10px] font-bold">
+                            <FolderOpen className="w-3 h-3" /> Projeto
+                        </span>
+                    )}
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <div><label className="text-xs font-bold text-gray-600 block mb-1">Valor (R$)</label>
@@ -99,17 +107,35 @@ const TabFaturar: React.FC = () => {
     const [modal, setModal] = useState<Task | null>(null);
     useEffect(() => onSnapshot(
         query(collection(db, CollectionName.TASKS), where('workflowStatus', '==', WS.AGUARDANDO_FATURAMENTO), orderBy('createdAt','asc')),
-        snap => { setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task))); setLoading(false); },
+        snap => {
+            const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
+            setTasks(all.filter(t => !(t as any).faturamentoPeloProjeto));
+            setLoading(false);
+        },
         () => setLoading(false)
     ), []);
     if (loading) return <div className="flex justify-center py-12"><Loader2 className="animate-spin text-brand-600 w-8 h-8" /></div>;
     return (
         <div className="space-y-3">
             {tasks.length === 0 && <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl text-gray-400">Nenhuma O.S. aguardando faturamento.</div>}
-            {tasks.map(task => (
+            {tasks.map(task => {
+                const statusNorm = normalizeStatusOS((task as any).statusOS);
+                return (
                 <div key={task.id} className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
                     <div className="flex-1 min-w-0">
-                        <p className="text-[10px] text-gray-400 font-bold">{task.code || task.id.slice(0,8)}</p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-[10px] text-gray-400 font-bold">{(task as any).numeroOS || task.code || task.id.slice(0,8)}</p>
+                            {(task as any).projectId && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-full text-[9px] font-bold">
+                                    <FolderOpen className="w-2.5 h-2.5" /> Projeto
+                                </span>
+                            )}
+                            {statusNorm && (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded-full font-medium">
+                                    {STATUS_OS_LABELS[statusNorm] || statusNorm}
+                                </span>
+                            )}
+                        </div>
                         <p className="font-bold text-gray-900 truncate">{task.title}</p>
                         {task.clientName && <p className="text-xs text-gray-500">{task.clientName}</p>}
                         {task.assigneeName && <p className="text-xs text-gray-400">Técnico: {task.assigneeName}</p>}
@@ -117,7 +143,8 @@ const TabFaturar: React.FC = () => {
                     <button onClick={() => setModal(task)} className="px-4 py-2 bg-brand-600 text-white text-sm font-bold rounded-xl hover:bg-brand-700 flex items-center gap-2 flex-shrink-0">
                         <DollarSign className="w-4 h-4" /> Faturar</button>
                 </div>
-            ))}
+                );
+            })}
             {modal && <InvoiceModal task={modal} onClose={() => setModal(null)} />}
         </div>
     );
@@ -172,6 +199,14 @@ const TabAguardando: React.FC = () => {
                 return (
                     <div key={task.id} className={`bg-white rounded-xl border p-5 flex items-center gap-4 shadow-sm ${isOverdue ? 'border-red-300' : isSoon ? 'border-amber-300' : 'border-gray-200'}`}>
                         <div className="flex-1 min-w-0">
+                            <p className="text-[10px] text-gray-400 font-bold mb-0.5">
+                                {(task as any).numeroOS || task.code || task.id.slice(0,8)}
+                                {(task as any).projectId && (
+                                    <span className="inline-flex items-center gap-1 ml-2 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-full text-[9px] font-bold">
+                                        <FolderOpen className="w-2.5 h-2.5" /> Projeto
+                                    </span>
+                                )}
+                            </p>
                             <div className="flex items-center gap-2 mb-1">
                                 <p className="font-bold text-gray-900 truncate">{task.title}</p>
                                 {isOverdue && <span className="text-[10px] font-bold px-2 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded-full">Vencido</span>}

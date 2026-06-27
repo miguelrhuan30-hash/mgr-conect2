@@ -14,14 +14,16 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   UserPlus, Ruler, Calculator, Presentation, FileSignature,
-  CalendarDays, Wrench, HardHat, FileText, CreditCard,
+  Wrench, HardHat, FileText, CreditCard,
   Archive, XCircle, ChevronRight, Search, Plus, ArrowLeft,
   Loader2, Building2, Calendar, DollarSign,
   ArrowRight, Briefcase, AlertCircle, LayoutGrid,
-  Settings, Check, Users,
+  Settings, Check, Users, Pencil, Printer, Eye,
+  FolderOpen, Zap, ClipboardList, Trash2, ExternalLink,
 } from 'lucide-react';
 import {
   doc, getDoc, setDoc, collection, getDocs, onSnapshot, Timestamp,
+  query, where, orderBy, updateDoc, deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,12 +35,17 @@ import ProjectCotacao from './ProjectCotacao';
 import ProjectProposta from './ProjectProposta';
 import ProjectContrato from './ProjectContrato';
 import FunilConversao from './FunilConversao';
+import { Suspense, lazy } from 'react';
+const OSEditModal = lazy(() => import('./OSEditModal'));
 import {
   ProjectV2, ProjectPhase, Sector,
   PROJECT_PHASE_LABELS, PROJECT_PHASE_COLORS,
   PROJECT_TYPES, CollectionName,
   RaciFlowEntry, RaciFlowConfig,
+  Task, WorkflowStatus as WS, WORKFLOW_LABELS, WORKFLOW_COLORS,
+  STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal,
 } from '../types';
+import { normalizeStatusOS } from '../services/osService';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -68,14 +75,13 @@ const FLOW_FASES: FlowFase[] = [
   { id: 'prancheta',    numero: 1,  label: 'Prancheta',     descricao: 'Levantamento técnico',                  icon: Ruler,        cor: 'bg-blue-600 text-white',   corBg: 'bg-blue-50 text-blue-700',       fases: ['lead_capturado', 'em_levantamento'], tabHint: 'prancheta' },
   { id: 'cotacao',      numero: 2,  label: 'Cotação',       descricao: 'Materiais e fornecedores',              icon: Calculator,   cor: 'bg-cyan-600 text-white',   corBg: 'bg-cyan-50 text-cyan-700',       fases: ['em_cotacao', 'cotacao_recebida'],    tabHint: 'cotacao' },
   { id: 'proposta',     numero: 3,  label: 'Proposta',      descricao: 'Apresentação comercial',                icon: Presentation, cor: 'bg-indigo-600 text-white', corBg: 'bg-indigo-50 text-indigo-700',   fases: ['proposta_enviada'],                 tabHint: 'proposta' },
-  { id: 'contrato',     numero: 4,  label: 'Contrato',      descricao: 'Assinatura e gate de execução',         icon: FileSignature,cor: 'bg-amber-600 text-white',  corBg: 'bg-amber-50 text-amber-700',     fases: ['contrato_enviado', 'contrato_assinado'], tabHint: 'contrato' },
-  { id: 'gantt',        numero: 5,  label: 'Gantt',         descricao: 'Planejamento executivo',                icon: CalendarDays, cor: 'bg-sky-600 text-white',    corBg: 'bg-sky-50 text-sky-700',         fases: ['em_planejamento', 'cronograma_aprovado'], tabHint: 'gantt' },
-  { id: 'os',           numero: 6,  label: 'O.S.',          descricao: 'Distribuição de ordens de serviço',     icon: Wrench,       cor: 'bg-orange-600 text-white', corBg: 'bg-orange-50 text-orange-700',   fases: ['os_distribuidas'],                 tabHint: 'os' },
-  { id: 'execucao',     numero: 7,  label: 'Execução',      descricao: 'Equipe em campo',                       icon: HardHat,      cor: 'bg-yellow-600 text-white', corBg: 'bg-yellow-50 text-yellow-700',   fases: ['em_execucao'],                     tabHint: 'os' },
-  { id: 'relatorio',    numero: 8,  label: 'Relatório',     descricao: 'Relatório final ao cliente',            icon: FileText,     cor: 'bg-pink-600 text-white',   corBg: 'bg-pink-50 text-pink-700',       fases: ['relatorio_enviado'],               tabHint: 'relatorio' },
-  { id: 'faturamento',  numero: 9,  label: 'Faturamento',   descricao: 'Cobrança e recebimento',                icon: CreditCard,   cor: 'bg-rose-600 text-white',   corBg: 'bg-rose-50 text-rose-700',       fases: ['em_faturamento', 'aguardando_recebimento'], tabHint: 'faturamento' },
-  { id: 'historico',    numero: 10, label: 'Concluídos',    descricao: 'Projetos finalizados',                  icon: Archive,      cor: 'bg-emerald-600 text-white',corBg: 'bg-emerald-50 text-emerald-700', fases: ['concluido'],                       tabHint: 'historico' },
-  { id: 'nao_aprovados',numero: 11, label: 'Não Aprovados', descricao: 'Upsell e reabordagem',                  icon: XCircle,      cor: 'bg-gray-600 text-white',   corBg: 'bg-gray-100 text-gray-600',      fases: null },
+  { id: 'contrato',     numero: 4,  label: 'Contrato',      descricao: 'Assinatura e gate de execução',         icon: FileSignature,cor: 'bg-amber-600 text-white',  corBg: 'bg-amber-50 text-amber-700',     fases: ['contrato_enviado'], tabHint: 'contrato' },
+  { id: 'os',           numero: 5,  label: 'Planejamento',  descricao: 'Tarefas, distribuição em O.S. e cronograma Gantt', icon: ClipboardList, cor: 'bg-orange-600 text-white', corBg: 'bg-orange-50 text-orange-700',   fases: ['contrato_assinado', 'em_planejamento', 'cronograma_aprovado', 'os_distribuidas'],  tabHint: 'os' },
+  { id: 'execucao',     numero: 6,  label: 'Execução',      descricao: 'Equipe em campo — criar/ajustar O.S. e Gantt', icon: HardHat, cor: 'bg-yellow-600 text-white', corBg: 'bg-yellow-50 text-yellow-700',   fases: ['em_execucao'],                     tabHint: 'os' },
+  { id: 'relatorio',    numero: 7,  label: 'Relatório',     descricao: 'Relatório final ao cliente',            icon: FileText,     cor: 'bg-pink-600 text-white',   corBg: 'bg-pink-50 text-pink-700',       fases: ['relatorio_enviado'],               tabHint: 'relatorio' },
+  { id: 'faturamento',  numero: 8,  label: 'Faturamento',   descricao: 'Cobrança e recebimento',                icon: CreditCard,   cor: 'bg-rose-600 text-white',   corBg: 'bg-rose-50 text-rose-700',       fases: ['em_faturamento', 'aguardando_recebimento'], tabHint: 'faturamento' },
+  { id: 'historico',    numero: 9,  label: 'Concluídos',    descricao: 'Projetos finalizados',                  icon: Archive,      cor: 'bg-emerald-600 text-white',corBg: 'bg-emerald-50 text-emerald-700', fases: ['concluido'],                       tabHint: 'historico' },
+  { id: 'nao_aprovados',numero: 10, label: 'Não Aprovados', descricao: 'Upsell e reabordagem',                  icon: XCircle,      cor: 'bg-gray-600 text-white',   corBg: 'bg-gray-100 text-gray-600',      fases: null },
 ];
 
 const RACI_DOC = 'flow_phases';
@@ -95,42 +101,78 @@ const tipoLabel = (slug: string) => PROJECT_TYPES.find(t => t.slug === slug)?.la
 
 // ── Mini Card do Projeto ───────────────────────────────────────────────────────
 
-const ProjectMiniCard: React.FC<{ project: ProjectV2; fase: FlowFase; onOpen: () => void }> = ({ project, fase, onOpen }) => {
+const ProjectMiniCard: React.FC<{
+  project: ProjectV2;
+  fase: FlowFase;
+  onOpen: () => void;
+  canManage?: boolean;
+  onArchive?: () => void;
+  onDelete?: () => void;
+}> = ({ project, fase, onOpen, canManage, onArchive, onDelete }) => {
   const osProgress = project.totalOSConcluidas != null && project.totalOSPrevistas
     ? Math.round((project.totalOSConcluidas / project.totalOSPrevistas) * 100) : null;
   const phaseColor = PROJECT_PHASE_COLORS[project.fase] || 'bg-gray-100 text-gray-600 border-gray-200';
 
   return (
-    <button onClick={onOpen} className="w-full text-left bg-white rounded-2xl border border-gray-200 p-4 hover:border-brand-300 hover:shadow-md transition-all group">
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${fase.corBg}`}>
-          <fase.icon className="w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h4 className="text-sm font-bold text-gray-900 truncate">{project.nome}</h4>
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${phaseColor}`}>
-              {PROJECT_PHASE_LABELS[project.fase]}
-            </span>
+    <div className="relative group">
+      <button onClick={onOpen} className="w-full text-left bg-white rounded-2xl border border-gray-200 p-4 hover:border-brand-300 hover:shadow-md transition-all group/card">
+        <div className="flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${fase.corBg}`}>
+            <fase.icon className="w-5 h-5" />
           </div>
-          <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400 flex-wrap">
-            <span className="flex items-center gap-0.5"><Building2 className="w-3 h-3" />{project.clientName}</span>
-            <span className="flex items-center gap-0.5"><Briefcase className="w-3 h-3" />{tipoLabel(project.tipoProjetoSlug)}</span>
-            {project.valorContrato && <span className="flex items-center gap-0.5 font-bold text-gray-600"><DollarSign className="w-3 h-3" />{fmtCurrency(project.valorContrato)}</span>}
-            <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" />{fmtDate(project.createdAt)}</span>
-          </div>
-          {osProgress != null && (
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div className={`h-1.5 rounded-full transition-all ${osProgress >= 100 ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{ width: `${osProgress}%` }} />
-              </div>
-              <span className="text-[9px] font-bold text-gray-500 flex-shrink-0">{project.totalOSConcluidas}/{project.totalOSPrevistas} O.S.</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-sm font-bold text-gray-900 truncate">{project.nome}</h4>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${phaseColor}`}>
+                {PROJECT_PHASE_LABELS[project.fase]}
+              </span>
             </div>
-          )}
+            <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400 flex-wrap">
+              <span className="flex items-center gap-0.5"><Building2 className="w-3 h-3" />{project.clientName}</span>
+              <span className="flex items-center gap-0.5"><Briefcase className="w-3 h-3" />{tipoLabel(project.tipoProjetoSlug)}</span>
+              {project.valorContrato && <span className="flex items-center gap-0.5 font-bold text-gray-600"><DollarSign className="w-3 h-3" />{fmtCurrency(project.valorContrato)}</span>}
+              <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" />{fmtDate(project.createdAt)}</span>
+            </div>
+            {osProgress != null && (
+              <div className="mt-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-1.5 rounded-full transition-all ${osProgress >= 100 ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{ width: `${osProgress}%` }} />
+                  </div>
+                  <span className="text-[9px] font-bold text-gray-500 flex-shrink-0">{project.totalOSConcluidas}/{project.totalOSPrevistas} O.S.</span>
+                </div>
+                {osProgress >= 100 && (
+                  <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-600 animate-pulse">
+                    <Check className="w-3 h-3" /> Todas OS concluídas — pronto para avançar
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-300 group-hover/card:text-brand-500 flex-shrink-0 transition-colors mt-1" />
         </div>
-        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-brand-500 flex-shrink-0 transition-colors mt-1" />
-      </div>
-    </button>
+      </button>
+
+      {/* Ações de gestão — visíveis apenas no hover para usuários com canManageProjects */}
+      {canManage && (
+        <div className="absolute top-2 right-8 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive?.(); }}
+            title="Arquivar projeto"
+            className="p-1.5 rounded-lg bg-amber-50 text-amber-500 hover:bg-amber-100 border border-amber-100 transition-colors"
+          >
+            <Archive className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+            title="Excluir projeto"
+            className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 border border-red-100 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -218,8 +260,11 @@ const FaseProjectList: React.FC<{
   projects: ProjectV2[];
   search: string;
   onSearch: (v: string) => void;
-  onSelectInline?: (projectId: string) => void; // inline mode: só para fase prancheta
-}> = ({ fase, projects, search, onSearch, onSelectInline }) => {
+  onSelectInline?: (projectId: string) => void;
+  canManage?: boolean;
+  onArchiveProject?: (project: ProjectV2) => void;
+  onDeleteProject?: (project: ProjectV2) => void;
+}> = ({ fase, projects, search, onSearch, onSelectInline, canManage, onArchiveProject, onDeleteProject }) => {
   const navigate = useNavigate();
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -228,7 +273,7 @@ const FaseProjectList: React.FC<{
 
   const handleOpen = (project: ProjectV2) => {
     if (onSelectInline) {
-      onSelectInline(project.id); // abre inline (fase prancheta)
+      onSelectInline(project.id);
     } else {
       navigate(fase.tabHint
         ? `/app/projetos-v2/${project.id}?tab=${fase.tabHint}&from=flow`
@@ -261,7 +306,15 @@ const FaseProjectList: React.FC<{
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filtered.map(project => (
-            <ProjectMiniCard key={project.id} project={project} fase={fase} onOpen={() => handleOpen(project)} />
+            <ProjectMiniCard
+              key={project.id}
+              project={project}
+              fase={fase}
+              onOpen={() => handleOpen(project)}
+              canManage={canManage}
+              onArchive={() => onArchiveProject?.(project)}
+              onDelete={() => onDeleteProject?.(project)}
+            />
           ))}
         </div>
       )}
@@ -270,6 +323,244 @@ const FaseProjectList: React.FC<{
           {onSelectInline
             ? `📄 Clique para abrir ${fase.label} do projeto.`
             : `💡 Clique em um projeto para abrir a fase ${fase.label} e executar as atividades.`}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// ── Fase 6 — Lista unificada de O.S. (projetos + avulsas) ────────────────────
+
+const OSTaskCard: React.FC<{
+  task: Task;
+  onEdit: (task: Task) => void;
+  onPrint: (task: Task) => void;
+}> = ({ task, onEdit, onPrint }) => {
+  const statusNorm = normalizeStatusOS((task as any).statusOS);
+  const wfColor = WORKFLOW_COLORS[task.workflowStatus as WS] || 'bg-gray-100 text-gray-600 border-gray-200';
+  const hasProject = !!(task as any).projectId;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 hover:border-orange-300 hover:shadow-md transition-all group">
+      <div className="flex items-start gap-3">
+        {/* Ícone lateral */}
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${hasProject ? 'bg-indigo-50 text-indigo-600' : 'bg-orange-50 text-orange-600'}`}>
+          {hasProject ? <FolderOpen className="w-5 h-5" /> : <Wrench className="w-5 h-5" />}
+        </div>
+
+        {/* Conteúdo */}
+        <div className="flex-1 min-w-0">
+          {/* Header: número + badges */}
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-[10px] font-extrabold text-gray-500">
+              {(task as any).numeroOS || task.code || task.id.slice(0, 8)}
+            </span>
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${wfColor}`}>
+              {WORKFLOW_LABELS[task.workflowStatus as WS] || task.workflowStatus}
+            </span>
+            {hasProject && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-full">
+                Projeto
+              </span>
+            )}
+            {(task as any).faturamentoPeloProjeto && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-violet-100 text-violet-700 border border-violet-200 rounded-full">
+                Fat. Projeto
+              </span>
+            )}
+            {!hasProject && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-orange-100 text-orange-700 border border-orange-200 rounded-full flex items-center gap-0.5">
+                <Zap className="w-2.5 h-2.5" /> Avulsa
+              </span>
+            )}
+            {statusNorm && STATUS_OS_LABELS[statusNorm] && (
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${STATUS_OS_COLORS[statusNorm] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                {STATUS_OS_LABELS[statusNorm]}
+              </span>
+            )}
+          </div>
+
+          {/* Título */}
+          <h4 className="text-sm font-bold text-gray-900 truncate">{task.title}</h4>
+
+          {/* Metadados */}
+          <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400 flex-wrap">
+            {task.clientName && (
+              <span className="flex items-center gap-0.5"><Building2 className="w-3 h-3" />{task.clientName}</span>
+            )}
+            {task.assigneeName && (
+              <span className="flex items-center gap-0.5"><Users className="w-3 h-3" />{task.assigneeName}</span>
+            )}
+            {(task as any).tipoServico && (
+              <span className="flex items-center gap-0.5"><ClipboardList className="w-3 h-3" />{(task as any).tipoServico}</span>
+            )}
+            {task.endDate && (
+              <span className="flex items-center gap-0.5">
+                <Calendar className="w-3 h-3" />
+                {(() => { try { return format((task.endDate as any).toDate(), 'dd/MM/yy', { locale: ptBR }); } catch { return '—'; } })()}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Ações */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button onClick={() => onEdit(task)} title="Editar O.S."
+            className="p-2 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors">
+            <Pencil className="w-4 h-4" />
+          </button>
+          <button onClick={() => onPrint(task)} title="Imprimir O.S."
+            className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+            <Printer className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FaseOSList: React.FC<{
+  fase: FlowFase;
+  projects: ProjectV2[];
+  osTasks: Task[];
+  osLoading: boolean;
+  search: string;
+  onSearch: (v: string) => void;
+  onEditOS: (task: Task) => void;
+  onPrintOS: (task: Task) => void;
+  onOpenProject: (projectId: string) => void;
+  canManage?: boolean;
+  onArchiveProject?: (project: ProjectV2) => void;
+  onDeleteProject?: (project: ProjectV2) => void;
+}> = ({ fase, projects, osTasks, osLoading, search, onSearch, onEditOS, onPrintOS, onOpenProject, canManage, onArchiveProject, onDeleteProject }) => {
+  const navigate = useNavigate();
+
+  // Filtro unificado por busca
+  const q = search.toLowerCase();
+  const filteredTasks = useMemo(() =>
+    osTasks.filter(t =>
+      (t.title || '').toLowerCase().includes(q)
+      || (t.clientName || '').toLowerCase().includes(q)
+      || ((t as any).numeroOS || '').toLowerCase().includes(q)
+      || (t.assigneeName || '').toLowerCase().includes(q)
+    ), [osTasks, q]);
+  const filteredProjects = useMemo(() =>
+    projects.filter(p => p.nome.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q)),
+    [projects, q]);
+
+  // Separar OS avulsas e OS de projeto
+  const osAvulsas = useMemo(() => filteredTasks.filter(t => !(t as any).projectId), [filteredTasks]);
+  const osDeProjeto = useMemo(() => filteredTasks.filter(t => !!(t as any).projectId), [filteredTasks]);
+
+  const totalItems = filteredTasks.length + filteredProjects.length;
+
+  // Tabs: Todas as O.S. / Projetos
+  const [viewTab, setViewTab] = useState<'todas' | 'projetos'>('todas');
+
+  return (
+    <div className="space-y-4">
+      {/* Barra de busca + navegação */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Buscar O.S. por número, título, cliente, técnico..."
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+        </div>
+        <button onClick={() => navigate('/app/os')}
+          className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+          <LayoutGrid className="w-3.5 h-3.5" /> Módulo O.S.
+        </button>
+      </div>
+
+      {/* Tabs toggle */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
+        <button onClick={() => setViewTab('todas')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all ${viewTab === 'todas' ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <Wrench className="w-3.5 h-3.5" /> Todas as O.S. <span className="text-[10px] font-extrabold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">{filteredTasks.length}</span>
+        </button>
+        <button onClick={() => setViewTab('projetos')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all ${viewTab === 'projetos' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <FolderOpen className="w-3.5 h-3.5" /> Projetos <span className="text-[10px] font-extrabold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full">{filteredProjects.length}</span>
+        </button>
+      </div>
+
+      {/* Loading */}
+      {osLoading && (
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
+      )}
+
+      {/* Tab: Todas as O.S. */}
+      {viewTab === 'todas' && !osLoading && (
+        <div className="space-y-6">
+          {/* OS Avulsas */}
+          {osAvulsas.length > 0 && (
+            <div>
+              <h3 className="text-xs font-extrabold text-orange-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5" /> O.S. Avulsas <span className="text-[10px] bg-orange-100 px-1.5 py-0.5 rounded-full">{osAvulsas.length}</span>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {osAvulsas.map(task => (
+                  <OSTaskCard key={task.id} task={task} onEdit={onEditOS} onPrint={onPrintOS} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* OS de Projeto */}
+          {osDeProjeto.length > 0 && (
+            <div>
+              <h3 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <FolderOpen className="w-3.5 h-3.5" /> O.S. de Projetos <span className="text-[10px] bg-indigo-100 px-1.5 py-0.5 rounded-full">{osDeProjeto.length}</span>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {osDeProjeto.map(task => (
+                  <OSTaskCard key={task.id} task={task} onEdit={onEditOS} onPrint={onPrintOS} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {filteredTasks.length === 0 && (
+            <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+              <AlertCircle className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm font-bold text-gray-400">{search ? 'Nenhuma O.S. encontrada' : 'Nenhuma O.S. ativa no sistema'}</p>
+              <p className="text-xs text-gray-300 mt-1">Crie uma O.S. no módulo Ordens de Serviço para visualizá-la aqui.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Projetos */}
+      {viewTab === 'projetos' && !osLoading && (
+        <div>
+          {filteredProjects.length === 0 ? (
+            <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+              <AlertCircle className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm font-bold text-gray-400">{search ? 'Nenhum projeto encontrado' : 'Nenhum projeto na fase O.S.'}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filteredProjects.map(project => (
+                <ProjectMiniCard
+                  key={project.id}
+                  project={project}
+                  fase={fase}
+                  onOpen={() => onOpenProject(project.id)}
+                  canManage={canManage}
+                  onArchive={() => onArchiveProject?.(project)}
+                  onDelete={() => onDeleteProject?.(project)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Hint */}
+      {totalItems > 0 && (
+        <p className="text-[10px] text-gray-400 text-center">
+          💡 Clique em ✏️ para editar uma O.S. com acesso completo, ou em 🖨️ para imprimir. Todas as ações do módulo O.S. estão disponíveis aqui.
         </p>
       )}
     </div>
@@ -289,6 +580,31 @@ const FlowAtendimento: React.FC = () => {
   // Prancheta inline: abre o editor abaixo dos cards do flow sem navegar
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
+  // ── Fase 6 (O.S.) — query de TODAS as OS ativas ─────────────────────────────
+  const [allOSTasks, setAllOSTasks] = useState<Task[]>([]);
+  const [osTasksLoading, setOsTasksLoading] = useState(false);
+  const [editingOSTask, setEditingOSTask] = useState<Task | null>(null);
+
+  useEffect(() => {
+    if (faseSelecionada !== 'os' && faseSelecionada !== 'execucao') return;
+    setOsTasksLoading(true);
+    // Busca TODAS as tasks — filtra archived e concluídas no client-side
+    // (campo 'archived' não existe na maioria dos docs, != exclui docs sem o campo)
+    const q2 = query(
+      collection(db, CollectionName.TASKS),
+      orderBy('createdAt', 'desc'),
+    );
+    const unsub = onSnapshot(q2, snap => {
+      const tasks = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Task))
+        .filter(t => !((t as any).archived === true))    // exclui arquivadas
+        .filter(t => t.workflowStatus !== WS.CONCLUIDO); // exclui concluídas
+      setAllOSTasks(tasks);
+      setOsTasksLoading(false);
+    }, () => setOsTasksLoading(false));
+    return () => unsub();
+  }, [faseSelecionada]);
+
   // ── Filtros de Concluídos ────────────────────────────────────────────────────
   const [concFilterMes, setConcFilterMes] = useState<string>('');       // 'YYYY-MM'
   const [concFilterInicio, setConcFilterInicio] = useState<string>(''); // 'YYYY-MM-DD'
@@ -302,6 +618,45 @@ const FlowAtendimento: React.FC = () => {
   // Somente canManageSettings pode editar a RACI
   const canEditRaci = userProfile?.role === 'admin' || userProfile?.role === 'developer'
     || !!userProfile?.permissions?.canManageSettings;
+
+  // canManageProjects — pode arquivar e excluir projetos do flow
+  const canManageProjects = userProfile?.role === 'admin' || userProfile?.role === 'developer'
+    || !!userProfile?.permissions?.canManageProjects;
+
+  // ── Confirmação de exclusão e feedback ──────────────────────────────────────
+  const [confirmDelete, setConfirmDelete] = useState<ProjectV2 | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  const showFeedback = useCallback((msg: string) => {
+    setActionFeedback(msg);
+    setTimeout(() => setActionFeedback(null), 3500);
+  }, []);
+
+  const handleArchiveProject = useCallback(async (project: ProjectV2) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, CollectionName.PROJECTS_V2, project.id), {
+        archived: true,
+        archivedAt: Timestamp.now(),
+        archivedBy: currentUser.uid,
+      });
+      showFeedback(`"${project.nome}" arquivado com sucesso.`);
+    } catch {
+      showFeedback('Erro ao arquivar projeto. Tente novamente.');
+    }
+  }, [currentUser, showFeedback]);
+
+  const handleDeleteProject = useCallback(async (project: ProjectV2) => {
+    if (!currentUser) return;
+    try {
+      await deleteDoc(doc(db, CollectionName.PROJECTS_V2, project.id));
+      setConfirmDelete(null);
+      showFeedback(`"${project.nome}" excluído permanentemente.`);
+    } catch {
+      setConfirmDelete(null);
+      showFeedback('Erro ao excluir projeto. Tente novamente.');
+    }
+  }, [currentUser, showFeedback]);
 
   // Carrega setores (uma vez)
   useEffect(() => {
@@ -348,14 +703,19 @@ const FlowAtendimento: React.FC = () => {
     projects.forEach(p => {
       FLOW_FASES.forEach(f => { if (f.fases?.includes(p.fase)) counts[f.id]++; });
     });
+    // Fases O.S. e Execução — incluir count de OS ativas no badge
+    if (allOSTasks.length > 0) {
+      counts['os'] = (counts['os'] || 0) + allOSTasks.filter(t => t.workflowStatus !== WS.EM_EXECUCAO).length;
+      counts['execucao'] = (counts['execucao'] || 0) + allOSTasks.filter(t => t.workflowStatus === WS.EM_EXECUCAO).length;
+    }
     return counts;
-  }, [projects]);
+  }, [projects, allOSTasks]);
 
   const projetosDaFase = useMemo(() => {
     if (!projects) return [];
     const fase = FLOW_FASES.find(f => f.id === faseSelecionada);
     if (!fase?.fases) return [];
-    let lista = projects.filter(p => fase.fases!.includes(p.fase));
+    let lista = projects.filter(p => fase.fases!.includes(p.fase) && !p.archived);
 
     // Filtros de data apenas para Concluídos
     if (faseSelecionada === 'historico') {
@@ -632,6 +992,12 @@ const FlowAtendimento: React.FC = () => {
               <span className="text-sm font-extrabold text-gray-800 truncate">{selectedProject.nome}</span>
               <span className="text-xs text-gray-400 hidden md:block">· {selectedProject.clientName}</span>
             </div>
+            <button
+              onClick={() => navigate(`/app/projetos-v2/${selectedProject.id}?from=flow`)}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-brand-600 hover:bg-brand-50 rounded-lg border border-brand-200 transition-all ml-auto"
+            >
+              <ExternalLink className="w-3 h-3" /> Projeto completo
+            </button>
           </div>
         )}
 
@@ -643,6 +1009,9 @@ const FlowAtendimento: React.FC = () => {
             search={search}
             onSearch={setSearch}
             onSelectInline={setSelectedProjectId}
+            canManage={canManageProjects}
+            onArchiveProject={handleArchiveProject}
+            onDeleteProject={setConfirmDelete}
           />
         )}
         {faseSelecionada === 'prancheta' && !loading && selectedProjectId && selectedProject && (
@@ -666,6 +1035,9 @@ const FlowAtendimento: React.FC = () => {
             search={search}
             onSearch={setSearch}
             onSelectInline={setSelectedProjectId}
+            canManage={canManageProjects}
+            onArchiveProject={handleArchiveProject}
+            onDeleteProject={setConfirmDelete}
           />
         )}
         {faseSelecionada === 'cotacao' && !loading && selectedProjectId && selectedProject && (
@@ -689,6 +1061,9 @@ const FlowAtendimento: React.FC = () => {
             search={search}
             onSearch={setSearch}
             onSelectInline={setSelectedProjectId}
+            canManage={canManageProjects}
+            onArchiveProject={handleArchiveProject}
+            onDeleteProject={setConfirmDelete}
           />
         )}
         {faseSelecionada === 'proposta' && !loading && selectedProjectId && selectedProject && (
@@ -705,6 +1080,9 @@ const FlowAtendimento: React.FC = () => {
             search={search}
             onSearch={setSearch}
             onSelectInline={setSelectedProjectId}
+            canManage={canManageProjects}
+            onArchiveProject={handleArchiveProject}
+            onDeleteProject={setConfirmDelete}
           />
         )}
         {faseSelecionada === 'contrato' && !loading && selectedProjectId && selectedProject && (
@@ -713,12 +1091,94 @@ const FlowAtendimento: React.FC = () => {
           </div>
         )}
 
-        {/* Fases 5-10 (execução — continuam abrindo no ProjectDetail via navigate) */}
-        {!INLINE_FASES.includes(faseSelecionada) && faseAtual.fases && !loading && (
-          <FaseProjectList fase={faseAtual} projects={projetosDaFase} search={search} onSearch={setSearch} />
+        {/* Fases O.S. e Execução — lista unificada (avulsas + projeto) com edição inline */}
+        {(faseSelecionada === 'os' || faseSelecionada === 'execucao') && !loading && (
+          <>
+            <FaseOSList
+              fase={faseAtual}
+              projects={projetosDaFase}
+              osTasks={allOSTasks}
+              osLoading={osTasksLoading}
+              search={search}
+              onSearch={setSearch}
+              onEditOS={setEditingOSTask}
+              onPrintOS={(task) => window.open(`/#/app/os/${task.id}/print`, '_blank')}
+              onOpenProject={(projectId) => navigate(`/app/projetos-v2/${projectId}?tab=os&from=flow`)}
+              canManage={canManageProjects}
+              onArchiveProject={handleArchiveProject}
+              onDeleteProject={setConfirmDelete}
+            />
+            {editingOSTask && (
+              <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}>
+                <OSEditModal
+                  task={editingOSTask}
+                  onClose={() => setEditingOSTask(null)}
+                  onSaved={(updated) => {
+                    setAllOSTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+                    setEditingOSTask(null);
+                  }}
+                />
+              </Suspense>
+            )}
+          </>
+        )}
+
+        {/* Fases restantes (relatório, faturamento, concluídos) */}
+        {!INLINE_FASES.includes(faseSelecionada) && faseSelecionada !== 'os' && faseSelecionada !== 'execucao' && faseAtual.fases && !loading && (
+          <FaseProjectList
+            fase={faseAtual}
+            projects={projetosDaFase}
+            search={search}
+            onSearch={setSearch}
+            canManage={canManageProjects}
+            onArchiveProject={handleArchiveProject}
+            onDeleteProject={setConfirmDelete}
+          />
         )}
 
       </div>
+
+      {/* ── Modal de confirmação de exclusão ── */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirmDelete(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-gray-900">Excluir projeto</h3>
+                <p className="text-xs text-gray-500">Esta ação não pode ser desfeita.</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-700 mb-5">
+              Tem certeza que deseja excluir permanentemente o projeto{' '}
+              <strong className="text-gray-900">"{confirmDelete.nome}"</strong>?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDeleteProject(confirmDelete)}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-colors"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast de feedback ── */}
+      {actionFeedback && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm font-bold px-5 py-3 rounded-2xl shadow-xl whitespace-nowrap">
+          {actionFeedback}
+        </div>
+      )}
     </div>
   );
 };

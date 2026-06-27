@@ -1,0 +1,40 @@
+<!--
+  PERMISSÕES PARA AndroidManifest.xml (android/app/src/main/AndroidManifest.xml)
+  Adicionar dentro de <manifest> antes de <application>
+  após rodar: npx cap add android
+-->
+
+<!-- Localização em primeiro plano -->
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+<!-- Localização em background (rastreio contínuo — Android 10+) -->
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+<!-- Câmera -->
+<uses-permission android:name="android.permission.CAMERA" />
+<uses-feature android:name="android.hardware.camera" android:required="false" />
+
+<!-- Microfone / áudio -->
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+<!-- Chamadas telefônicas -->
+<uses-permission android:name="android.permission.CALL_PHONE" />
+<uses-permission android:name="android.permission.READ_CALL_LOG" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+<!-- Notificações (Android 13+) -->
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+<!-- Vibração e sons -->
+<uses-permission android:name="android.permission.VIBRATE" />
+
+<!-- Internet (obrigatório para Live Update + Firebase) -->
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+<!-- Manter CPU ativa para rastreio background -->
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+
+<!-- Iniciar ao ligar o dispositivo (para notificações persistirem) -->
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

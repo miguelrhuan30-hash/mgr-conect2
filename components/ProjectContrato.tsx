@@ -190,7 +190,12 @@ const ProjectContrato: React.FC<Props> = ({ project }) => {
       <div className="text-center py-10 text-gray-500">
         <AlertCircle className="w-10 h-10 mx-auto mb-3 text-amber-400" />
         <p className="text-sm font-medium">Este projeto não tem documento de proposta vinculado.</p>
-        <p className="text-xs text-gray-400 mt-1">Volte para a Fase Proposta e suba o contrato no Passo 3 antes de avançar.</p>
+        <p className="text-xs text-gray-400 mt-1">Você pode avançar manualmente sem contrato.</p>
+        <button onClick={handleAvancarManual} disabled={busy === 'avancar'}
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-bold rounded-xl hover:bg-brand-700 disabled:opacity-50">
+          {busy === 'avancar' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+          Avançar para Planejamento
+        </button>
       </div>
     );
   }

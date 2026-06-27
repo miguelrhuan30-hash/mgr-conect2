@@ -16,6 +16,7 @@ import {
   collection, query, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { gerarNumeroOS } from '../services/osService';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Task, CollectionName, OSEdicao, PriorityLevel, WorkflowStatus,
@@ -104,7 +105,7 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
   const [descricao,     setDescricao]     = useState(task.description || '');
   const [status,        setStatus]        = useState(task.status);
   const [prioridade,    setPrioridade]    = useState<PriorityLevel>(task.priority || 'medium');
-  const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>(task.workflowStatus || WorkflowStatus.TRIAGEM);
+  const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>(task.workflowStatus || WorkflowStatus.AGUARDANDO_APROVACAO);
   const [tipoServico,   setTipoServico]   = useState((task as any).tipoServico || '');
   const [clientId,      setClientId]      = useState((task as any).clientId || '');
   const [clientName,    setClientName]    = useState((task as any).clientName || '');
@@ -115,6 +116,7 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
   const [ativoNome,     setAtivoNome]     = useState((task as any).ativoNome || '');
   const [projectId,     setProjectId]     = useState((task as any).projectId || '');
   const [projectName,   setProjectName]   = useState((task as any).projectName || '');
+  const [faturamentoPeloProjeto, setFaturamentoPeloProjeto] = useState<boolean>((task as any).faturamentoPeloProjeto || false);
 
   const [startDate, setStartDate] = useState(() => {
     const d = (task as any)?.scheduling?.dataInicio || (task as any)?.startDate;
@@ -193,20 +195,26 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
       .catch(() => setAtivos([]));
   }, [clientId]);
 
-  // Load projects when clientId changes
+  // Load ALL projects from all collections (allow linking OS to any project)
   useEffect(() => {
-    if (!clientId) { setProjects([]); return; }
-    getDocs(query(collection(db, CollectionName.PROJECTS), where('clientId', '==', clientId)))
-      .then(snap => setProjects(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))))
-      .catch(() => setProjects([]));
-    // Also try os_projects
-    getDocs(query(collection(db, CollectionName.OS_PROJECTS), where('clientId', '==', clientId)))
-      .then(snap => {
-        const ps = snap.docs.map(d => ({ id: d.id, name: (d.data() as any).nome, ...(d.data() as any) }));
-        setProjects(prev => [...prev, ...ps]);
-      })
-      .catch(() => {});
-  }, [clientId]);
+    (async () => {
+      const all: any[] = [];
+      const fetch = async (col: string) => {
+        try {
+          const snap = await getDocs(collection(db, col));
+          return snap.docs.map(d => ({ id: d.id, name: (d.data() as any).nome || (d.data() as any).name, ...(d.data() as any) }));
+        } catch (e) { console.warn(`[OSEdit] Failed to load ${col}:`, e); return []; }
+      };
+      const [p2s, ps, ops] = await Promise.all([
+        fetch(CollectionName.PROJECTS_V2),
+        fetch(CollectionName.PROJECTS),
+        fetch(CollectionName.OS_PROJECTS),
+      ]);
+      const seen = new Set<string>();
+      [...p2s, ...ps, ...ops].forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); all.push(p); } });
+      setProjects(all);
+    })();
+  }, []);
 
   // Tipo serviço autocomplete
   const buscarTipos = async (val: string) => {
@@ -299,6 +307,7 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
           patch.projectId   = projectId;
           patch.projectName = projectName;
         }
+        patch.faturamentoPeloProjeto = !!(projectId && faturamentoPeloProjeto);
 
         // Scheduling
         const scheduling: any = { ...((task as any).scheduling || {}) };
@@ -404,9 +413,14 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
         .filter((t: any) => t.status !== 'concluida')
         .map((t: any) => ({ ...t, id: `tarefa_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, status: 'pendente' }));
 
+      // Gerar número sequencial para a nova OS reagendada
+      const numeroOS = await gerarNumeroOS();
+
       const novaOS: Record<string, any> = {
-        title: `[Reag.] ${titulo}`,
+        numeroOS,
+        title: `${numeroOS} — [Reag.] ${titulo}`,
         description: reagendamentoDesc || descricao,
+        dadosCompletos: true,
         status: 'pending',
         priority: prioridade,
         clientId, clientName,
@@ -434,7 +448,7 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
         ponto: { permiteEntrada: pontoEntrada, permiteSaida: pontoSaida },
         reagendamentoDe: task.id,
         reagendamentoMotivo: motivo,
-        workflowStatus: WorkflowStatus.TRIAGEM,
+        workflowStatus: WorkflowStatus.AGUARDANDO_APROVACAO,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -444,13 +458,13 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
       // Finalize original OS
       await updateDoc(doc(db, CollectionName.TASKS, task.id), {
         status: 'completed',
-        statusOS: 'reagendar',
+        statusOS: 'REAGENDAR',
         reagendamentoMotivo: motivo,
         reagendamentoPara: novaRef.id,
         updatedAt: serverTimestamp(),
       });
 
-      onSaved({ ...task, status: 'completed', statusOS: 'reagendar' } as unknown as Task);
+      onSaved({ ...task, status: 'completed', statusOS: 'REAGENDAR' } as unknown as Task);
     } catch (e: any) {
       setError(e.message || 'Erro ao reagendar');
     } finally {
@@ -607,21 +621,46 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
                         <ChevronDown size={13} className="absolute right-2.5 top-[calc(50%+8px)] -translate-y-1/2 text-gray-400 pointer-events-none" />
                       </div>
                     )}
-                    {projects.length > 0 && (
-                      <div className="relative">
-                        <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1">
-                          <Briefcase size={11} className="inline mr-1" />Projeto
-                        </label>
-                        <select value={projectId} onChange={e => {
-                          const p = projects.find(x => x.id === e.target.value);
-                          setProjectId(e.target.value); setProjectName(p?.name || p?.nome || '');
-                        }}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-brand-200 pr-8">
-                          <option value="">Nenhum projeto</option>
-                          {projects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}</option>)}
-                        </select>
-                        <ChevronDown size={13} className="absolute right-2.5 top-[calc(50%+8px)] -translate-y-1/2 text-gray-400 pointer-events-none" />
-                      </div>
+                    <div className="relative">
+                      <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1">
+                        <Briefcase size={11} className="inline mr-1" />Projeto
+                      </label>
+                      {(() => {
+                        const clientProjects = clientId ? projects.filter(p => p.clientId === clientId) : [];
+                        const otherProjects = clientId ? projects.filter(p => p.clientId !== clientId) : projects;
+                        return (
+                          <select value={projectId} onChange={e => {
+                            const p = projects.find(x => x.id === e.target.value);
+                            setProjectId(e.target.value); setProjectName(p?.name || p?.nome || '');
+                            if (!e.target.value) setFaturamentoPeloProjeto(false);
+                          }}
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-brand-200 pr-8">
+                            <option value="">Nenhum projeto</option>
+                            {clientProjects.length > 0 && (
+                              <optgroup label="Projetos do cliente">
+                                {clientProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}</option>)}
+                              </optgroup>
+                            )}
+                            {otherProjects.length > 0 && (
+                              <optgroup label={clientProjects.length > 0 ? 'Outros projetos' : 'Todos os projetos'}>
+                                {otherProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}{p.clientName ? ` (${p.clientName})` : ''}</option>)}
+                              </optgroup>
+                            )}
+                          </select>
+                        );
+                      })()}
+                      <ChevronDown size={13} className="absolute right-2.5 top-[calc(50%+8px)] -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                    {projectId && (
+                      <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={faturamentoPeloProjeto}
+                          onChange={e => setFaturamentoPeloProjeto(e.target.checked)}
+                          className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs text-gray-600">Faturamento pelo projeto <span className="text-[10px] text-gray-400">(O.S. não gera cobrança individual)</span></span>
+                      </label>
                     )}
                   </>
                 )}

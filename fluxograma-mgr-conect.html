@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MGR Connect — Fluxograma de Processos</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+      border-bottom: 2px solid #3b82f6;
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .logo-badge {
+      background: #3b82f6;
+      color: #fff;
+      font-weight: 800;
+      font-size: 18px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      letter-spacing: 1px;
+    }
+    header h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; }
+    header p { font-size: 13px; color: #94a3b8; margin-top: 3px; }
+    .sprint-badge {
+      margin-left: auto;
+      background: #064e3b;
+      border: 1px solid #10b981;
+      color: #34d399;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+
+    /* ── Tab nav ─────────────────────────────────────────── */
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      padding: 16px 32px 0;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: #64748b;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 18px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: #94a3b8; }
+    .tab-btn.active { color: #60a5fa; border-bottom-color: #3b82f6; }
+
+    /* ── Tab content ─────────────────────────────────────── */
+    .tab-pane { display: none; padding: 32px; }
+    .tab-pane.active { display: block; }
+
+    /* ── Legend ──────────────────────────────────────────── */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+    .legend-dot {
+      width: 12px; height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    /* ── Mermaid container ───────────────────────────────── */
+    .diagram-wrapper {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      overflow-x: auto;
+      margin-bottom: 24px;
+    }
+    .diagram-wrapper .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+    /* Force mermaid SVG text to be readable on dark bg */
+    .diagram-wrapper svg { max-width: 100%; }
+
+    /* ── Section title ───────────────────────────────────── */
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-sub {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 20px;
+    }
+
+    /* ── Module cards (overview grid) ────────────────────── */
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .module-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 16px;
+      position: relative;
+    }
+    .module-card .mod-icon { font-size: 28px; margin-bottom: 8px; }
+    .module-card .mod-name { font-size: 14px; font-weight: 700; color: #f1f5f9; }
+    .module-card .mod-path { font-size: 11px; color: #475569; margin-top: 2px; font-family: monospace; }
+    .module-card .mod-status {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-top: 8px;
+      display: inline-block;
+    }
+    .mod-status.ok { background: #064e3b; color: #34d399; }
+    .mod-status.partial { background: #451a03; color: #fb923c; }
+    .mod-status.isolated { background: #450a0a; color: #f87171; }
+    .mod-status.f1 { background: #1e3a5f; color: #60a5fa; }
+
+    .module-card .mod-links {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.6;
+    }
+    .module-card .mod-links span { color: #93c5fd; }
+
+    .module-card.status-ok { border-left: 3px solid #10b981; }
+    .module-card.status-partial { border-left: 3px solid #f59e0b; }
+    .module-card.status-isolated { border-left: 3px solid #ef4444; }
+    .module-card.status-f1 { border-left: 3px solid #3b82f6; }
+
+    /* ── Gap table ───────────────────────────────────────── */
+    .gaps-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .gaps-table th {
+      background: #1e3a5f;
+      color: #93c5fd;
+      font-weight: 700;
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .gaps-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #1e293b;
+      vertical-align: top;
+      color: #cbd5e1;
+    }
+    .gaps-table tr:hover td { background: #1e293b; }
+    .prio { font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .prio-alta { background: #450a0a; color: #f87171; }
+    .prio-media { background: #451a03; color: #fb923c; }
+    .prio-baixa { background: #1c1917; color: #a8a29e; }
+    .gap-id { font-family: monospace; font-size: 12px; color: #475569; }
+    .mod-tag {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin: 1px;
+    }
+
+    /* ── Flow diagram (custom SVG panels) ───────────────── */
+    .flow-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .flow-node {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 18px;
+      text-align: center;
+      min-width: 140px;
+    }
+    .flow-node .fn-icon { font-size: 22px; }
+    .flow-node .fn-name { font-size: 13px; font-weight: 600; color: #f1f5f9; margin-top: 4px; }
+    .flow-node .fn-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .flow-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 6px;
+      color: #475569;
+      font-size: 11px;
+      min-width: 70px;
+    }
+    .flow-arrow .fa-line {
+      width: 50px; height: 2px;
+      background: #334155;
+      position: relative;
+    }
+    .flow-arrow .fa-line::after {
+      content: '';
+      position: absolute;
+      right: -6px; top: -4px;
+      border: 5px solid transparent;
+      border-left-color: #334155;
+    }
+    .flow-arrow .fa-label { font-size: 10px; color: #475569; margin-top: 4px; }
+
+    .flow-node.highlight { border-color: #3b82f6; background: #1e3a5f; }
+    .flow-node.success { border-color: #10b981; background: #064e3b; }
+    .flow-node.warning { border-color: #f59e0b; background: #451a03; }
+    .flow-node.danger { border-color: #ef4444; background: #450a0a; }
+
+    /* ── State machine visual ────────────────────────────── */
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .state-node {
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: center;
+      background: #1e293b;
+    }
+    .state-node .sn-name { font-size: 12px; font-weight: 700; font-family: monospace; }
+    .state-node .sn-label { font-size: 11px; color: #64748b; margin-top: 3px; }
+    .sn-triagem { border-color: #3b82f6; }    .sn-triagem .sn-name { color: #60a5fa; }
+    .sn-execucao { border-color: #8b5cf6; }   .sn-execucao .sn-name { color: #a78bfa; }
+    .sn-review { border-color: #f59e0b; }     .sn-review .sn-name { color: #fbbf24; }
+    .sn-done { border-color: #10b981; }       .sn-done .sn-name { color: #34d399; }
+    .sn-cancel { border-color: #ef4444; }     .sn-cancel .sn-name { color: #f87171; }
+    .sn-pending { border-color: #64748b; }    .sn-pending .sn-name { color: #94a3b8; }
+
+    .arrows-hint {
+      background: #1e293b;
+      border: 1px dashed #334155;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.8;
+    }
+    .arrows-hint strong { color: #94a3b8; }
+
+    /* ── Info box ────────────────────────────────────────── */
+    .info-box {
+      background: #1e3a5f;
+      border: 1px solid #2563eb;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 13px;
+      color: #bfdbfe;
+      margin-bottom: 20px;
+    }
+    .warn-box {
+      background: #451a03;
+      border: 1px solid #d97706;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 13px;
+      color: #fed7aa;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-badge">MGR</div>
+  <div>
+    <h1>MGR Connect — Mapa de Processos & Integrações</h1>
+    <p>Gerado em 02/06/2026 · Sprint F1 concluída · 10 pontas soltas identificadas</p>
+  </div>
+  <span class="sprint-badge">✅ Sprint F1</span>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="showTab('overview')">🗺 Visão Geral</button>
+  <button class="tab-btn" onclick="showTab('os')">📋 Ciclo da OS</button>
+  <button class="tab-btn" onclick="showTab('financial')">💰 Fluxo Financeiro</button>
+  <button class="tab-btn" onclick="showTab('gaps')">⚠️ Pontas Soltas (10)</button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB 1 — VISÃO GERAL
+═══════════════════════════════════════════════════════════ -->
+<div id="tab-overview" class="tab-pane active">
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div> Módulo integrado e funcional</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Núcleo Sprint F1 — recém implementado</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> Módulo parcialmente integrado</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> Módulo isolado — sem integração</div>
+    <div class="legend-dot" style="background:none;border:2px dashed #475569;width:12px;height:12px;border-radius:3px"></div>
+    <div class="legend-item" style="margin-left:-6px"> Conexão pendente / ponta solta</div>
+  </div>
+
+  <!-- Module cards -->
+  <p class="section-sub">Clique em cada módulo para ver detalhes de integração. Setas sólidas = implementado · Setas tracejadas = pendente.</p>
+
+  <div class="module-grid">
+
+    <div class="module-card status-f1">
+      <div class="mod-icon">📋</div>
+      <div class="mod-name">Pipeline Kanban</div>
+      <div class="mod-path">components/Pipeline.tsx</div>
+      <span class="mod-status f1">Sprint F1 ✅</span>
+      <div class="mod-links">
+        ↔ <span>OS Execução</span> (tarefasOS)<br>
+        → <span>Billing</span> (workflowStatus)<br>
+        ← <span>Clientes</span> (clientId)<br>
+        ← <span>Usuários</span> (permissões)<br>
+        ⚠ → <span style="color:#f87171">ProjectHub</span> (osIds não auto-preenchidos)
+      </div>
+    </div>
+
+    <div class="module-card status-ok">
+      <div class="mod-icon">⚙️</div>
+      <div class="mod-name">OS Execução</div>
+      <div class="mod-path">components/OSExecution.tsx</div>
+      <span class="mod-status ok">Integrado ✅</span>
+      <div class="mod-links">
+        ↔ <span>Pipeline</span> (status sync)<br>
+        ⚠ → <span style="color:#f87171">Estoque</span> (sem dedução)<br>
+        ⚠ → <span style="color:#f87171">Ponto/RH</span> (horas não vinculadas)<br>
+        ⚠ Evidências F2 — não implementado
+      </div>
+    </div>
+
+    <div class="module-card status-ok">
+      <div class="mod-icon">👥</div>
+      <div class="mod-name">Clientes</div>
+      <div class="mod-path">components/Clients.tsx</div>
+      <span class="mod-status ok">Integrado ✅</span>
+      <div class="mod-links">
+        → <span>Pipeline</span> (clientId/clientName)<br>
+        ⚠ Assets: <span style="color:#f87171">historicoOS</span> não auto-atualizado
+      </div>
+    </div>
+
+    <div class="module-card status-ok">
+      <div class="mod-icon">👤</div>
+      <div class="mod-name">Usuários & Permissões</div>
+      <div class="mod-path">components/Users.tsx</div>
+      <span class="mod-status ok">Integrado ✅</span>
+      <div class="mod-links">
+        → <span>Pipeline</span> (canDeleteTasks, roles)<br>
+        → <span>OSRapidaModal</span> (técnico logado)<br>
+        PermissionSet completo
+      </div>
+    </div>
+
+    <div class="module-card status-ok">
+      <div class="mod-icon">💳</div>
+      <div class="mod-name">Billing / Contas</div>
+      <div class="mod-path">components/Billing.tsx</div>
+      <span class="mod-status ok">Integrado ✅</span>
+      <div class="mod-links">
+        ← <span>Pipeline</span> (workflowStatus = CONCLUIDO)<br>
+        → <span>FluxoCaixa</span> (receivables)<br>
+        ⚠ Caminho de aggregação não confirmado
+      </div>
+    </div>
+
+    <div class="module-card status-ok">
+      <div class="mod-icon">📊</div>
+      <div class="mod-name">Fluxo de Caixa</div>
+      <div class="mod-path">components/FluxoCaixaGerencial.tsx</div>
+      <span class="mod-status ok">Integrado ✅</span>
+      <div class="mod-links">
+        ← <span>Billing</span> (contas a receber)<br>
+        Relatórios gerenciais<br>
+        ⚠ aggregation path não validado end-to-end
+      </div>
+    </div>
+
+    <div class="module-card status-partial">
+      <div class="mod-icon">🧠</div>
+      <div class="mod-name">Intelligence / BI</div>
+      <div class="mod-path">components/Intelligence.tsx</div>
+      <span class="mod-status partial">Parcial ⚠️</span>
+      <div class="mod-links">
+        Análises internas<br>
+        ⚠ → <span style="color:#f87171">Pipeline</span>: análises não geram OS automaticamente
+      </div>
+    </div>
+
+    <div class="module-card status-partial">
+      <div class="mod-icon">⏱</div>
+      <div class="mod-name">Ponto & RH</div>
+      <div class="mod-path">components/PointSystem.tsx</div>
+      <span class="mod-status partial">Parcial ⚠️</span>
+      <div class="mod-links">
+        Banco de horas interno<br>
+        ⚠ horasExecutadas da OS não vincula ao banco de horas
+      </div>
+    </div>
+
+    <div class="module-card status-isolated">
+      <div class="mod-icon">📁</div>
+      <div class="mod-name">ProjectHub</div>
+      <div class="mod-path">components/ProjectHub.tsx</div>
+      <span class="mod-status isolated">ISOLADO 🔴</span>
+      <div class="mod-links">
+        Máquina de estados própria (16 fases)<br>
+        ⚠ Não referencia collection <span style="color:#f87171">tasks</span><br>
+        ⚠ osIds não populados ao criar OS
+      </div>
+    </div>
+
+    <div class="module-card status-isolated">
+      <div class="mod-icon">📦</div>
+      <div class="mod-name">Estoque / Inventory</div>
+      <div class="mod-path">components/Inventory.tsx</div>
+      <span class="mod-status isolated">ISOLADO 🔴</span>
+      <div class="mod-links">
+        CRUD de peças e insumos<br>
+        ⚠ Sem dedução automática via OS<br>
+        ⚠ minEstoque sem alerta visual
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Connection diagram via mermaid -->
+  <div class="section-title">🔗 Diagrama de Integrações</div>
+  <p class="section-sub">Setas sólidas = integração implementada · Setas tracejadas = ponta solta a sincronizar</p>
+
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart LR
+  subgraph CORE["  Núcleo OS  "]
+    C["👥 Clientes"]
+    U["👤 Usuários"]
+    P["📋 Pipeline"]
+    E["⚙️ OS Execução"]
+  end
+
+  subgraph FIN["  Financeiro  "]
+    B["💳 Billing"]
+    F["📊 Fluxo Caixa"]
+  end
+
+  subgraph PARTIAL["  Parcial  "]
+    I["🧠 Intelligence"]
+    H["⏱ Ponto / RH"]
+  end
+
+  subgraph ISO["  Isolados 🔴  "]
+    PH["📁 ProjectHub"]
+    IN["📦 Estoque"]
+  end
+
+  C -->|"clientId"| P
+  U -->|"permissões"| P
+  P <-->|"tarefasOS"| E
+  P -->|"CONCLUIDO"| B
+  B -->|"receivables"| F
+
+  P -.->|"GAP-3: osIds"| PH
+  E -.->|"GAP-4: dedução"| IN
+  E -.->|"GAP-5: horas"| H
+  I -.->|"GAP-7: análise→OS"| P
+  C -.->|"GAP-8: historicoOS"| C
+
+  classDef core fill:#1e3a5f,color:#93c5fd,stroke:#3b82f6,stroke-width:2px
+  classDef fin fill:#064e3b,color:#6ee7b7,stroke:#10b981,stroke-width:2px
+  classDef partial fill:#451a03,color:#fdba74,stroke:#f59e0b,stroke-width:2px
+  classDef iso fill:#450a0a,color:#fca5a5,stroke:#ef4444,stroke-width:2px
+
+  class C,U,P,E core
+  class B,F fin
+  class I,H partial
+  class PH,IN iso
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB 2 — CICLO DA OS
+═══════════════════════════════════════════════════════════ -->
+<div id="tab-os" class="tab-pane">
+
+  <div class="info-box">
+    💡 <strong>Sprint F1 concluída:</strong> Gerador de OS Rápida com numeração sequencial (MGR-YYYY-MM-NNN), modal de abertura rápida e formulário em branco para impressão. F2 (evidências) e F3 (modal completo) são os próximos sprints.
+  </div>
+
+  <div class="section-title">🚀 Origens de Abertura de OS</div>
+  <div class="flow-row">
+    <div class="flow-node highlight">
+      <div class="fn-icon">⚡</div>
+      <div class="fn-name">OS Rápida</div>
+      <div class="fn-sub">OSRapidaModal ✅ F1</div>
+    </div>
+    <div class="flow-arrow">
+      <div class="fa-line"></div>
+      <div class="fa-label">gerarNumeroOS()</div>
+    </div>
+    <div class="flow-node highlight">
+      <div class="fn-icon">🔢</div>
+      <div class="fn-name">MGR-2026-06-001</div>
+      <div class="fn-sub">Numeração sequencial</div>
+    </div>
+    <div class="flow-arrow">
+      <div class="fa-line"></div>
+      <div class="fa-label">Firestore transaction</div>
+    </div>
+    <div class="flow-node success">
+      <div class="fn-icon">📋</div>
+      <div class="fn-name">TRIAGEM</div>
+      <div class="fn-sub">Pipeline — col. 1</div>
+    </div>
+  </div>
+
+  <div class="flow-row" style="margin-top:8px">
+    <div class="flow-node">
+      <div class="fn-icon">📝</div>
+      <div class="fn-name">Nova OS</div>
+      <div class="fn-sub">Modal completo</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div></div>
+    <div class="flow-node">
+      <div class="fn-icon">📁</div>
+      <div class="fn-name">Digitalização</div>
+      <div class="fn-sub">Físico → digital</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div></div>
+    <div class="flow-node success">
+      <div class="fn-icon">📋</div>
+      <div class="fn-name">TRIAGEM</div>
+      <div class="fn-sub">Pipeline — col. 1</div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top:28px">📊 Kanban — Estados do Workflow</div>
+  <div class="state-grid">
+    <div class="state-node sn-triagem">
+      <div class="sn-name">TRIAGEM</div>
+      <div class="sn-label">Entrada, sem visita agendada</div>
+    </div>
+    <div class="state-node sn-triagem">
+      <div class="sn-name">AGENDADO</div>
+      <div class="sn-label">Visita marcada</div>
+    </div>
+    <div class="state-node sn-execucao">
+      <div class="sn-name">EM_EXECUCAO</div>
+      <div class="sn-label">Técnico em campo</div>
+    </div>
+    <div class="state-node sn-review">
+      <div class="sn-name">AGUARDANDO_APROVACAO</div>
+      <div class="sn-label">Aguarda cliente/gestor</div>
+    </div>
+    <div class="state-node sn-done">
+      <div class="sn-name">CONCLUIDO</div>
+      <div class="sn-label">Serviço finalizado</div>
+    </div>
+    <div class="state-node sn-cancel">
+      <div class="sn-name">CANCELADO</div>
+      <div class="sn-label">OS encerrada sem execução</div>
+    </div>
+  </div>
+
+  <div class="section-title">🏷 statusOS — Ciclo de Vida Detalhado</div>
+  <div class="state-grid">
+    <div class="state-node sn-triagem">
+      <div class="sn-name">NUMERO_GERADO</div>
+      <div class="sn-label">OS Rápida — aguardando dados</div>
+    </div>
+    <div class="state-node sn-triagem">
+      <div class="sn-name">AGUARDANDO_DADOS</div>
+      <div class="sn-label">Dados incompletos</div>
+    </div>
+    <div class="state-node sn-execucao">
+      <div class="sn-name">EM_EXECUCAO</div>
+      <div class="sn-label">Técnico executando</div>
+    </div>
+    <div class="state-node sn-done">
+      <div class="sn-name">CONCLUIDA</div>
+      <div class="sn-label">Concluída com êxito</div>
+    </div>
+    <div class="state-node sn-pending">
+      <div class="sn-name">REAGENDAR</div>
+      <div class="sn-label">Necessita nova visita</div>
+    </div>
+    <div class="state-node sn-pending">
+      <div class="sn-name">PENDENTE_ADMIN</div>
+      <div class="sn-label">Pendência administrativa</div>
+    </div>
+    <div class="state-node sn-review">
+      <div class="sn-name">EM_REVISAO_TECNICA</div>
+      <div class="sn-label">Em revisão técnica</div>
+    </div>
+    <div class="state-node sn-done">
+      <div class="sn-name">CONCLUIDA_NOVA_OS</div>
+      <div class="sn-label">Concluída — nova OS sugerida</div>
+    </div>
+    <div class="state-node sn-cancel">
+      <div class="sn-name">CANCELADA</div>
+      <div class="sn-label">Cancelada</div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top:28px">🖨 Print — Formulário em Branco (F1 ✅)</div>
+  <div class="flow-row">
+    <div class="flow-node highlight">
+      <div class="fn-icon">⚡</div>
+      <div class="fn-name">OS Rápida criada</div>
+      <div class="fn-sub">dadosCompletos = false</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div><div class="fa-label">handlePrint()</div></div>
+    <div class="flow-node">
+      <div class="fn-icon">🔗</div>
+      <div class="fn-name">window.open()</div>
+      <div class="fn-sub">/app/os/:id/print</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div></div>
+    <div class="flow-node success">
+      <div class="fn-icon">📄</div>
+      <div class="fn-name">FormularioEmBranco</div>
+      <div class="fn-sub">Auto window.print()</div>
+    </div>
+  </div>
+
+  <div class="diagram-wrapper" style="margin-top:24px">
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> NUMERO_GERADO : OS Rápida (F1)
+  [*] --> AGUARDANDO_DADOS : Nova OS modal
+  NUMERO_GERADO --> AGUARDANDO_DADOS : F3 OSEditModal
+  AGUARDANDO_DADOS --> EM_EXECUCAO : Técnico aceita
+  EM_EXECUCAO --> CONCLUIDA : Serviço OK
+  EM_EXECUCAO --> REAGENDAR : Problema de acesso
+  EM_EXECUCAO --> EM_REVISAO_TECNICA : Falha técnica
+  EM_REVISAO_TECNICA --> EM_EXECUCAO : Aprovado revisão
+  EM_REVISAO_TECNICA --> PENDENTE_ADMIN : Necessita orçamento
+  REAGENDAR --> EM_EXECUCAO : Novo agendamento
+  PENDENTE_ADMIN --> EM_EXECUCAO : Aprovado admin
+  CONCLUIDA --> [*]
+  CONCLUIDA --> CONCLUIDA_NOVA_OS : Nova OS gerada
+  CONCLUIDA_NOVA_OS --> [*]
+  AGUARDANDO_DADOS --> CANCELADA : Desistência
+  EM_EXECUCAO --> CANCELADA : Cancelamento
+  CANCELADA --> [*]
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB 3 — FLUXO FINANCEIRO
+═══════════════════════════════════════════════════════════ -->
+<div id="tab-financial" class="tab-pane">
+
+  <div class="warn-box">
+    ⚠️ <strong>Ponto de atenção:</strong> O caminho de aggregação entre Billing e FluxoCaixaGerencial foi identificado como existente mas não foi validado end-to-end (GAP-6). Recomenda-se um teste de integração com uma OS real antes de usar os relatórios gerenciais em produção.
+  </div>
+
+  <div class="section-title">💸 Fluxo Completo: OS → Receita</div>
+
+  <div class="flow-row">
+    <div class="flow-node highlight">
+      <div class="fn-icon">📋</div>
+      <div class="fn-name">OS Criada</div>
+      <div class="fn-sub">workflowStatus: TRIAGEM</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div><div class="fa-label">execução</div></div>
+    <div class="flow-node">
+      <div class="fn-icon">⚙️</div>
+      <div class="fn-name">Em Execução</div>
+      <div class="fn-sub">horasExecutadas, materiais</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div><div class="fa-label">conclusão</div></div>
+    <div class="flow-node success">
+      <div class="fn-icon">✅</div>
+      <div class="fn-name">CONCLUIDO</div>
+      <div class="fn-sub">workflowStatus</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div><div class="fa-label">trigger</div></div>
+    <div class="flow-node success">
+      <div class="fn-icon">💳</div>
+      <div class="fn-name">Billing</div>
+      <div class="fn-sub">conta a receber gerada</div>
+    </div>
+    <div class="flow-arrow"><div class="fa-line"></div><div class="fa-label">aggregation</div></div>
+    <div class="flow-node success">
+      <div class="fn-icon">📊</div>
+      <div class="fn-name">Fluxo de Caixa</div>
+      <div class="fn-sub">relatório gerencial</div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top:32px">📑 Campos Financeiros da OS (schema F1)</div>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart LR
+  subgraph OS["Task — Campos Financeiros"]
+    direction TB
+    A["valorTotalOS: number"]
+    B["condicaoPagamento: string"]
+    C["mesCompetencia: string"]
+    D["statusRecebimento"]
+    E["horasExecutadas: number"]
+  end
+
+  subgraph REC["statusRecebimento"]
+    direction TB
+    R1["RECEBIDO ✅"]
+    R2["A_RECEBER ⏳"]
+    R3["INADIMPLENTE ❌"]
+  end
+
+  subgraph UI["UI — Pendente F3"]
+    direction TB
+    U1["OSEditModal — sem tela ainda"]
+    U2["Campos preenchidos apenas via execução"]
+  end
+
+  D --> REC
+  OS --> UI
+
+  classDef schema fill:#1e3a5f,color:#93c5fd,stroke:#3b82f6
+  classDef rec fill:#064e3b,color:#6ee7b7,stroke:#10b981
+  classDef pending fill:#450a0a,color:#fca5a5,stroke:#ef4444
+
+  class A,B,C,D,E schema
+  class R1,R2,R3 rec
+  class U1,U2 pending
+    </div>
+  </div>
+
+  <div class="section-title">📦 Campos de Estoque na OS (GAP-4 — sem integração)</div>
+  <div class="flow-row">
+    <div class="flow-node">
+      <div class="fn-icon">📦</div>
+      <div class="fn-name">Inventory</div>
+      <div class="fn-sub">peças e insumos</div>
+    </div>
+    <div class="flow-arrow" style="color:#ef4444">
+      <div class="fa-line" style="background:#ef4444"></div>
+      <div class="fa-label" style="color:#f87171">GAP-4: sem link</div>
+    </div>
+    <div class="flow-node danger">
+      <div class="fn-icon">⚙️</div>
+      <div class="fn-name">OS Execução</div>
+      <div class="fn-sub">materiais usados</div>
+    </div>
+    <div style="padding: 0 12px; font-size: 22px; color: #450a0a">✗</div>
+    <div class="flow-node danger">
+      <div class="fn-icon">📊</div>
+      <div class="fn-name">Dedução de Estoque</div>
+      <div class="fn-sub">não implementado</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TAB 4 — PONTAS SOLTAS
+═══════════════════════════════════════════════════════════ -->
+<div id="tab-gaps" class="tab-pane">
+
+  <div class="warn-box">
+    🔍 <strong>10 pontas soltas identificadas</strong> por análise estática do codebase. Ordenadas por prioridade de negócio. Itens marcados como <span style="color:#f87171">Alta</span> impactam diretamente a operação e devem ser resolvidos nos próximos sprints.
+  </div>
+
+  <table class="gaps-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Prioridade</th>
+        <th>Descrição do Gap</th>
+        <th>Módulos Afetados</th>
+        <th>Sprint Sugerida</th>
+      </tr>
+    </thead>
+    <tbody>
+
+      <tr>
+        <td><span class="gap-id">GAP-1</span></td>
+        <td><span class="prio prio-alta">Alta</span></td>
+        <td>
+          <strong>Upload de evidências na OS Rápida (F2)</strong><br>
+          O schema já tem o campo <code>evidencias[]</code> na Task, mas não existe UI para upload de fotos/arquivos na OS Execução. Técnicos não conseguem registrar prova do serviço realizado.
+        </td>
+        <td>
+          <span class="mod-tag">Pipeline</span>
+          <span class="mod-tag">OS Execução</span>
+          <span class="mod-tag">Firebase Storage</span>
+        </td>
+        <td>F2</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-2</span></td>
+        <td><span class="prio prio-alta">Alta</span></td>
+        <td>
+          <strong>OSEditModal — tela de preenchimento completo da OS Rápida (F3)</strong><br>
+          OS criadas via OS Rápida têm <code>dadosCompletos: false</code>. Não existe modal/tela para preencher cliente, serviço, valor e demais dados obrigatórios. O botão "Editar" no card da Pipeline está desabilitado até isso ser implementado.
+        </td>
+        <td>
+          <span class="mod-tag">Pipeline</span>
+          <span class="mod-tag">OSEditModal (não existe)</span>
+          <span class="mod-tag">Billing</span>
+        </td>
+        <td>F3</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-3</span></td>
+        <td><span class="prio prio-alta">Alta</span></td>
+        <td>
+          <strong>ProjectHub isolado — osIds não populados ao criar OS</strong><br>
+          <code>ProjectHub.tsx</code> não referencia a collection <code>tasks</code>. Quando uma OS é criada para um projeto, o array <code>osIds</code> no documento do projeto não é atualizado automaticamente. Projetos e OS vivem em silos.
+        </td>
+        <td>
+          <span class="mod-tag">ProjectHub</span>
+          <span class="mod-tag">Pipeline</span>
+          <span class="mod-tag">criarOSRapida()</span>
+        </td>
+        <td>F4</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-4</span></td>
+        <td><span class="prio prio-alta">Alta</span></td>
+        <td>
+          <strong>Estoque isolado — sem dedução automática quando materiais são usados em OS</strong><br>
+          <code>Inventory.tsx</code> gerencia peças mas não tem nenhuma ligação com <code>OS Execução</code>. Materiais consumidos em campo não debitam o estoque, gerando inconsistência entre físico e sistema.
+        </td>
+        <td>
+          <span class="mod-tag">Inventory</span>
+          <span class="mod-tag">OS Execução</span>
+          <span class="mod-tag">tasks.materiais[]</span>
+        </td>
+        <td>F4 / F5</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-5</span></td>
+        <td><span class="prio prio-media">Média</span></td>
+        <td>
+          <strong>Ponto/RH — horas da OS não alimentam banco de horas</strong><br>
+          O campo <code>horasExecutadas</code> existe na Task mas não é lido pelo módulo de <code>PointSystem</code>. Horas trabalhadas em campo não contam para o banco de horas do técnico.
+        </td>
+        <td>
+          <span class="mod-tag">PointSystem</span>
+          <span class="mod-tag">OS Execução</span>
+          <span class="mod-tag">horasExecutadas</span>
+        </td>
+        <td>F5</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-6</span></td>
+        <td><span class="prio prio-media">Média</span></td>
+        <td>
+          <strong>Billing → FluxoCaixaGerencial — caminho de aggregação não validado end-to-end</strong><br>
+          A conexão existe no código mas não foi testada com dados reais de ponta a ponta. OS concluída → conta a receber no Billing → aparece no FluxoCaixa não está confirmado funcionando.
+        </td>
+        <td>
+          <span class="mod-tag">Billing</span>
+          <span class="mod-tag">FluxoCaixaGerencial</span>
+          <span class="mod-tag">Firestore queries</span>
+        </td>
+        <td>Hotfix / teste</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-7</span></td>
+        <td><span class="prio prio-media">Média</span></td>
+        <td>
+          <strong>Intelligence/BI — análises não geram OS automaticamente</strong><br>
+          O módulo de inteligência identifica oportunidades (ex: cliente sem visita há 6 meses) mas não tem um botão/ação para criar uma OS diretamente a partir da análise. Fluxo é manual.
+        </td>
+        <td>
+          <span class="mod-tag">Intelligence</span>
+          <span class="mod-tag">criarOSRapida()</span>
+          <span class="mod-tag">Pipeline</span>
+        </td>
+        <td>F5 / F6</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-8</span></td>
+        <td><span class="prio prio-media">Média</span></td>
+        <td>
+          <strong>Histórico de OS no Cliente não é auto-atualizado</strong><br>
+          O documento do cliente tem campo <code>historicoOS</code> mas ao criar ou concluir uma OS, esse array não é atualizado automaticamente. O histórico fica desatualizado.
+        </td>
+        <td>
+          <span class="mod-tag">Clients</span>
+          <span class="mod-tag">criarOSRapida()</span>
+          <span class="mod-tag">criarOS()</span>
+        </td>
+        <td>F3 / F4</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-9</span></td>
+        <td><span class="prio prio-baixa">Baixa</span></td>
+        <td>
+          <strong>statusHistory gravado mas não exibido em nenhuma tela</strong><br>
+          O campo <code>statusHistory[]</code> é gravado nas Tasks mas nenhuma tela mostra esse histórico ao usuário. Auditoria de mudanças de estado da OS não está acessível.
+        </td>
+        <td>
+          <span class="mod-tag">Pipeline</span>
+          <span class="mod-tag">OS Execução</span>
+          <span class="mod-tag">tasks.statusHistory[]</span>
+        </td>
+        <td>F5 / F6</td>
+      </tr>
+
+      <tr>
+        <td><span class="gap-id">GAP-10</span></td>
+        <td><span class="prio prio-baixa">Baixa</span></td>
+        <td>
+          <strong>minEstoque no Inventory sem alerta visual</strong><br>
+          O campo <code>minEstoque</code> existe nos itens do inventário mas não há badge/alerta visual quando um item está abaixo do mínimo. Gestão de reposição é totalmente manual.
+        </td>
+        <td>
+          <span class="mod-tag">Inventory</span>
+          <span class="mod-tag">minEstoque</span>
+          <span class="mod-tag">Dashboard</span>
+        </td>
+        <td>F5</td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <div style="margin-top: 28px">
+    <div class="section-title">📅 Roadmap Sugerido</div>
+    <div class="diagram-wrapper">
+      <div class="mermaid">
+gantt
+  title MGR Connect — Roadmap Próximos Sprints
+  dateFormat YYYY-MM-DD
+  section Sprint F1 (concluído)
+    Numeração sequencial OS     :done, 2026-05-20, 2026-06-02
+    OS Rápida modal             :done, 2026-05-20, 2026-06-02
+    Formulário em branco print  :done, 2026-05-20, 2026-06-02
+    Botão excluir OS            :done, 2026-05-20, 2026-06-02
+
+  section Sprint F2
+    Upload evidências (GAP-1)   :active, 2026-06-03, 7d
+    Validação Billing→Caixa (GAP-6) : 2026-06-03, 3d
+
+  section Sprint F3
+    OSEditModal (GAP-2)         : 2026-06-10, 10d
+    historicoOS cliente (GAP-8) : 2026-06-10, 5d
+
+  section Sprint F4
+    ProjectHub + OS (GAP-3)     : 2026-06-20, 10d
+    Estoque + OS (GAP-4)        : 2026-06-20, 10d
+
+  section Sprint F5
+    Ponto/RH + horas OS (GAP-5) : 2026-07-01, 7d
+    Alerta minEstoque (GAP-10)  : 2026-07-01, 3d
+    statusHistory UI (GAP-9)    : 2026-07-05, 5d
+
+  section Sprint F6
+    Intelligence → gera OS (GAP-7) : 2026-07-10, 7d
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Initialize mermaid with dark theme
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background: '#1e293b',
+      primaryColor: '#1e3a5f',
+      primaryTextColor: '#93c5fd',
+      primaryBorderColor: '#3b82f6',
+      lineColor: '#475569',
+      secondaryColor: '#064e3b',
+      tertiaryColor: '#451a03',
+      edgeLabelBackground: '#1e293b',
+      fontFamily: '"Segoe UI", system-ui, sans-serif',
+      fontSize: '13px',
+    },
+    flowchart: { htmlLabels: true, curve: 'basis' },
+    stateDiagram: { htmlLabels: false },
+    gantt: {
+      barHeight: 20,
+      barGap: 4,
+      topPadding: 50,
+      fontSize: 12,
+    }
+  });
+
+  // Tab switching
+  function showTab(name) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+
+  // Re-render mermaid on tab switch (lazy)
+  let rendered = new Set(['overview']);
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pane = document.querySelector('.tab-pane.active');
+      if (pane && !rendered.has(pane.id)) {
+        rendered.add(pane.id);
+        mermaid.run({ nodes: pane.querySelectorAll('.mermaid') });
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

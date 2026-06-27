@@ -82,7 +82,7 @@ const FUNIL_STAGES: FunilStage[] = [
     label: 'Contrato',
     descricao: 'Aguardando assinatura',
     icon: FileSignature,
-    projectPhases: ['contrato_enviado', 'contrato_assinado'],
+    projectPhases: ['contrato_enviado'],
     widthPercent: 50,
     cor: 'bg-amber-600',
     corBg: 'bg-amber-50',
@@ -95,7 +95,7 @@ const FUNIL_STAGES: FunilStage[] = [
     descricao: 'Contrato assinado — em execução',
     icon: CheckCircle2,
     projectPhases: [
-      'em_planejamento', 'cronograma_aprovado',
+      'contrato_assinado', 'em_planejamento', 'cronograma_aprovado',
       'os_distribuidas', 'em_execucao',
       'relatorio_enviado', 'em_faturamento',
       'aguardando_recebimento', 'concluido',

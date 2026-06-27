@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate } from '../types';
-import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft, MapPin, Clock } from 'lucide-react';
+import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus } from '../types';
+import { gerarNumeroOS } from '../services/osService';
+import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft, MapPin, Clock, UserPlus, ExternalLink, AlertTriangle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface OSCreationModalProps {
   isOpen: boolean;
@@ -11,16 +13,51 @@ interface OSCreationModalProps {
 }
 
 const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSuccess }) => {
+  const navigate = useNavigate();
+
   // Form State
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<PriorityLevel>('medium');
   const [clientId, setClientId] = useState('');
   const [projectId, setProjectId] = useState('');
+  const [faturamentoPeloProjeto, setFaturamentoPeloProjeto] = useState(false);
   const [assigneeId, setAssigneeId] = useState('');
   const [assignedUsers, setAssignedUsers] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  // Criação rápida de cliente
+  const [showQuickClient, setShowQuickClient] = useState(false);
+  const [quickClientName, setQuickClientName] = useState('');
+  const [savingQuickClient, setSavingQuickClient] = useState(false);
+  const quickClientInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showQuickClient) setTimeout(() => quickClientInputRef.current?.focus(), 50);
+  }, [showQuickClient]);
+
+  const handleCreateQuickClient = async () => {
+    const nome = quickClientName.trim();
+    if (!nome) return;
+    setSavingQuickClient(true);
+    try {
+      const ref = await addDoc(collection(db, CollectionName.CLIENTS), {
+        name: nome,
+        dadosIncompletos: true,
+        createdAt: serverTimestamp(),
+      });
+      const newClient = { id: ref.id, name: nome, dadosIncompletos: true };
+      setClients(prev => [...prev, newClient]);
+      setClientId(ref.id);
+      setQuickClientName('');
+      setShowQuickClient(false);
+    } catch {
+      alert('Erro ao criar cliente. Tente novamente.');
+    } finally {
+      setSavingQuickClient(false);
+    }
+  };
   
   // Advanced State
   const [tools, setTools] = useState<string[]>([]);
@@ -93,23 +130,25 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
     setTipoServico(tipo); setTipoSugestoes([]);
   };
 
-  // Filter Projects
+  // Load all projects (from all collections) — each query independent to avoid one failure killing all
   useEffect(() => {
-    const fetchProjects = async () => {
-      if (!clientId) {
-        setProjects([]);
-        return;
-      }
-      try {
-        const q = query(collection(db, CollectionName.PROJECTS), where("clientId", "==", clientId));
-        const snap = await getDocs(q);
-        setProjects(snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
-      } catch (error) {
-        console.error("Error loading projects:", error);
-      }
-    };
-    fetchProjects();
-  }, [clientId]);
+    (async () => {
+      const fetch = async (col: string) => {
+        try {
+          const snap = await getDocs(collection(db, col));
+          return snap.docs.map(d => ({ id: d.id, name: (d.data() as any).nome || (d.data() as any).name, ...(d.data() as any) }));
+        } catch (e) { console.warn(`[OSCreate] Failed to load ${col}:`, e); return []; }
+      };
+      const [p2s, ps] = await Promise.all([
+        fetch(CollectionName.PROJECTS_V2),
+        fetch(CollectionName.PROJECTS),
+      ]);
+      const seen = new Set<string>();
+      const all: any[] = [];
+      [...p2s, ...ps].forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); all.push(p); } });
+      setProjects(all);
+    })();
+  }, []);
 
   const applyTemplate = (templateId: string) => {
     const template = templates.find(t => t.id === templateId);
@@ -166,22 +205,37 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         return u?.displayName || u?.email || 'Desconhecido';
       });
 
+      // Gerar número sequencial para rastreabilidade
+      const numeroOS = await gerarNumeroOS();
+
       const taskPayload = {
-        title,
+        numeroOS,
+        title: title || numeroOS,
         description,
         status: 'pending',
         priority,
+        workflowStatus: WorkflowStatus.AGUARDANDO_APROVACAO,
+        fonteAbertura: 'MODAL_COMPLETO' as const,
+        dadosCompletos: true,
         clientId,
         clientName,
         projectId,
         projectName,
-        assignedTo: assigneeId,
-        assigneeName,
+        faturamentoPeloProjeto: !!(projectId && faturamentoPeloProjeto),
+        assignedTo: assigneeId || null,
+        assigneeName: assigneeId ? assigneeName : null,
         assignedUsers,
         assignedUserNames,
         startDate: startDate ? Timestamp.fromDate(new Date(startDate)) : null,
         endDate: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
-        checklist,
+        tarefasOS: checklist.map(item => ({
+          id:          item.id,
+          descricao:   item.text,
+          status:      item.completed ? 'concluida' : 'pendente',
+          iniciadaEm:  null,
+          concluidaEm: null,
+          fotoSlots:   (item as any).fotoSlots ?? [],
+        })),
         tools,
         tipoServico: tipoServico || null,
         ativoId: ativoId || null,
@@ -231,20 +285,44 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
           <form id="os-form" onSubmit={handleSubmit} className="space-y-6">
             
             {/* Template Selector */}
-            <div className="bg-brand-50 p-4 rounded-xl border border-brand-100 flex items-center gap-4">
-              <FileText className="text-brand-600 w-5 h-5" />
-              <div className="flex-1">
-                <label className="text-sm font-medium text-brand-800 block mb-1">Carregar Modelo (Template)</label>
-                <select 
-                  onChange={(e) => applyTemplate(e.target.value)}
-                  className="block w-full text-sm rounded-lg border-brand-200 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
-                  defaultValue=""
-                >
-                  <option value="" disabled>Selecione um modelo para preencher...</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.title}</option>
-                  ))}
-                </select>
+            <div className="bg-brand-50 p-4 rounded-xl border border-brand-100">
+              <div className="flex items-center gap-4">
+                <FileText className="text-brand-600 w-5 h-5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-brand-800">Carregar Modelo (Template)</label>
+                    <button
+                      type="button"
+                      onClick={() => { onClose(); navigate('/app/modelos'); }}
+                      className="flex items-center gap-1 text-[10px] font-bold text-brand-600 hover:text-brand-800 transition-colors"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Gerenciar modelos
+                    </button>
+                  </div>
+                  {templates.length > 0 ? (
+                    <select
+                      onChange={(e) => applyTemplate(e.target.value)}
+                      className="block w-full text-sm rounded-lg border-brand-200 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Selecione um modelo para preencher...</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>{t.title}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs text-brand-500 italic">Nenhum modelo cadastrado.</span>
+                      <button
+                        type="button"
+                        onClick={() => { onClose(); navigate('/app/modelos'); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Criar modelo
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -264,33 +342,114 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                   <div>
+                  <div>
                     <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
                       <Building className="w-4 h-4 mr-1 text-gray-400" /> Cliente
                     </label>
-                    <select 
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
-                    >
-                      <option value="">Selecione...</option>
-                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <div className="flex gap-1.5">
+                      <select
+                        value={clientId}
+                        onChange={(e) => setClientId(e.target.value)}
+                        className="flex-1 min-w-0 rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900 text-sm"
+                      >
+                        <option value="">Selecione...</option>
+                        {clients.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}{c.dadosIncompletos ? ' ⚠' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowQuickClient(v => !v)}
+                        title="Criar cliente rápido"
+                        className={`flex-shrink-0 p-2 rounded-lg border transition-colors ${showQuickClient ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-brand-600 border-gray-300 hover:bg-brand-50'}`}
+                      >
+                        <UserPlus className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Mini-form criação rápida */}
+                    {showQuickClient && (
+                      <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                        <p className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 uppercase tracking-wide">
+                          <AlertTriangle className="w-3 h-3" /> Novo cliente (dados incompletos)
+                        </p>
+                        <input
+                          ref={quickClientInputRef}
+                          type="text"
+                          value={quickClientName}
+                          onChange={e => setQuickClientName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateQuickClient(); } if (e.key === 'Escape') setShowQuickClient(false); }}
+                          placeholder="Nome do cliente..."
+                          className="w-full rounded-lg border-amber-200 bg-white text-gray-900 text-sm px-3 py-1.5 focus:ring-amber-400 focus:border-amber-400"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCreateQuickClient}
+                            disabled={!quickClientName.trim() || savingQuickClient}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                          >
+                            {savingQuickClient ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setShowQuickClient(false); setQuickClientName(''); }}
+                            className="px-3 py-1.5 border border-amber-200 text-amber-700 text-xs font-bold rounded-lg hover:bg-amber-100 transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-amber-600">O cliente será salvo com alerta de cadastro incompleto. Complete os dados depois em Clientes.</p>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
                       <Briefcase className="w-4 h-4 mr-1 text-gray-400" /> Projeto
                     </label>
-                    <select 
+                    <select
                       value={projectId}
-                      onChange={(e) => setProjectId(e.target.value)}
-                      disabled={!clientId}
-                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 disabled:bg-gray-100 bg-white text-gray-900"
+                      onChange={(e) => {
+                        setProjectId(e.target.value);
+                        if (!e.target.value) setFaturamentoPeloProjeto(false);
+                      }}
+                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                     >
-                      <option value="">{clientId ? 'Selecione...' : 'Escolha Cliente'}</option>
-                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      <option value="">Nenhum projeto</option>
+                      {(() => {
+                        const clientProjects = clientId ? projects.filter(p => p.clientId === clientId) : [];
+                        const otherProjects = clientId ? projects.filter(p => p.clientId !== clientId) : projects;
+                        return (<>
+                          {clientProjects.length > 0 && (
+                            <optgroup label="Projetos do cliente">
+                              {clientProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}</option>)}
+                            </optgroup>
+                          )}
+                          {otherProjects.length > 0 && (
+                            <optgroup label={clientProjects.length > 0 ? 'Outros projetos' : 'Todos os projetos'}>
+                              {otherProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}{p.clientName ? ` (${p.clientName})` : ''}</option>)}
+                            </optgroup>
+                          )}
+                        </>);
+                      })()}
                     </select>
                   </div>
+                  {projectId && (
+                    <div className="col-span-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={faturamentoPeloProjeto}
+                          onChange={e => setFaturamentoPeloProjeto(e.target.checked)}
+                          className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-sm text-gray-600">Faturamento pelo projeto <span className="text-xs text-gray-400">(O.S. não gera cobrança individual)</span></span>
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div>

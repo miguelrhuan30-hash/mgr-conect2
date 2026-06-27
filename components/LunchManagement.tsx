@@ -462,7 +462,8 @@ const LunchManagement: React.FC = () => {
       const mistStr  = dc?.misturas?.map(m => m.nome).join(' + ')  || '—';
       const garnStr  = dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—';
       const tamLabel = dc?.tamanho ? TAMANHO_LABELS[dc.tamanho] || dc.tamanho : 'média';
-      text += `${i + 1} ${tamLabel}: ${choice.userName}\n   🥩 ${mistStr}\n   🥗 ${garnStr}\n`;
+      const obsLine = dc?.observacao ? `\n   📝 ${dc.observacao}` : '';
+      text += `${i + 1} ${tamLabel}: ${choice.userName}\n   🥩 ${mistStr}\n   🥗 ${garnStr}${obsLine}\n`;
     });
     text += `\nTotal: ${ativos.length} marmita(s)`;
     return text;
@@ -471,7 +472,7 @@ const LunchManagement: React.FC = () => {
   /* ─── Clipboard: agrupado por endereço ─── */
   const groupedByAddress = useMemo(() => {
     const sedeLabel = `${sedeNome}${sedeEndereco ? ' - ' + sedeEndereco : ''}`;
-    type MealInfo = { userName: string; misturas: string; guarnicoes: string; tamanho: string };
+    type MealInfo = { userName: string; misturas: string; guarnicoes: string; tamanho: string; observacao?: string };
     const groups: Record<string, { address: string; meals: MealInfo[] }> = {};
 
     // Dedup locations: apenas o mais recente por userId+data
@@ -504,7 +505,7 @@ const LunchManagement: React.FC = () => {
         addressKey = addrParts || 'Endereço não informado';
       }
       if (!groups[addressKey]) groups[addressKey] = { address: addressKey, meals: [] };
-      groups[addressKey].meals.push({ userName: choice.userName, misturas: mistStr, guarnicoes: garnStr, tamanho: tamLabel });
+      groups[addressKey].meals.push({ userName: choice.userName, misturas: mistStr, guarnicoes: garnStr, tamanho: tamLabel, observacao: dc?.observacao || '' });
     });
     return Object.values(groups);
   }, [filteredChoicesByDate, locations, selectedDate, sedeNome, sedeEndereco]);
@@ -516,7 +517,8 @@ const LunchManagement: React.FC = () => {
     groupedByAddress.forEach(group => {
       text += `\n📍 ${group.address}\n`;
       group.meals.forEach((m, i) => {
-        text += `   ${i + 1} ${m.tamanho}:  ${m.userName}\n     🥩 ${m.misturas}\n     🥗 ${m.guarnicoes}\n`;
+        const obsLine = m.observacao ? `\n     📝 ${m.observacao}` : '';
+        text += `   ${i + 1} ${m.tamanho}:  ${m.userName}\n     🥩 ${m.misturas}\n     🥗 ${m.guarnicoes}${obsLine}\n`;
       });
     });
     // Fora da cidade — só entre os ativos
@@ -593,12 +595,13 @@ const LunchManagement: React.FC = () => {
           'Misturas': dc?.misturas?.map(m => m.nome).join(' + ') || '—',
           'Guarnições': dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—',
           'Tamanho': dc?.tamanho || 'média',
+          'Observação': dc?.observacao || '',
           'Tipo Localização': locTipo(loc),
           'Endereço Entrega': locLabel(loc),
         };
       });
       const ws1 = XLSX.utils.json_to_sheet(pedidosData);
-      ws1['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 16 }, { wch: 36 }];
+      ws1['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 28 }, { wch: 16 }, { wch: 36 }];
       XLSX.utils.book_append_sheet(wb, ws1, 'Pedidos');
 
       // Aba 1b: Pedidos desativados (aviso — cardápios encerrados)
@@ -613,6 +616,7 @@ const LunchManagement: React.FC = () => {
             'Misturas': dc?.misturas?.map(m => m.nome).join(' + ') || '—',
             'Guarnições': dc?.guarnicoes?.map(g => g.nome).join(' + ') || '—',
             'Tamanho': dc?.tamanho || 'média',
+            'Observação': dc?.observacao || '',
             'Aviso': '⚠️ Cardápio desativado — NÃO enviar ao restaurante',
           };
         });
@@ -632,12 +636,13 @@ const LunchManagement: React.FC = () => {
             'Misturas': m.misturas,
             'Guarnições': m.guarnicoes,
             'Tamanho': m.tamanho,
+            'Observação': m.observacao || '',
           });
         });
         endData.push({});
       });
       const ws2 = XLSX.utils.json_to_sheet(endData);
-      ws2['!cols'] = [{ wch: 36 }, { wch: 4 }, { wch: 22 }, { wch: 28 }, { wch: 28 }, { wch: 10 }];
+      ws2['!cols'] = [{ wch: 36 }, { wch: 4 }, { wch: 22 }, { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 28 }];
       XLSX.utils.book_append_sheet(wb, ws2, 'Por Endereço');
 
       // Aba 3: Fora da Cidade
@@ -1256,6 +1261,11 @@ const LunchManagement: React.FC = () => {
                               <span key={g.id} className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">🥗 {g.nome}</span>
                             ))}
                           </div>
+                          {dc?.observacao && (
+                            <p className="text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded-lg px-2.5 py-1 mt-1.5 w-fit">
+                              📝 {dc.observacao}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </li>
@@ -1312,6 +1322,7 @@ const LunchManagement: React.FC = () => {
                           <p className="font-medium text-gray-800">• {m.userName}</p>
                           <p className="ml-3 text-orange-600">🥩 {m.misturas}</p>
                           <p className="ml-3 text-green-600">🥗 {m.guarnicoes}</p>
+                          {m.observacao && <p className="ml-3 text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-1.5 py-0.5 mt-0.5 w-fit">📝 {m.observacao}</p>}
                         </div>
                       ))}
                     </div>

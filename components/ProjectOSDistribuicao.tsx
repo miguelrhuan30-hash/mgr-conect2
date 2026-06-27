@@ -25,8 +25,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useProjectOS } from '../hooks/useProjectOS';
 import { useProjectGantt } from '../hooks/useProjectGantt';
-import { CollectionName, ProjectV2, Task, PriorityLevel } from '../types';
+import { CollectionName, ProjectV2, Task, PriorityLevel, WorkflowStatus } from '../types';
 import { db } from '../firebase';
+import { gerarNumeroOS } from '../services/osService';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -192,8 +193,12 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
     if (!currentUser) return;
     setConfirmandoId(sug.id);
     try {
+      // Gerar número sequencial para rastreabilidade
+      const numeroOS = await gerarNumeroOS();
+
       const taskData: Partial<Task> = {
-        title: sug.titulo,
+        numeroOS,
+        title: `${numeroOS} — ${sug.titulo}`,
         description: sug.descricao,
         clientId: project.clientId,
         clientName: project.clientName,
@@ -201,6 +206,9 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
         assigneeName: sug.responsavelNome || undefined,
         status: 'pending',
         priority: sug.prioridade || 'medium',
+        workflowStatus: WorkflowStatus.AGUARDANDO_APROVACAO,
+        fonteAbertura: 'DIGITALIZACAO_FISICA' as any,
+        dadosCompletos: true,
         projectId: project.id,
         createdAt: serverTimestamp() as any,
         endDate: sug.dataAgendada
@@ -208,10 +216,23 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
           : undefined,
       };
 
+      (taskData as any).faturamentoPeloProjeto = true;
+      (taskData as any).projectName = project.nome;
+
       const ref = await addDoc(collection(db, CollectionName.TASKS), taskData);
 
       // Vincular ao projeto
       await vincularOS(ref.id, sug.titulo);
+
+      // Vincular osId na gantt_task correspondente
+      if (sug.origemGanttTaskId) {
+        try {
+          await updateDoc(
+            doc(db, CollectionName.PROJECTS_V2, project.id, 'gantt_tasks', sug.origemGanttTaskId),
+            { osId: ref.id, atualizadoEm: serverTimestamp() }
+          );
+        } catch (e) { console.warn('Erro ao vincular osId na gantt_task:', e); }
+      }
 
       // Marcar sugestão como confirmada
       setSugestoes(prev => prev.map(s =>

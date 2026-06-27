@@ -10,14 +10,17 @@
  * - Vista de barras Gantt + Vista WBS em lista
  * - Adição e edição inline de tarefas
  */
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   Plus, Save, Loader2, Check, AlertTriangle, BarChart2,
   ChevronRight, ChevronDown, Trash2, Edit3, Camera,
   GitBranch, Layers, Clock, Building2, User, Users,
   BookOpen, Archive, Flag, X, Info, AlertCircle, Upload, Image as ImageIcon,
+  GripHorizontal,
 } from 'lucide-react';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
+import { CollectionName, Task, WorkflowStatus } from '../types';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import {
@@ -26,7 +29,7 @@ import {
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useProjectGantt } from '../hooks/useProjectGantt';
-import { GanttTask, GanttPartyV2, GanttTaskStatus, GanttAdversidade } from '../types';
+import { GanttTask, GanttPartyV2, GanttTaskStatus, GanttTaskPrioridade, GanttAdversidade } from '../types';
 
 interface Props {
   projectId: string;
@@ -65,6 +68,13 @@ const STATUS_CONFIG: Record<GanttTaskStatus, { label: string; color: string; dot
   concluida:    { label: 'Concluída',    color: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
   bloqueada:    { label: 'Bloqueada',    color: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500' },
   cancelada:    { label: 'Cancelada',    color: 'bg-gray-100 text-gray-400 border-gray-200', dot: 'bg-gray-300' },
+};
+
+const PRIORIDADE_CONFIG: Record<GanttTaskPrioridade, { label: string; color: string; dot: string }> = {
+  urgente: { label: 'Urgente', color: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500' },
+  alta:    { label: 'Alta',    color: 'bg-orange-100 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
+  media:   { label: 'Média',   color: 'bg-yellow-100 text-yellow-700 border-yellow-200', dot: 'bg-yellow-500' },
+  baixa:   { label: 'Baixa',   color: 'bg-gray-100 text-gray-500 border-gray-200', dot: 'bg-gray-400' },
 };
 
 const PARTY_CONFIG: Record<GanttPartyV2, { label: string; icon: React.ReactNode; color: string }> = {
@@ -107,7 +117,10 @@ const GanttBar: React.FC<{
   task: GanttTask;
   span: { start: Date; end: Date };
   totalDays: number;
-}> = ({ task, span, totalDays }) => {
+  linkedOS?: Task | null;
+  draggable?: boolean;
+  onDragDays?: (daysDelta: number) => void;
+}> = ({ task, span, totalDays, linkedOS, draggable, onDragDays }) => {
   const hoje = new Date();
 
   const bar = (ini: Date | null, fim: Date | null, className: string, title: string) => {
@@ -128,23 +141,118 @@ const GanttBar: React.FC<{
 
   const prevIni = toDate(task.dataInicioPrevista);
   const prevFim = toDate(task.dataFimPrevista);
-  const realIni = toDate(task.dataInicioReal);
-  const realFim = toDate(task.dataFimReal);
-  const atrasado = prevFim && !task.dataFimReal && isBefore(prevFim, hoje);
+
+  // Priorizar dados reais da OS vinculada sobre os dados manuais da gantt_task
+  let realIni = toDate(task.dataInicioReal);
+  let realFim = toDate(task.dataFimReal);
+  let osEmAndamento = task.status === 'em_andamento';
+  let osAtrasada = false;
+  let osConcluida = false;
+  let osBloqueada = false;
+
+  if (linkedOS) {
+    const exec = (linkedOS as any).execution;
+    if (exec?.checkIn) realIni = toDate(exec.checkIn) || realIni;
+    if (exec?.checkOut) realFim = toDate(exec.checkOut) || realFim;
+    else if (!realFim && linkedOS.workflowStatus === WorkflowStatus.CONCLUIDO) {
+      realFim = toDate((linkedOS as any).updatedAt) || realFim;
+    }
+    osEmAndamento = linkedOS.workflowStatus === WorkflowStatus.EM_EXECUCAO;
+    osConcluida = linkedOS.workflowStatus === WorkflowStatus.CONCLUIDO ||
+      linkedOS.workflowStatus === WorkflowStatus.AGUARDANDO_FATURAMENTO ||
+      linkedOS.workflowStatus === WorkflowStatus.AGUARDANDO_PAGAMENTO;
+    osBloqueada = linkedOS.workflowStatus === WorkflowStatus.REVISAO ||
+      linkedOS.workflowStatus === WorkflowStatus.AGENDADO;
+    osAtrasada = !!prevFim && !realFim && isBefore(prevFim, hoje) && !osConcluida;
+  }
+
+  const atrasado = prevFim && !realFim && isBefore(prevFim, hoje) && !osConcluida;
+
+  // Cor do overlay real baseada no status da OS
+  const realColor = osBloqueada
+    ? 'bg-red-400 opacity-90'
+    : osConcluida
+      ? 'bg-emerald-500 opacity-90'
+      : osEmAndamento
+        ? 'bg-amber-400 opacity-90'
+        : 'bg-emerald-500 opacity-90';
+
+  // Drag state
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const dragging = useRef(false);
+  const startX = useRef(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!draggable || !onDragDays) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragging.current = true;
+    startX.current = e.clientX;
+    setDragOffset(0);
+
+    const handleMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      setDragOffset(ev.clientX - startX.current);
+    };
+    const handleUp = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      const delta = ev.clientX - startX.current;
+      const containerW = containerRef.current?.offsetWidth || 1;
+      const daysPx = containerW / totalDays;
+      const daysDelta = Math.round(delta / daysPx);
+      setDragOffset(0);
+      if (daysDelta !== 0) onDragDays(daysDelta);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  };
 
   return (
-    <div className="relative h-8 flex-1 min-w-0">
-      {bar(prevIni, prevFim,
-        task.isCritico
-          ? 'bg-red-200 opacity-80'
-          : atrasado
-            ? 'bg-amber-200 opacity-80'
-            : 'bg-brand-200 opacity-80',
-        `Previsto: ${fmtDate(task.dataInicioPrevista)} → ${fmtDate(task.dataFimPrevista)}`
+    <div ref={containerRef} className="relative h-8 flex-1 min-w-0">
+      {/* Planned bar — draggable */}
+      {prevIni && prevFim && totalDays > 0 && (() => {
+        const left = Math.max(0, differenceInDays(prevIni, span.start));
+        const width = Math.max(1, differenceInDays(prevFim, prevIni));
+        let leftPct = (left / totalDays) * 100;
+        const widthPct = (width / totalDays) * 100;
+        if (leftPct > 100 || leftPct + widthPct < 0) return null;
+        const offsetPct = containerRef.current
+          ? (dragOffset / (containerRef.current.offsetWidth || 1)) * 100
+          : 0;
+        return (
+          <div
+            title={`Previsto: ${fmtDate(task.dataInicioPrevista)} → ${fmtDate(task.dataFimPrevista)}${draggable ? ' (arraste para reagendar)' : ''}`}
+            className={`absolute top-1/2 -translate-y-1/2 h-4 rounded-full ${
+              task.isCritico ? 'bg-red-200 opacity-80' : atrasado ? 'bg-amber-200 opacity-80' : 'bg-brand-200 opacity-80'
+            } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+            style={{
+              left: `${Math.max(0, leftPct) + offsetPct}%`,
+              width: `${Math.min(widthPct, 100 - Math.max(0, leftPct))}%`,
+            }}
+            onMouseDown={handleMouseDown}
+          >
+            {draggable && (
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-60 transition-opacity">
+                <GripHorizontal className="w-3 h-3 text-gray-600" />
+              </div>
+            )}
+          </div>
+        );
+      })()}
+      {bar(realIni, realFim || (osEmAndamento ? hoje : null),
+        realColor,
+        linkedOS
+          ? `OS ${(linkedOS as any).numeroOS || ''}: ${fmtDate(task.dataInicioReal)} → ${realFim ? fmtDate(task.dataFimReal) : 'em andamento'}`
+          : `Realizado: ${fmtDate(task.dataInicioReal)} → ${task.dataFimReal ? fmtDate(task.dataFimReal) : 'em andamento'}`
       )}
-      {bar(realIni, realFim || (task.status === 'em_andamento' ? hoje : null),
-        'bg-emerald-500 opacity-90',
-        `Realizado: ${fmtDate(task.dataInicioReal)} → ${task.dataFimReal ? fmtDate(task.dataFimReal) : 'em andamento'}`
+      {linkedOS && osBloqueada && (
+        <div className="absolute right-1 top-1/2 -translate-y-1/2" title="OS com pendência">
+          <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+        </div>
       )}
     </div>
   );
@@ -293,6 +401,7 @@ interface TaskFormData {
   descricao: string;
   party: GanttPartyV2;
   status: GanttTaskStatus;
+  prioridade: GanttTaskPrioridade;
   dataInicioPrevista: string;
   dataFimPrevista: string;
   duracaoDias: number;
@@ -311,6 +420,7 @@ const TaskFormModal: React.FC<{
     descricao: initial?.descricao || '',
     party: initial?.party || 'mgr',
     status: initial?.status || 'nao_iniciada',
+    prioridade: initial?.prioridade || 'media',
     dataInicioPrevista: initial?.dataInicioPrevista || '',
     dataFimPrevista: initial?.dataFimPrevista || '',
     duracaoDias: initial?.duracaoDias || 0,
@@ -354,7 +464,7 @@ const TaskFormModal: React.FC<{
               placeholder="Ex: Instalação dos compressores" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-bold text-gray-600 block mb-1">Responsabilidade</label>
               <select value={form.party} onChange={e => setForm(f => ({ ...f, party: e.target.value as GanttPartyV2 }))}
@@ -373,22 +483,38 @@ const TaskFormModal: React.FC<{
                 ))}
               </select>
             </div>
+            <div>
+              <label className="text-xs font-bold text-gray-600 block mb-1">Prioridade</label>
+              <select value={form.prioridade} onChange={e => setForm(f => ({ ...f, prioridade: e.target.value as GanttTaskPrioridade }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none">
+                {Object.entries(PRIORIDADE_CONFIG).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-gray-600 block mb-1">Início Previsto</label>
+              <label className="text-xs font-bold text-gray-600 block mb-1">Início Previsto <span className="text-gray-400 font-normal">(opcional)</span></label>
               <input type="date" value={form.dataInicioPrevista}
                 onChange={e => setForm(f => ({ ...f, dataInicioPrevista: e.target.value }))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none" />
             </div>
             <div>
-              <label className="text-xs font-bold text-gray-600 block mb-1">Fim Previsto</label>
+              <label className="text-xs font-bold text-gray-600 block mb-1">Fim Previsto <span className="text-gray-400 font-normal">(opcional)</span></label>
               <input type="date" value={form.dataFimPrevista}
                 onChange={e => setForm(f => ({ ...f, dataFimPrevista: e.target.value }))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none" />
             </div>
           </div>
+
+          {!form.dataInicioPrevista && !form.dataFimPrevista && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+              <Flag className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+              <p className="text-xs text-amber-700">Tarefa será criada como <strong>pendente a agendar</strong>. Aparecerá no Dashboard para acompanhamento.</p>
+            </div>
+          )}
 
           {form.duracaoDias > 0 && (
             <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -424,12 +550,14 @@ const WBSRow: React.FC<{
   showGantt: boolean;
   hasChildren: boolean;
   isExpanded: boolean;
+  linkedOS?: Task | null;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onAddChild: () => void;
   onAdversidade: () => void;
-}> = ({ task, span, totalDays, showGantt, hasChildren, isExpanded, onToggle, onEdit, onDelete, onAddChild, onAdversidade }) => {
+  onDragDays?: (daysDelta: number) => void;
+}> = ({ task, span, totalDays, showGantt, hasChildren, isExpanded, linkedOS, onToggle, onEdit, onDelete, onAddChild, onAdversidade, onDragDays }) => {
   const status = STATUS_CONFIG[task.status];
   const party = PARTY_CONFIG[task.party];
   const hoje = new Date();
@@ -481,6 +609,19 @@ const WBSRow: React.FC<{
                   ⚠️ {task.adversidades!.length} adv.
                 </span>
               )}
+              {linkedOS && (
+                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${
+                  linkedOS.workflowStatus === WorkflowStatus.CONCLUIDO || linkedOS.workflowStatus === WorkflowStatus.AGUARDANDO_FATURAMENTO
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                    : linkedOS.workflowStatus === WorkflowStatus.REVISAO
+                      ? 'bg-red-100 text-red-700 border-red-200'
+                      : linkedOS.workflowStatus === WorkflowStatus.EM_EXECUCAO
+                        ? 'bg-orange-100 text-orange-700 border-orange-200'
+                        : 'bg-sky-100 text-sky-700 border-sky-200'
+                }`}>
+                  OS {(linkedOS as any).numeroOS || linkedOS.id.slice(0,6)}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
               {task.dataInicioPrevista && <span>{fmtDate(task.dataInicioPrevista)} → {fmtDate(task.dataFimPrevista)}</span>}
@@ -492,7 +633,8 @@ const WBSRow: React.FC<{
           {/* Barra Gantt inline */}
           {showGantt && totalDays > 0 && (
             <div className="w-48 flex-shrink-0 hidden md:block">
-              <GanttBar task={task} span={span} totalDays={totalDays} />
+              <GanttBar task={task} span={span} totalDays={totalDays} linkedOS={linkedOS}
+                draggable={!!onDragDays} onDragDays={onDragDays} />
             </div>
           )}
 
@@ -529,6 +671,50 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
     registrarAdversidade, criarBaseline, deleteBaseline,
     getTasksFlat,
   } = useProjectGantt(projectId);
+
+  // OS vinculadas ao projeto — reativo
+  const [projectTasks, setProjectTasks] = useState<Task[]>([]);
+  useEffect(() => {
+    const q = query(collection(db, CollectionName.TASKS), where('projectId', '==', projectId));
+    const unsub = onSnapshot(q, snap => {
+      setProjectTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task)));
+    }, () => {});
+    return () => unsub();
+  }, [projectId]);
+
+  // Mapa osId → Task para acesso rápido
+  const osMap = useMemo(() => {
+    const m = new Map<string, Task>();
+    projectTasks.forEach(t => m.set(t.id, t));
+    return m;
+  }, [projectTasks]);
+
+  // Detectar conflitos de sobreposição entre OS do mesmo técnico
+  const conflicts = useMemo(() => {
+    const result: { taskId: string; conflictWith: string; conflictNumero: string }[] = [];
+    const osLinked = tasks.filter(t => t.osId).map(t => ({
+      ganttId: t.id,
+      os: osMap.get(t.osId!),
+      prevIni: toDate(t.dataInicioPrevista),
+      prevFim: toDate(t.dataFimPrevista),
+    })).filter(t => t.os && t.prevIni && t.prevFim);
+
+    for (let i = 0; i < osLinked.length; i++) {
+      for (let j = i + 1; j < osLinked.length; j++) {
+        const a = osLinked[i], b = osLinked[j];
+        if (!a.os || !b.os) continue;
+        if (a.os.assignedTo && a.os.assignedTo === b.os.assignedTo) {
+          if (a.prevIni! < b.prevFim! && a.prevFim! > b.prevIni!) {
+            result.push({ taskId: a.ganttId, conflictWith: b.ganttId, conflictNumero: (b.os as any).numeroOS || b.os!.id.slice(0,6) });
+            result.push({ taskId: b.ganttId, conflictWith: a.ganttId, conflictNumero: (a.os as any).numeroOS || a.os!.id.slice(0,6) });
+          }
+        }
+      }
+    }
+    return result;
+  }, [tasks, osMap]);
+
+  const conflictCount = new Set(conflicts.map(c => c.taskId)).size;
 
   // UI state
   const [view, setView] = useState<'wbs' | 'gantt' | 'kpis'>('wbs');
@@ -587,6 +773,30 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
     });
   };
 
+  // Drag & drop reschedule handler
+  const handleDragDays = useCallback(async (task: GanttTask, daysDelta: number) => {
+    const prevIni = toDate(task.dataInicioPrevista);
+    const prevFim = toDate(task.dataFimPrevista);
+    if (!prevIni || !prevFim) return;
+
+    const newIni = addDays(prevIni, daysDelta);
+    const newFim = addDays(prevFim, daysDelta);
+
+    await updateTask(task.id, {
+      dataInicioPrevista: Timestamp.fromDate(newIni),
+      dataFimPrevista: Timestamp.fromDate(newFim),
+    });
+
+    if (task.osId) {
+      try {
+        await updateDoc(doc(db, CollectionName.TASKS, task.osId), {
+          endDate: Timestamp.fromDate(newFim),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (e) { console.warn('Erro ao atualizar OS vinculada:', e); }
+    }
+  }, [updateTask]);
+
   // Ações de task
   const handleAddTask = async (form: any, parentId: string | null) => {
     const siblingCount = tasks.filter(t => (t.parentId ?? null) === parentId).length;
@@ -595,6 +805,7 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
       descricao: form.descricao,
       party: form.party,
       status: form.status,
+      prioridade: form.prioridade || 'media',
       progresso: 0,
       nivel: parentId ? (tasks.find(t => t.id === parentId)?.nivel ?? 0) + 1 : 0,
       ordem: siblingCount + 1,
@@ -617,6 +828,7 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
       descricao: form.descricao,
       party: form.party,
       status: form.status,
+      prioridade: form.prioridade || 'media',
       dataInicioPrevista: strToTs(form.dataInicioPrevista),
       dataFimPrevista: strToTs(form.dataFimPrevista),
       duracaoDias: form.duracaoDias || undefined,
@@ -671,6 +883,11 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
               <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${progresso}%` }} />
             </div>
             <span className="text-xs text-gray-500">{progresso}% concluído · {tasks.filter(t => !tasks.some(o => o.parentId === t.id)).length} tarefas</span>
+            {conflictCount > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 border border-red-200 animate-pulse">
+                ⚠️ {conflictCount} conflito{conflictCount > 1 ? 's' : ''} de agenda
+              </span>
+            )}
           </div>
         </div>
 
@@ -857,6 +1074,8 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
                     }}
                     onAddChild={() => setAddingTask({ parentId: task.id })}
                     onAdversidade={() => setAdversidadeTask(task)}
+                    linkedOS={task.osId ? osMap.get(task.osId) || null : null}
+                    onDragDays={view === 'gantt' ? (days) => handleDragDays(task, days) : undefined}
                   />
                 ))}
               </div>
@@ -883,6 +1102,7 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
             descricao: editingTask.descricao,
             party: editingTask.party,
             status: editingTask.status,
+            prioridade: editingTask.prioridade || 'media',
             dataInicioPrevista: tsToStr(editingTask.dataInicioPrevista),
             dataFimPrevista: tsToStr(editingTask.dataFimPrevista),
             duracaoDias: editingTask.duracaoDias || 0,
@@ -904,6 +1124,7 @@ const ProjectGantt: React.FC<Props> = ({ projectId }) => {
 
       <p className="text-[10px] text-gray-400 text-center">
         💡 Hover nas tarefas para ver ações. Barra vermelha lateral = tarefa no caminho crítico.
+        {view === 'gantt' && ' Arraste as barras horizontalmente para reagendar.'}
         {view !== 'gantt' && <span className="md:hidden"> ← Alterne para vista Gantt para ver o gráfico de barras.</span>}
       </p>
     </div>

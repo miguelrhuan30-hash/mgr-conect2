@@ -50,6 +50,8 @@ import {
   Calendar,
   ArrowRight,
   Truck,
+  KeyRound,
+  GraduationCap,
 } from 'lucide-react';
 import AlertasCentral from './AlertasCentral';
 
@@ -68,6 +70,7 @@ const Layout: React.FC = () => {
   // Sprint 46A — Suporte Primário notification badge for Gestores
   const [suporteNaoLidos, setSuporteNaoLidos] = useState(0);
   const [leadsNovos, setLeadsNovos] = useState(0);
+  const [pendingPasswordResets, setPendingPasswordResets] = useState(0);
   const isGestorLayout = ['admin', 'gestor', 'manager', 'developer'].includes(userProfile?.role || '');
 
   // Sprint 46 — expandable submenu
@@ -92,6 +95,19 @@ const Layout: React.FC = () => {
     );
     return onSnapshot(q, snap => setLeadsNovos(snap.size));
   }, [isGestorLayout, currentUser]);
+
+  // Badge de pedidos de redefinição de senha pendentes
+  useEffect(() => {
+    const canReset = isGestorLayout && (
+      userProfile?.role === 'admin' || !!userProfile?.permissions?.canResetUserPasswords
+    );
+    if (!canReset || !currentUser) return;
+    const q = query(
+      collection(db, CollectionName.PASSWORD_RESET_REQUESTS),
+      where('status', '==', 'pending'),
+    );
+    return onSnapshot(q, snap => setPendingPasswordResets(snap.size));
+  }, [isGestorLayout, currentUser, userProfile]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -119,7 +135,7 @@ const Layout: React.FC = () => {
       '/app/tarefas':          'Tarefas (OS)',
       '/app/agenda':           'Agenda (Gantt)',
       '/app/clientes':         'Clientes',
-      '/app/projetos':         'Projetos',
+      // '/app/projetos' removido — unificado
       '/app/estoque':          'Almoxarifado',
       '/app/modelos':          'Modelos',
       '/app/relatorios-ponto': 'Espelho de Ponto',
@@ -142,10 +158,11 @@ const Layout: React.FC = () => {
       '/app/pesquisas':           'Pesquisas Internas',
       '/app/pesquisas/responder': 'Responder Pesquisa',
       '/app/pesquisas/dashboard': 'Dashboard People Analytics',
-      '/app/projetos-v2':         'Projetos V2',
+      '/app/projetos-v2':         'Projetos',
       '/app/leads':               'Leads',
       '/app/nao-aprovados':       'Não Aprovados',
       '/app/flow-atendimento':    'Flow de Atendimento',
+      '/app/calendario':          'Calendário de O.S.',
     };
 
     const pageTitle = PAGE_TITLES[location.pathname] ?? location.pathname;
@@ -218,13 +235,14 @@ const Layout: React.FC = () => {
   type NavItem  = NavChild & { children?: NavChild[]; end?: boolean };
 
   // O.S. submenu routes for auto-expand detection
-  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos', '/app/propostas-pdf', '/app/apresentacoes', '/app/projetos', '/app/modelos'];
+  const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos', '/app/propostas-pdf', '/app/apresentacoes', '/app/modelos'];
   const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos'];
   const VEHICLE_ROUTES  = ['/app/veiculos'];
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
   const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
   const PEOPLE_ROUTES  = ['/app/usuarios', '/app/setores', '/app/locais', '/app/relatorios-ponto', '/app/espelho-mensal', '/app/pesquisas'];
-  const PROJECTS_V2_ROUTES = ['/app/projetos-v2', '/app/leads', '/app/nao-aprovados', '/app/flow-atendimento', '/app/fornecedores'];
+  const PROJECTS_V2_ROUTES = ['/app/projetos-v2', '/app/leads', '/app/nao-aprovados', '/app/flow-atendimento', '/app/fornecedores', '/app/calendario'];
+  const ACADEMY_ROUTES  = ['/app/academy'];
 
   const isInOSGroup      = OS_ROUTES.some(r => location.pathname.startsWith(r));
   const isInClientGroup  = CLIENT_ROUTES.some(r => location.pathname.startsWith(r));
@@ -233,6 +251,7 @@ const Layout: React.FC = () => {
   const isInLunchGroup   = LUNCH_ROUTES.some(r => location.pathname.startsWith(r));
   const isInPeopleGroup  = PEOPLE_ROUTES.some(r => location.pathname.startsWith(r));
   const isInProjectsV2Group = PROJECTS_V2_ROUTES.some(r => location.pathname.startsWith(r));
+  const isInAcademyGroup = ACADEMY_ROUTES.some(r => location.pathname.startsWith(r));
 
   // Auto-expand groups when on their routes
   const osGroupOpen      = expandedGroup === 'os'       || isInOSGroup;
@@ -242,9 +261,11 @@ const Layout: React.FC = () => {
   const lunchGroupOpen   = expandedGroup === 'lunch'    || isInLunchGroup;
   const peopleGroupOpen  = expandedGroup === 'people'   || isInPeopleGroup;
   const projectsV2GroupOpen = expandedGroup === 'projectsV2' || isInProjectsV2Group;
+  const academyGroupOpen = expandedGroup === 'academy' || isInAcademyGroup;
 
   const navItems: NavItem[] = [
     { to: '/app', icon: LayoutDashboard, label: 'Início', end: true, visible: true },
+    { to: '/app/instalar-app', icon: Download, label: '📱 Instalar App de Campo', visible: true },
 
     // ── Almoço MGR (grupo com submenu) ──
     {
@@ -257,9 +278,22 @@ const Layout: React.FC = () => {
         { to: '/app/gestao-almoco', icon: UtensilsCrossed, label: 'Gestão de Almoços', visible: can('canManageLunch') },
       ],
     },
+    // ── Academia MGR (grupo com submenu) ──
+    {
+      to: '/app/academy',
+      icon: GraduationCap,
+      label: 'Academia MGR',
+      visible: true,
+      children: [
+        { to: '/app/academy',           icon: GraduationCap, label: 'Meus Cursos',        visible: true },
+        { to: '/app/academy/gerenciar', icon: Settings,      label: 'Gerenciar Módulos',  visible: can('canManageAcademy') },
+        { to: '/app/academy/turma',     icon: Trophy,        label: 'Turma & Carreira',   visible: can('canManageAcademy') },
+      ],
+    },
     { to: '/app/ranking', icon: Trophy, label: 'Ranking da Equipe', visible: can('canViewRanking') || userProfile?.role === 'admin' || userProfile?.role === 'gestor' || userProfile?.role === 'manager' },
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
+    { to: '/app/feed', icon: Activity, label: 'Feed de Atividades', visible: can('canManageProjects') || ['admin','gestor','manager'].includes(userProfile?.role || '') },
 
     // ── Flow de Atendimento — Ciclo de Vida (grupo com submenu) ──
     {
@@ -273,6 +307,7 @@ const Layout: React.FC = () => {
         { to: '/app/leads',         icon: UserPlus,   label: 'Leads',             visible: can('canManageProjects'), badge: leadsNovos > 0 ? leadsNovos : undefined },
         { to: '/app/nao-aprovados', icon: Target,     label: 'Não Aprovados',     visible: can('canManageProjects') },
         { to: '/app/gantt-gerencial', icon: Calendar, label: 'Gantt Gerencial',   visible: can('canManageProjects') },
+        { to: '/app/calendario',      icon: CalendarDays, label: 'Calendário OS',  visible: can('canManageProjects') },
         { to: '/app/fornecedores',  icon: Truck,      label: 'Fornecedores',      visible: can('canManageProjects') },
         { to: '/editor-projetos',   icon: Briefcase,  label: 'LP Projetos (Editor)', visible: userProfile?.role === 'admin' || userProfile?.role === 'developer' },
       ],
@@ -303,7 +338,7 @@ const Layout: React.FC = () => {
         { to: '/app/pipeline',      icon: Kanban,          label: 'Pipeline',            visible: can('canManageProjects') },
         { to: '/app/agenda',        icon: CalendarDays,    label: 'Agenda',              visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
         { to: '/app/tarefas',       icon: CheckSquare,     label: 'Lista de O.S.',       visible: can('canViewTasks') },
-        { to: '/app/projetos',      icon: Briefcase,       label: 'Projetos',            visible: can('canManageProjects') },
+        // Projetos (antigo) removido — unificado em Flow de Atendimento > Todos os Projetos
         { to: '/app/faturamento',    icon: Receipt,         label: 'Faturamento',           visible: can('canViewFinancials') },
         { to: '/app/orcamentos',     icon: FileSpreadsheet, label: 'Orçamentos',            visible: can('canViewFinancials') },
         { to: '/app/propostas-pdf',  icon: FileUp,          label: 'Propostas PDF 📎',      visible: can('canViewFinancials') },
@@ -349,7 +384,7 @@ const Layout: React.FC = () => {
       label: 'Gestão de Pessoas',
       visible: can('canManageUsers') || can('canViewAttendanceReports') || can('canManageSurveys') || true, // pesquisas visível p/ todos
       children: [
-        { to: '/app/usuarios',           icon: Users,        label: 'Equipe & RH',           visible: can('canManageUsers') },
+        { to: '/app/usuarios',           icon: Users,        label: 'Equipe & RH',           visible: can('canManageUsers') || can('canResetUserPasswords'), badge: pendingPasswordResets > 0 ? pendingPasswordResets : undefined },
         { to: '/app/candidatos',         icon: UserPlus,     label: 'Banco de Candidatos',    visible: can('canManageUsers') },
         { to: '/app/setores',            icon: Shield,       label: 'Cargos & Acessos',       visible: can('canManageSectors') },
         { to: '/app/locais',             icon: MapPin,       label: 'Locais de Trabalho',     visible: can('canManageUsers') },
@@ -431,6 +466,20 @@ const Layout: React.FC = () => {
             </span>
           </button>
         )}
+
+        {/* Badge de pedidos de redefinição de senha */}
+        {pendingPasswordResets > 0 && (
+          <button
+            onClick={() => navigate('/app/usuarios')}
+            className="relative p-2 bg-orange-500 text-white rounded-xl flex items-center gap-1.5 text-xs font-bold shadow animate-pulse"
+            title="Pedidos de senha temporária pendentes"
+          >
+            <KeyRound size={16} />
+            <span className="bg-red-600 text-white text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
+              {pendingPasswordResets}
+            </span>
+          </button>
+        )}
       </header>
 
       {/* MOBILE OVERLAY (Backdrop) */}
@@ -479,6 +528,7 @@ const Layout: React.FC = () => {
                                  : item.label === 'Almoço MGR'           ? 'lunch'
                                  : item.label === 'Gestão de Pessoas'  ? 'people'
                                  : item.label === 'Flow de Atendimento' ? 'projectsV2'
+                                 : item.label === 'Academia MGR'         ? 'academy'
                                  : item.label;
                 const isOpen = item.label === 'Ordens de Serviço'         ? osGroupOpen
                              : item.label === 'Gestão de Clientes'        ? clientGroupOpen
@@ -487,6 +537,7 @@ const Layout: React.FC = () => {
                              : item.label === 'Almoço MGR'                ? lunchGroupOpen
                              : item.label === 'Gestão de Pessoas'         ? peopleGroupOpen
                              : item.label === 'Flow de Atendimento'       ? projectsV2GroupOpen
+                             : item.label === 'Academia MGR'              ? academyGroupOpen
                              : expandedGroup === isGroupKey;
                 const visibleChildren = item.children.filter(c => c.visible);
                 if (visibleChildren.length === 0) return null;

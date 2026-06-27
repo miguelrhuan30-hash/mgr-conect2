@@ -60,6 +60,11 @@ const MyLunch: React.FC = () => {
   const [editSel, setEditSel] = useState<DaySelection>(emptyDay());
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const [notes, setNotes] = useState<Record<DayKey, string>>({
+    segunda: '', terca: '', quarta: '', quinta: '', sexta: '',
+  });
+  const [editNote, setEditNote] = useState('');
+
   const [todayLocation, setTodayLocation] = useState<LunchLocation | null>(null);
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [locType, setLocType] = useState<LunchLocationType | ''>('');
@@ -156,6 +161,7 @@ const MyLunch: React.FC = () => {
     misturas: selections[day].misturas.map(id => ({ id, nome: meatOpts.find(p => p.id === id)?.nome ?? id })),
     guarnicoes: selections[day].guarnicoes.map(id => ({ id, nome: sideOpts.find(p => p.id === id)?.nome ?? id })),
     tamanho: sizes[day],
+    ...(notes[day].trim() ? { observacao: notes[day].trim() } : {}),
   });
 
   const choiceDocId = () => `${currentUser!.uid}_${activeMenu!.id}`;
@@ -226,6 +232,7 @@ const MyLunch: React.FC = () => {
       misturas: dc?.misturas?.filter(m => dishIds.has(m.id)).map(m => m.id) ?? [],
       guarnicoes: dc?.guarnicoes?.filter(g => dishIds.has(g.id)).map(g => g.id) ?? [],
     });
+    setEditNote(dc?.observacao ?? '');
     setEditingDay(day);
   };
 
@@ -245,6 +252,7 @@ const MyLunch: React.FC = () => {
         misturas: editSel.misturas.map(id => ({ id, nome: meatOpts.find(p => p.id === id)?.nome ?? id })),
         guarnicoes: editSel.guarnicoes.map(id => ({ id, nome: sideOpts.find(p => p.id === id)?.nome ?? id })),
         tamanho: sizes[editingDay],
+        ...(editNote.trim() ? { observacao: editNote.trim() } : {}),
       };
       const hasAny = dc.misturas.length > 0 || dc.guarnicoes.length > 0;
       const docId = choiceDocId();
@@ -382,6 +390,18 @@ const MyLunch: React.FC = () => {
             ))}
           </div>
         </div>
+        <div>
+          <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 block">✏️ Observação (opcional)</label>
+          <textarea
+            value={editNote}
+            onChange={e => setEditNote(e.target.value)}
+            placeholder="Ex: sem feijão, mais arroz, sem cebola..."
+            maxLength={120}
+            rows={2}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300 resize-none"
+          />
+          {editNote.length > 0 && <p className="text-[10px] text-gray-400 text-right mt-0.5">{editNote.length}/120</p>}
+        </div>
         <div className="flex gap-2">
           <button onClick={onSave} disabled={saving} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-bold">
             {saving ? 'Salvando...' : '✓ Salvar Alteração'}
@@ -436,6 +456,18 @@ const MyLunch: React.FC = () => {
           ))}
         </div>
       </div>
+      <div>
+        <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 block">✏️ Observação (opcional)</label>
+        <textarea
+          value={notes[day]}
+          onChange={e => setNotes(prev => ({ ...prev, [day]: e.target.value }))}
+          placeholder="Ex: sem feijão, mais arroz, sem cebola..."
+          maxLength={120}
+          rows={2}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 placeholder-gray-400 outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 resize-none"
+        />
+        {notes[day].length > 0 && <p className="text-[10px] text-gray-400 text-right mt-0.5">{notes[day].length}/120</p>}
+      </div>
     </div>
   );
 
@@ -486,6 +518,11 @@ const MyLunch: React.FC = () => {
                 })}
                 {todayChoice.tamanho && <span className="text-xs px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 border border-purple-200">📦 {todayChoice.tamanho}</span>}
               </div>
+              {todayChoice.observacao && (
+                <p className="text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                  ✏️ <span className="font-medium">Obs:</span> {todayChoice.observacao}
+                </p>
+              )}
               {editingDay === todayKey ? (
                 renderEditPanel(todayKey, () => setEditingDay(null), handleSaveEdit, savingEdit)
               ) : (

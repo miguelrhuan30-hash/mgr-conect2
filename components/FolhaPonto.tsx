@@ -757,24 +757,55 @@ const FolhaPonto: React.FC = () => {
 
                   {/* Horários */}
                   <div className="flex-1 grid grid-cols-4 gap-2 text-center">
-                    {(['entry', 'lunch_start', 'lunch_end', 'exit'] as const).map(tipo => {
-                      const reg = tipo === 'entry' ? turno.entry
-                                : tipo === 'lunch_start' ? turno.lunchStart
-                                : tipo === 'lunch_end' ? turno.lunchEnd
-                                : turno.exit;
-                      const time = formatTime(reg);
-                      return (
-                        <div key={tipo}>
-                          <div className="text-[10px] text-gray-400 uppercase font-bold">{TIPO_LABELS[tipo]}</div>
-                          <div className={`text-sm font-bold ${time ? 'text-gray-900' : 'text-gray-300'}`}>
-                            {time || '--:--'}
+                    {turno.status === 'sem_almoco' ? (
+                      <>
+                        {/* Entrada */}
+                        <div>
+                          <div className="text-[10px] text-gray-400 uppercase font-bold">{TIPO_LABELS['entry']}</div>
+                          <div className={`text-sm font-bold ${turno.entry ? 'text-gray-900' : 'text-gray-300'}`}>
+                            {formatTime(turno.entry) || '--:--'}
                           </div>
-                          {reg?.isManual && (
-                            <span className="text-[9px] bg-orange-100 text-orange-700 px-1 rounded font-bold">Editado</span>
-                          )}
+                          {turno.entry?.isManual && <span className="text-[9px] bg-orange-100 text-orange-700 px-1 rounded font-bold">Editado</span>}
                         </div>
-                      );
-                    })}
+                        {/* Linha conectora "Sem Almoço" spanning cols 2+3 */}
+                        <div className="col-span-2 flex items-center justify-center">
+                          <div className="flex items-center gap-1 w-full px-1">
+                            <div className="h-px flex-1 bg-blue-300" />
+                            <span className="text-[9px] font-extrabold text-blue-600 whitespace-nowrap bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 uppercase tracking-wide">
+                              Sem Almoço
+                            </span>
+                            <div className="h-px flex-1 bg-blue-300" />
+                          </div>
+                        </div>
+                        {/* Saída */}
+                        <div>
+                          <div className="text-[10px] text-gray-400 uppercase font-bold">{TIPO_LABELS['exit']}</div>
+                          <div className={`text-sm font-bold ${turno.exit ? 'text-gray-900' : 'text-gray-300'}`}>
+                            {formatTime(turno.exit) || '--:--'}
+                          </div>
+                          {turno.exit?.isManual && <span className="text-[9px] bg-orange-100 text-orange-700 px-1 rounded font-bold">Editado</span>}
+                        </div>
+                      </>
+                    ) : (
+                      (['entry', 'lunch_start', 'lunch_end', 'exit'] as const).map(tipo => {
+                        const reg = tipo === 'entry' ? turno.entry
+                                  : tipo === 'lunch_start' ? turno.lunchStart
+                                  : tipo === 'lunch_end' ? turno.lunchEnd
+                                  : turno.exit;
+                        const time = formatTime(reg);
+                        return (
+                          <div key={tipo}>
+                            <div className="text-[10px] text-gray-400 uppercase font-bold">{TIPO_LABELS[tipo]}</div>
+                            <div className={`text-sm font-bold ${time ? 'text-gray-900' : 'text-gray-300'}`}>
+                              {time || '--:--'}
+                            </div>
+                            {reg?.isManual && (
+                              <span className="text-[9px] bg-orange-100 text-orange-700 px-1 rounded font-bold">Editado</span>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
 
                   {/* Duração */}

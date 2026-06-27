@@ -1,24 +1,38 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { updateDoc, doc } from 'firebase/firestore';
+import { updateDoc, doc, deleteField } from 'firebase/firestore';
 import { ref, getDownloadURL, uploadString } from 'firebase/storage';
+import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { db, storage } from '../firebase';
 import { CollectionName } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { 
-  Camera, User, Loader2, ShieldCheck, 
-  AlertTriangle, MapPin, Clock, ScanFace, X, RefreshCw, Check 
+import {
+  Camera, User, Loader2, ShieldCheck,
+  AlertTriangle, MapPin, Clock, ScanFace, X, RefreshCw, Check, Lock, Eye, EyeOff,
+  KeyRound, GraduationCap,
 } from 'lucide-react';
+import CareerBadges from './academy/CareerBadges';
 
 const UserProfile: React.FC = () => {
   const { userProfile, currentUser } = useAuth();
   const navigate = useNavigate();
   
-  // States
+  // States — foto
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [cameraError, setCameraError] = useState('');
+
+  // States — trocar senha
+  const [senhaAtual, setSenhaAtual] = useState('');
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [showSenhaAtual, setShowSenhaAtual] = useState(false);
+  const [showNovaSenha, setShowNovaSenha] = useState(false);
+  const [showConfirmar, setShowConfirmar] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
   
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -136,6 +150,51 @@ const UserProfile: React.FC = () => {
     }
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess(false);
+
+    if (novaSenha.length < 8) {
+      setPasswordError('A nova senha deve ter pelo menos 8 caracteres.');
+      return;
+    }
+    if (novaSenha !== confirmarSenha) {
+      setPasswordError('A nova senha e a confirmação não coincidem.');
+      return;
+    }
+    if (!currentUser?.email) return;
+
+    setSavingPassword(true);
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, senhaAtual);
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, novaSenha);
+      // Remove o flag de senha temporária se estava ativo
+      if (userProfile?.requiresPasswordChange) {
+        await updateDoc(doc(db, CollectionName.USERS, currentUser.uid), {
+          requiresPasswordChange: deleteField(),
+          tempPasswordSetAt: deleteField(),
+          tempPasswordSetBy: deleteField(),
+        });
+      }
+      setPasswordSuccess(true);
+      setSenhaAtual('');
+      setNovaSenha('');
+      setConfirmarSenha('');
+    } catch (err: any) {
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setPasswordError('Senha atual incorreta.');
+      } else if (err.code === 'auth/weak-password') {
+        setPasswordError('Senha muito fraca. Use pelo menos 8 caracteres.');
+      } else {
+        setPasswordError('Erro ao alterar senha. Tente novamente.');
+      }
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -200,8 +259,113 @@ const UserProfile: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Aviso de senha temporária */}
+          {userProfile?.requiresPasswordChange && (
+            <div className="bg-orange-50 rounded-xl border border-orange-200 p-4 flex items-start gap-3">
+              <KeyRound className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-orange-800 text-sm">Senha temporária ativa</p>
+                <p className="text-xs text-orange-700 mt-1">
+                  Um gestor definiu uma senha temporária para seu acesso. Por segurança, altere sua senha agora usando o formulário abaixo.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Segurança — trocar senha */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
+              <Lock size={18} /> Segurança
+            </div>
+            <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+              {/* Senha atual */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Senha atual</label>
+                <div className="relative">
+                  <input
+                    type={showSenhaAtual ? 'text' : 'password'}
+                    value={senhaAtual}
+                    onChange={e => setSenhaAtual(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className="w-full p-3 pr-10 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button type="button" onClick={() => setShowSenhaAtual(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showSenhaAtual ? <EyeOff size={16}/> : <Eye size={16}/>}
+                  </button>
+                </div>
+              </div>
+
+              {/* Nova senha */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Nova senha</label>
+                <div className="relative">
+                  <input
+                    type={showNovaSenha ? 'text' : 'password'}
+                    value={novaSenha}
+                    onChange={e => setNovaSenha(e.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    required
+                    className="w-full p-3 pr-10 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button type="button" onClick={() => setShowNovaSenha(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showNovaSenha ? <EyeOff size={16}/> : <Eye size={16}/>}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirmar nova senha */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Confirmar nova senha</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmar ? 'text' : 'password'}
+                    value={confirmarSenha}
+                    onChange={e => setConfirmarSenha(e.target.value)}
+                    placeholder="Repita a nova senha"
+                    required
+                    className="w-full p-3 pr-10 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button type="button" onClick={() => setShowConfirmar(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showConfirmar ? <EyeOff size={16}/> : <Eye size={16}/>}
+                  </button>
+                </div>
+              </div>
+
+              {passwordError && (
+                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertTriangle size={15}/> {passwordError}
+                </div>
+              )}
+              {passwordSuccess && (
+                <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <Check size={15}/> Senha alterada com sucesso!
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={savingPassword || !senhaAtual || !novaSenha || !confirmarSenha}
+                className="w-full py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+              >
+                {savingPassword ? <Loader2 size={18} className="animate-spin"/> : <Lock size={18}/>}
+                {savingPassword ? 'Alterando...' : 'Alterar Senha'}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
+
+      {/* ── Carreira MGR — badges, certificações e cursos externos ── */}
+      {currentUser && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center gap-2 font-bold text-gray-900 mb-4">
+            <GraduationCap size={18} /> Minha Carreira MGR
+          </div>
+          <CareerBadges userId={currentUser.uid} />
+        </div>
+      )}
 
       {isCameraOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">

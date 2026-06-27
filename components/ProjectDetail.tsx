@@ -7,14 +7,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, ChevronRight, ArrowRight, Loader2, AlertCircle,
+  ArrowLeft, ChevronRight, ChevronDown, ArrowRight, Loader2, AlertCircle,
   XCircle, RotateCcw, Clock, Save, Briefcase, Plus, ExternalLink, Link2, Search,
+  FolderOpen, Upload, FileText, Image, Trash2, ClipboardList, BarChart3,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   getDocs, collection, query, orderBy as fbOrderBy, onSnapshot,
+  addDoc, deleteDoc, doc as fbDoc, serverTimestamp,
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db } from '../firebase';
-import { Client } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { Client, CollectionName, ProjectDocument } from '../types';
+
+let storage: any = null;
+try {
+  const storageModule = require('../firebase');
+  storage = storageModule.storage;
+} catch { /* storage not configured */ }
 import { useProject } from '../hooks/useProject';
 import { useProjectOS } from '../hooks/useProjectOS';
 import ProjectPrancheta from './ProjectPrancheta';
@@ -27,10 +38,9 @@ import ProjectProposta from './ProjectProposta';
 import ProjectActivity from './ProjectActivity';
 import ProjectOSDistribuicao from './ProjectOSDistribuicao';
 import ProjectAdendoMudancas from './ProjectAdendoMudancas';
-import { useProjectActivity } from '../hooks/useProjectActivity';
 import {
   ProjectPhase, PROJECT_PHASE_LABELS, PROJECT_PHASE_COLORS,
-  PROJECT_PHASE_ORDER, PROJECT_TRANSITIONS, NAO_APROVADO_MOTIVOS,
+  PROJECT_PHASE_ORDER, NAO_APROVADO_MOTIVOS,
   PROJECT_TYPES,
 } from '../types';
 import { format } from 'date-fns';
@@ -226,15 +236,13 @@ const ADVANCED_TABS: { key: TabKey; label: string; phases: ProjectPhase[] }[] = 
 const ProjectDetail: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { projects, loading, advancePhase, savePrancheta, archiveAsNaoAprovado, reopenProject } = useProject();
+  const { currentUser, userProfile } = useAuth();
+  const { projects, loading, archiveAsNaoAprovado, reopenProject } = useProject();
   const [searchParams] = useSearchParams();
   const fromFlow = searchParams.get('from') === 'flow';
   const backPath = fromFlow ? '/app/flow-atendimento' : '/app/projetos-v2';
   const { ordens, stats: osStats, vincularOS, desvincularOS } = useProjectOS(projectId ?? '');
-  const { logFaseAvancada } = useProjectActivity(projectId ?? '');
   const [activeTab, setActiveTab] = useState<TabKey>('cotacao');
-  const [advanceLoading, setAdvanceLoading] = useState(false);
-  const [advanceError, setAdvanceError] = useState('');
   // Modal não aprovado
   const [showNaoAprovado, setShowNaoAprovado] = useState(false);
   const [naoMotivo, setNaoMotivo] = useState('');
@@ -244,12 +252,64 @@ const ProjectDetail: React.FC = () => {
   const [reabrirAbordagem, setReabrirAbordagem] = useState('');
   // Sticky header — deve estar ANTES de qualquer return condicional
   const [showSticky, setShowSticky] = useState(false);
+  // Documentos do projeto
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [uploading, setUploading] = useState(false);
+  // Checklist de fases expandida
+  const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
 
   useEffect(() => {
     const onScroll = () => setShowSticky(window.scrollY > 120);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Carregar documentos do projeto
+  useEffect(() => {
+    if (!projectId || projectId === 'novo') return;
+    const unsub = onSnapshot(
+      collection(db, CollectionName.PROJECT_DOCS),
+      snap => {
+        setDocuments(
+          snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as ProjectDocument))
+            .filter(d => d.projectId === projectId)
+        );
+      }
+    );
+    return () => unsub();
+  }, [projectId]);
+
+  const handleUploadDoc = async (file: File) => {
+    if (!currentUser || !projectId || !storage) return;
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      const tipo = ext === 'pdf' ? 'pdf' : ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? 'imagem' : 'outro';
+      const storageRef = ref(storage, `projects/${projectId}/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      await addDoc(collection(db, CollectionName.PROJECT_DOCS), {
+        projectId,
+        nome: file.name,
+        tipo,
+        url,
+        tamanhoBytes: file.size,
+        uploadPor: currentUser.uid,
+        uploadPorNome: userProfile?.displayName || '',
+        uploadEm: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('Erro upload doc:', e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteDoc = async (docId: string) => {
+    if (!window.confirm('Excluir este documento?')) return;
+    await deleteDoc(fbDoc(db, CollectionName.PROJECT_DOCS, docId));
+  };
 
   const project = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
 
@@ -272,34 +332,6 @@ const ProjectDetail: React.FC = () => {
     // Para fases base (lead_capturado, em_levantamento, nao_aprovado), não há tab avançada para selecionar
   }, [project?.fase]);
 
-  // ── Avançar fase ──
-  const handleAdvance = async () => {
-    if (!project) return;
-    const transitions = PROJECT_TRANSITIONS[project.fase].filter((f) => f !== 'nao_aprovado');
-    if (transitions.length === 0) return;
-    const nextPhase = transitions[0];
-
-    // FIX: Sempre salva prancheta para fases iniciais (garante preenchidoEm mesmo se prancheta estava vazia)
-    // A guarda '&& project.prancheta' foi removida — ela impedia a gravação de preenchidoEm em projetos novos.
-    if (['lead_capturado', 'em_levantamento'].includes(project.fase) && nextPhase === 'em_cotacao') {
-      try { await savePrancheta(project.id, project.prancheta ?? {} as any); } catch { /* continua */ }
-    }
-
-    setAdvanceLoading(true);
-    setAdvanceError('');
-    const result = await advancePhase(project.id, nextPhase);
-    if (result.success) {
-      await logFaseAvancada(
-        PROJECT_PHASE_LABELS[project.fase] || project.fase,
-        PROJECT_PHASE_LABELS[nextPhase] || nextPhase,
-      );
-    }
-    setAdvanceLoading(false);
-    if (!result.success) setAdvanceError(result.error || 'Erro ao avançar');
-  };
-
-  // Fases iniciais: o botão de avançar fica DENTRO da Prancheta (evita race condition e dados perdidos)
-  const isInitialPhase = ['lead_capturado', 'em_levantamento'].includes(project?.fase ?? '');
 
   // ── Arquivar como não aprovado ──
   const handleNaoAprovado = async () => {
@@ -344,7 +376,6 @@ const ProjectDetail: React.FC = () => {
     );
   }
 
-  const nextTransitions = PROJECT_TRANSITIONS[project.fase].filter((f) => f !== 'nao_aprovado');
   const canArchive = ['lead_capturado', 'em_levantamento', 'em_cotacao', 'cotacao_recebida', 'proposta_enviada', 'contrato_enviado'].includes(project.fase);
   const canReopen = project.fase === 'nao_aprovado';
 
@@ -368,17 +399,7 @@ const ProjectDetail: React.FC = () => {
             {project.clientName && (
               <span className="text-xs text-gray-500 hidden md:block truncate max-w-[150px]">{project.clientName}</span>
             )}
-            {/* Botão avançar no sticky header — oculto nas fases iniciais (use o botão da Prancheta) */}
-            {nextTransitions.length > 0 && !isInitialPhase && (
-              <button
-                onClick={handleAdvance}
-                disabled={advanceLoading}
-                className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 disabled:opacity-50 transition-all flex-shrink-0"
-              >
-                {advanceLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-                {`Avançar: ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
-              </button>
-            )}
+            {/* Avanço de fase removido — controlado exclusivamente pelo Flow de Atendimento */}
           </div>
         </div>
       </div>
@@ -417,25 +438,10 @@ const ProjectDetail: React.FC = () => {
               Reabrir Projeto
             </button>
           )}
-          {/* Botão avançar no header — oculto nas fases iniciais (use o botão dentro da Prancheta Técnica) */}
-          {nextTransitions.length > 0 && !isInitialPhase && (
-            <button
-              onClick={handleAdvance}
-              disabled={advanceLoading}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
-            >
-              {advanceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-              {`Avançar para ${PROJECT_PHASE_LABELS[nextTransitions[0]]}`}
-            </button>
-          )}
+          {/* Avanço de fase removido — controlado exclusivamente pelo Flow de Atendimento */}
         </div>
       </div>
 
-      {advanceError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {advanceError}
-        </div>
-      )}
 
       {/* 🎉 Banner de Conclusão — Sprint 8 */}
       {project.fase === 'concluido' && (
@@ -474,13 +480,174 @@ const ProjectDetail: React.FC = () => {
       </div>
 
       {/* ── Dica contextual nas fases iniciais ── */}
-      {isInitialPhase && (
+      {['lead_capturado', 'em_levantamento'].includes(project?.fase ?? '') && (
         <div className="flex items-center gap-2.5 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
           <AlertCircle className="w-4 h-4 flex-shrink-0 text-blue-500" />
           <span>
-            Preencha a <strong>Prancheta Técnica</strong> abaixo e clique em{' '}
-            <strong>Avançar para Cotação</strong> para mover este projeto para a próxima fase.
+            Preencha a <strong>Prancheta Técnica</strong> abaixo. Para avançar de fase, use o{' '}
+            <strong>Flow de Atendimento</strong>.
           </span>
+        </div>
+      )}
+
+      {/* ── Progresso Geral ── */}
+      {osStats.total > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+              <BarChart3 size={13} /> Progresso Geral
+            </span>
+            <span className="text-sm font-extrabold text-gray-900">
+              {osStats.total > 0 ? Math.round((osStats.concluidas / osStats.total) * 100) : 0}%
+            </span>
+          </div>
+          <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${osStats.concluidas >= osStats.total ? 'bg-green-500' : 'bg-brand-500'}`}
+              style={{ width: `${osStats.total > 0 ? Math.round((osStats.concluidas / osStats.total) * 100) : 0}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-2 text-xs text-gray-400">
+            <span>{osStats.concluidas} de {osStats.total} O.S. concluídas</span>
+            <span>{osStats.emAndamento} em andamento · {osStats.pendentes} pendentes</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Descrição ── */}
+      {project.descricao && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-5">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Descrição</h3>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap">{project.descricao}</p>
+        </div>
+      )}
+
+      {/* ── Documentos do Projeto ── */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+            <FolderOpen size={13} /> Documentos ({documents.length})
+          </h3>
+          <label className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold cursor-pointer hover:bg-gray-200">
+            {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+            Upload
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadDoc(f); e.target.value = ''; }} className="hidden" />
+          </label>
+        </div>
+        {documents.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-6">Nenhum documento anexado.</p>
+        ) : (
+          <div className="space-y-2">
+            {documents.map(d => (
+              <div key={d.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2">
+                {d.tipo === 'pdf' ? <FileText size={16} className="text-red-500" /> : <Image size={16} className="text-blue-500" />}
+                <a href={d.url} target="_blank" rel="noreferrer" className="flex-1 text-sm font-medium text-gray-700 truncate hover:text-brand-600">{d.nome}</a>
+                <span className="text-[9px] text-gray-400">{d.uploadEm ? format((d.uploadEm as any).toDate(), 'dd/MM/yy') : ''}</span>
+                <button onClick={() => handleDeleteDoc(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={12} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── O.S. Vinculadas (resumo) ── */}
+      {ordens.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-5">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <ClipboardList size={13} /> O.S. Vinculadas ({ordens.length})
+          </h3>
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {ordens.map(t => {
+              const taskProgress = t.tarefasOS && t.tarefasOS.length > 0
+                ? Math.round(t.tarefasOS.filter((x: any) => x.status === 'concluida').length / t.tarefasOS.length * 100) : 0;
+              return (
+                <div key={t.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${t.status === 'completed' ? 'bg-green-500' : t.status === 'in-progress' ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{t.title}</p>
+                    <p className="text-[10px] text-gray-400">
+                      {t.clientName || ''}
+                      {t.endDate && ` · ${format((t.endDate as any).toDate(), 'dd/MM/yyyy', { locale: ptBR })}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${taskProgress >= 100 ? 'bg-green-500' : 'bg-brand-500'}`} style={{ width: `${taskProgress}%` }} />
+                    </div>
+                    <span className="text-[9px] font-bold text-gray-400">{taskProgress}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Checklist de Fases do Flow ── */}
+      {project.faseHistorico && project.faseHistorico.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+            <CheckCircle2 className="w-4 h-4 text-brand-600" />
+            <h3 className="font-bold text-gray-800 text-sm">Fases do Projeto</h3>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {PROJECT_PHASE_ORDER.map(phase => {
+              const currentIdx = PROJECT_PHASE_ORDER.indexOf(project.fase);
+              const phaseIdx = PROJECT_PHASE_ORDER.indexOf(phase);
+              const isDone = phaseIdx < currentIdx;
+              const isCurrent = phaseIdx === currentIdx;
+              const historyEntries = (project.faseHistorico || []).filter((h: any) => h.fase === phase);
+              const hasHistory = historyEntries.length > 0;
+              const isExpanded = expandedPhase === phase;
+
+              return (
+                <div key={phase}>
+                  <button
+                    onClick={() => hasHistory ? setExpandedPhase(isExpanded ? null : phase) : undefined}
+                    className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-colors ${hasHistory ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                      isDone ? 'border-emerald-500 bg-emerald-500' : isCurrent ? 'border-brand-600 bg-brand-600' : 'border-gray-200 bg-white'
+                    }`}>
+                      {isDone && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                      {isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <span className={`text-sm flex-1 ${isDone ? 'text-emerald-700 font-medium' : isCurrent ? 'text-brand-700 font-bold' : 'text-gray-400'}`}>
+                      {PROJECT_PHASE_LABELS[phase]}
+                    </span>
+                    {isCurrent && (
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-brand-100 text-brand-700">Atual</span>
+                    )}
+                    {hasHistory && (
+                      <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    )}
+                  </button>
+                  {isExpanded && hasHistory && (
+                    <div className="px-5 pb-3 pl-14 space-y-1.5">
+                      {historyEntries.map((entry: any, i: number) => {
+                        let ts = '';
+                        try {
+                          const d = entry.alteradoEm?.toDate ? entry.alteradoEm.toDate() : new Date(entry.alteradoEm?.seconds * 1000);
+                          ts = format(d, "dd/MM/yy HH:mm", { locale: ptBR });
+                        } catch {}
+                        return (
+                          <div key={i} className="text-xs text-gray-500">
+                            <span className="text-gray-400">{ts}</span>
+                            {entry.alteradoPorNome && <span className="ml-1">por {entry.alteradoPorNome}</span>}
+                            {entry.observacao && <p className="text-gray-600 mt-0.5">{entry.observacao}</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

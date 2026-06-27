@@ -22,7 +22,9 @@
       "mcp__4b485324-b7b8-4f5c-a249-1e9df0f603ab__list_recent_files",
       "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f['id']+'|'+f['name']\\) for f in data['files'][:30]]\")",
       "Read(//tmp/**)",
-      "Bash(wait b3w1fcz4t *)"
+      "Bash(wait b3w1fcz4t *)",
+      "Bash(firebase deploy *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); const d={...p.dependencies,...p.devDependencies}; console.log\\(Object.keys\\(d\\).filter\\(k=>/pdf|react-pdf|pspdf|worker/i.test\\(k\\)\\).map\\(k=>k+'@'+d[k]\\).join\\('\\\\n'\\)||'NO PDF LIB'\\); console.log\\('--- react:', d.react, 'vite:', d.vite\\);\")"
     ]
   }
 }

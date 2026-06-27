@@ -5,29 +5,33 @@
  */
 import React, { useState, useEffect } from 'react';
 import {
-    collection, query, onSnapshot, doc, updateDoc,
+    collection, query, onSnapshot, doc, updateDoc, where, getDocs,
     orderBy, addDoc, serverTimestamp, arrayUnion, Timestamp,
-    increment, getDoc
+    increment, getDoc, deleteDoc
 } from 'firebase/firestore';
 import { Analytics } from '../utils/mgr-analytics';
 import { db } from '../firebase';
 import {
-    Task, WorkflowStatus as WS, WORKFLOW_ORDER,
+    Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LEGACY_PHASES,
     WORKFLOW_LABELS, WORKFLOW_COLORS, PriorityLevel,
-    CollectionName
+    CollectionName, STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal
 } from '../types';
+import { normalizeStatusOS } from '../services/osService';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
     Loader2, ChevronLeft, ChevronRight, AlertTriangle, Clock,
     User, Building2, Calendar, Zap, ChevronDown, ChevronUp,
-    ArrowRight, DollarSign, CheckCircle2, Save, X, Kanban, Eye, Plus
+    ArrowRight, DollarSign, CheckCircle2, Save, X, Kanban, Eye, Plus,
+    Printer, Pencil, Play, Trash2, Briefcase
 } from 'lucide-react';
 import { Suspense, lazy } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const OSViewModal = lazy(() => import('./OSViewModal'));
 const OSCreationModal = lazy(() => import('./OSCreationModal'));
+const OSRapidaModal = lazy(() => import('./OSRapidaModal'));
 
 // ── Type helpers ───────────────────────────────────────────────────────────
 const PRIORITY_PILL: Record<PriorityLevel, string> = {
@@ -35,6 +39,51 @@ const PRIORITY_PILL: Record<PriorityLevel, string> = {
     high:     'bg-orange-100 text-orange-700 border-orange-200',
     medium:   'bg-blue-100 text-blue-700 border-blue-200',
     low:      'bg-gray-100 text-gray-600 border-gray-200',
+};
+
+// ── Revisao Modal — resolução de OS bloqueadas ─────────────────────────────
+type RevisaoAction = 'faturar' | 'reenviar' | 'cancelar';
+const RevisaoModal: React.FC<{
+    task: Task;
+    onResolve: (action: RevisaoAction) => Promise<void>;
+    onClose: () => void;
+}> = ({ task, onResolve, onClose }) => {
+    const [loading, setLoading] = useState(false);
+    const statusLabel = STATUS_OS_LABELS[(task as any).statusOS as OSStatusFinal] || (task as any).statusOS || 'Pendente';
+    const statusColor = STATUS_OS_COLORS[(task as any).statusOS as OSStatusFinal] || 'bg-gray-100 text-gray-700';
+    const handle = async (action: RevisaoAction) => {
+        setLoading(true);
+        try { await onResolve(action); } finally { setLoading(false); }
+    };
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-rose-500" /> Resolver Pendência
+                    </h3>
+                    <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+                </div>
+                <p className="text-xs text-gray-500 mb-2">{(task as any).numeroOS || task.id.slice(0,8)} — {task.title}</p>
+                <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-4 ${statusColor}`}>{statusLabel}</span>
+                <div className="space-y-2">
+                    <button disabled={loading} onClick={() => handle('faturar')}
+                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-sm font-bold text-emerald-700 transition-colors disabled:opacity-50">
+                        <CheckCircle2 className="w-4 h-4" /> Resolver e faturar
+                    </button>
+                    <button disabled={loading} onClick={() => handle('reenviar')}
+                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-sky-200 hover:bg-sky-50 text-sm font-bold text-sky-700 transition-colors disabled:opacity-50">
+                        <Play className="w-4 h-4" /> Reenviar para execução
+                    </button>
+                    <button disabled={loading} onClick={() => handle('cancelar')}
+                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-red-200 hover:bg-red-50 text-sm font-bold text-red-600 transition-colors disabled:opacity-50">
+                        <Trash2 className="w-4 h-4" /> Cancelar O.S.
+                    </button>
+                </div>
+                <button onClick={onClose} className="w-full mt-3 py-2 text-xs font-bold text-gray-400 hover:text-gray-600">Fechar</button>
+            </div>
+        </div>
+    );
 };
 
 // ── Scheduling Modal ────────────────────────────────────────────────────────
@@ -165,24 +214,34 @@ interface OSCardProps {
     onPaymentConfirm: (task: Task) => void;
     moving: string | null;
     onViewOS: (taskId: string) => void;
+    onPrint: (taskId: string) => void;
+    onExecute: (taskId: string) => void;
+    onDelete: (task: Task) => void;
+    canDelete: boolean;
 }
-const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfirm, moving, onViewOS }) => {
+const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfirm, moving, onViewOS, onPrint, onExecute, onDelete, canDelete }) => {
     const [expanded, setExpanded] = useState(false);
+    const statusOS = normalizeStatusOS((task as any).statusOS);
+    const isNumeroGerado = statusOS === 'NUMERO_GERADO';
+    const isConcluida = task.workflowStatus === WS.CONCLUIDO || statusOS === 'CONCLUIDA' || statusOS === 'CANCELADA';
+    const isNaoConcluida = statusOS === 'NAO_CONCLUIDA' || statusOS === 'PENDENTE_ADMIN' || statusOS === 'EM_REVISAO_TECNICA' || statusOS === 'REAGENDAR';
+    const showStatusBadge = statusOS && STATUS_OS_LABELS[statusOS] && (isNumeroGerado || isNaoConcluida);
     const children  = allTasks.filter(t => t.parentOSId === task.id);
-    const wfIdx     = WORKFLOW_ORDER.indexOf(task.workflowStatus || WS.TRIAGEM);
+    const effectiveWS = WORKFLOW_LEGACY_PHASES.includes(task.workflowStatus as WS) ? WS.AGUARDANDO_APROVACAO : (task.workflowStatus || WS.AGUARDANDO_APROVACAO);
+    const wfIdx     = WORKFLOW_ORDER.indexOf(effectiveWS);
     const isLast    = wfIdx >= WORKFLOW_ORDER.length - 1;
     const isFirst   = wfIdx <= 0;
     const isMoving  = moving === task.id;
     const isBlocked = task.workflowStatus === WS.AGUARDANDO_PAGAMENTO &&
                       task.financial?.statusPagamento !== 'confirmado';
-    const colorClass = WORKFLOW_COLORS[task.workflowStatus || WS.TRIAGEM];
+    const colorClass = WORKFLOW_COLORS[effectiveWS];
 
     return (
         <div className={`rounded-xl border-2 p-4 bg-white shadow-sm transition-all cursor-pointer ${isBlocked ? 'border-red-300' : 'border-gray-100'} hover:shadow-md hover:border-brand-200`}
           onClick={() => onViewOS(task.id)}>
             <div className="flex items-start justify-between gap-2 mb-3" onClick={e => e.stopPropagation()}>
                 <div className="min-w-0">
-                    <p className="text-[10px] font-bold text-gray-400">{task.code || task.id.slice(0, 8)}</p>
+                    <p className="text-[10px] font-bold text-gray-400">{(task as any).numeroOS || task.code || task.id.slice(0, 8)}</p>
                     <button
                       onClick={() => onViewOS(task.id)}
                       className="text-sm font-bold text-gray-900 leading-snug truncate text-left hover:text-brand-700 transition-colors">
@@ -193,15 +252,30 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
                             <Building2 size={9} /> {task.clientName}
                         </p>
                     )}
+                    {(task as any).projectName && (
+                        <p className="text-[10px] text-indigo-600 flex items-center gap-1 mt-0.5 font-medium">
+                            <Briefcase size={9} /> {(task as any).projectName}
+                            {(task as any).faturamentoPeloProjeto && (
+                              <span className="ml-1 px-1 py-px bg-indigo-100 text-indigo-700 rounded text-[8px] font-bold">Fat. Projeto</span>
+                            )}
+                        </p>
+                    )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button onClick={e => { e.stopPropagation(); onViewOS(task.id); }}
                     className="p-1 rounded-lg text-brand-400 hover:bg-brand-50 hover:text-brand-600">
                     <Eye size={13} />
                   </button>
-                  <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${PRIORITY_PILL[task.priority]}`}>
-                      {task.priority}
-                  </div>
+                  {showStatusBadge && statusOS && (
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${STATUS_OS_COLORS[statusOS] || 'bg-gray-100 text-gray-600'}`}>
+                      {STATUS_OS_LABELS[statusOS]}
+                    </span>
+                  )}
+                  {!showStatusBadge && (
+                    <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${PRIORITY_PILL[task.priority]}`}>
+                        {task.priority}
+                    </div>
+                  )}
                 </div>
             </div>
 
@@ -260,6 +334,38 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
                 </div>
             )}
 
+            {/* Ações rápidas */}
+            <div className="flex items-center gap-1 mb-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                <button
+                    onClick={() => onPrint(task.id)}
+                    title="Imprimir OS"
+                    className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">
+                    <Printer size={11} /> Imprimir
+                </button>
+                <button
+                    disabled
+                    title="Editar OS (em breve)"
+                    className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-gray-100 text-gray-300 cursor-not-allowed">
+                    <Pencil size={11} /> Editar
+                </button>
+                {!isConcluida && (
+                    <button
+                        onClick={() => onExecute(task.id)}
+                        title="Executar OS"
+                        className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
+                        <Play size={11} /> Executar
+                    </button>
+                )}
+                {canDelete && (
+                    <button
+                        onClick={() => onDelete(task)}
+                        title="Excluir OS permanentemente"
+                        className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50 ml-auto">
+                        <Trash2 size={11} /> Excluir
+                    </button>
+                )}
+            </div>
+
             <div className="flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
                 <button onClick={() => onMove(task, 'prev')} disabled={isFirst || isMoving}
                     className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-gray-200 text-gray-500 disabled:opacity-30">
@@ -279,16 +385,25 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
 
 // ── Main Pipeline ──────────────────────────────────────────────────────────
 const Pipeline: React.FC = () => {
-    const { currentUser } = useAuth();
+    const { currentUser, userProfile } = useAuth() as any;
+    const navigate = useNavigate();
+
+    // Permissão de exclusão: lê o toggle "Excluir O.S." do cadastro do usuário.
+    // Admin e developer têm acesso irrestrito; demais dependem do toggle.
+    const isAdminOrDev = userProfile?.role === 'admin' || userProfile?.role === 'developer';
+    const canDeleteOS: boolean = isAdminOrDev || !!(userProfile?.permissions?.canDeleteTasks);
+
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [moving, setMoving] = useState<string | null>(null);
     const [financialModal, setFinancialModal] = useState<Task | null>(null);
     const [schedulingModal, setSchedulingModal] = useState<Task | null>(null);
+    const [revisaoModal, setRevisaoModal] = useState<Task | null>(null);
     const [search, setSearch] = useState('');
     const [filterPriority, setFilterPriority] = useState<PriorityLevel | 'all'>('all');
     const [viewOSId, setViewOSId] = useState<string | null>(null); // Sprint 46
     const [isCreatingOS, setIsCreatingOS] = useState(false);       // Sprint 46
+    const [isCreatingRapida, setIsCreatingRapida] = useState(false); // Sprint F1
 
     useEffect(() => {
         const q = query(collection(db, CollectionName.TASKS), orderBy('createdAt', 'desc'));
@@ -317,13 +432,14 @@ const Pipeline: React.FC = () => {
         if (!task.tarefasOS || task.tarefasOS.length === 0) return;
         const allDone = task.tarefasOS.every((t: any) => t.status === 'concluida');
         if (!allDone) return;
-        // Auto-advance to AGUARDANDO_FATURAMENTO
+        // Auto-advance: skip billing if faturamentoPeloProjeto
+        const autoTarget = (task as any).faturamentoPeloProjeto ? WS.CONCLUIDO : WS.AGUARDANDO_FATURAMENTO;
         try {
           await updateDoc(doc(db, CollectionName.TASKS, task.id), {
-            workflowStatus: WS.AGUARDANDO_FATURAMENTO,
+            workflowStatus: autoTarget,
             updatedAt: serverTimestamp(),
             statusHistory: arrayUnion({
-              status: WS.AGUARDANDO_FATURAMENTO,
+              status: autoTarget,
               changedAt: Timestamp.now(),
               changedBy: 'auto',
             }),
@@ -333,6 +449,20 @@ const Pipeline: React.FC = () => {
         }
       });
     }, [tasks, currentUser]);
+
+    const syncProjectOSCount = async (projectId: string) => {
+        try {
+            const osSnap = await getDocs(query(
+                collection(db, CollectionName.TASKS),
+                where('projectId', '==', projectId),
+                where('workflowStatus', 'in', [WS.CONCLUIDO, WS.AGUARDANDO_FATURAMENTO, WS.AGUARDANDO_PAGAMENTO]),
+            ));
+            await updateDoc(doc(db, CollectionName.PROJECTS_V2, projectId), {
+                totalOSConcluidas: osSnap.size,
+                updatedAt: serverTimestamp(),
+            });
+        } catch { /* silent */ }
+    };
 
     const recordStatusHistory = async (taskId: string, newStatus: WS) => {
         if (!currentUser) return;
@@ -346,22 +476,46 @@ const Pipeline: React.FC = () => {
     };
 
     const moveTask = async (task: Task, direction: 'next' | 'prev') => {
-        const idx  = WORKFLOW_ORDER.indexOf(task.workflowStatus || WS.TRIAGEM);
+        // Resolve fase efetiva (tasks legadas → 1ª coluna)
+        const effectiveWS = WORKFLOW_LEGACY_PHASES.includes(task.workflowStatus as WS)
+            ? WS.AGUARDANDO_APROVACAO : (task.workflowStatus || WS.AGUARDANDO_APROVACAO);
+        const idx  = WORKFLOW_ORDER.indexOf(effectiveWS);
         const next = direction === 'next' ? WORKFLOW_ORDER[idx + 1] : WORKFLOW_ORDER[idx - 1];
         if (!next || !currentUser) return;
 
         if (next === WS.AGENDADO) { setSchedulingModal(task); return; }
+
+        // OS na coluna REVISAO: abre modal de resolução
+        if (effectiveWS === WS.REVISAO && direction === 'next') { setRevisaoModal(task); return; }
+
+        // OS de projeto com faturamento pelo projeto: pula faturamento e pagamento
+        const skipBilling = (task as any).faturamentoPeloProjeto === true;
+        if (next === WS.AGUARDANDO_FATURAMENTO && skipBilling) {
+            await updateDoc(doc(db, CollectionName.TASKS, task.id), {
+                workflowStatus: WS.CONCLUIDO,
+                status: 'completed',
+                updatedAt: serverTimestamp(),
+            });
+            await recordStatusHistory(task.id, WS.CONCLUIDO);
+            if ((task as any).projectId) syncProjectOSCount((task as any).projectId);
+            return;
+        }
+
         if (next === WS.AGUARDANDO_FATURAMENTO) { setFinancialModal(task); return; }
-        if (next === WS.CONCLUIDO && task.financial?.statusPagamento !== 'confirmado') {
+        if (next === WS.CONCLUIDO && !skipBilling && task.financial?.statusPagamento !== 'confirmado') {
             alert('Pagamento não confirmado. Confirme o recebimento antes de concluir.'); return;
         }
 
         setMoving(task.id);
         try {
+            // Ao avançar, limpa statusOS de não-concluída (a OS está sendo reprocessada)
+            const cleanStatusOS = direction === 'next' && ['NAO_CONCLUIDA', 'PENDENTE_ADMIN', 'EM_REVISAO_TECNICA', 'REAGENDAR'].includes((task as any).statusOS || '')
+                ? { statusOS: null } : {};
             await updateDoc(doc(db, CollectionName.TASKS, task.id), {
                 workflowStatus: next,
                 status: next === WS.CONCLUIDO ? 'completed' : next === WS.EM_EXECUCAO ? 'in-progress' : 'pending',
                 updatedAt: serverTimestamp(),
+                ...cleanStatusOS,
             });
             await recordStatusHistory(task.id, next);
 
@@ -369,7 +523,7 @@ const Pipeline: React.FC = () => {
             await Analytics.logTransition({
                 collectionName: CollectionName.TASKS,
                 docId: task.id,
-                de: task.workflowStatus || WS.TRIAGEM,
+                de: effectiveWS,
                 para: next,
                 userId: currentUser.uid,
                 area: 'pipeline',
@@ -408,6 +562,11 @@ const Pipeline: React.FC = () => {
                     entityType: 'task',
                     payload: { clientId: task.clientId, clientName: task.clientName, valor: task.financial?.valor },
                 });
+            }
+
+            // Sync project OS count when reaching a completed state
+            if (next === WS.CONCLUIDO && (task as any).projectId) {
+                syncProjectOSCount((task as any).projectId);
             }
         } finally { setMoving(null); }
     };
@@ -477,7 +636,39 @@ const Pipeline: React.FC = () => {
         });
     };
 
-    const tasksByStatus = (status: WS) => rootTasks.filter(t => (t.workflowStatus || WS.TRIAGEM) === status);
+    const tasksByStatus = (status: WS) => rootTasks.filter(t => {
+        const ws = t.workflowStatus || WS.AGUARDANDO_APROVACAO;
+        if (ws === status) return true;
+        // Tasks em fases legadas (removidas do Kanban) aparecem na 1ª coluna visível
+        if (status === WS.AGUARDANDO_APROVACAO && WORKFLOW_LEGACY_PHASES.includes(ws)) return true;
+        return false;
+    });
+
+    const handlePrint = (taskId: string) => {
+        window.open(`/#/app/os/${taskId}/print`, '_blank');
+    };
+
+    const handleExecute = (taskId: string) => {
+        navigate(`/app/execucao/${taskId}`);
+    };
+
+    const handleOSGerada = (osId: string, _numeroOS: string) => {
+        window.open(`/#/app/os/${osId}/print`, '_blank');
+    };
+
+    const handleDelete = async (task: Task) => {
+        if (!canDeleteOS) return;
+        const label = (task as any).numeroOS || task.code || task.title || task.id.slice(0, 8);
+        const ok = window.confirm(
+            `⚠️ EXCLUIR PERMANENTEMENTE\n\nO.S.: ${label}\n\nEsta ação é irreversível e não pode ser desfeita.\n\nConfirmar exclusão?`
+        );
+        if (!ok) return;
+        try {
+            await deleteDoc(doc(db, CollectionName.TASKS, task.id));
+        } catch (e: any) {
+            alert('Erro ao excluir: ' + (e.message || e));
+        }
+    };
 
     return (
         <div className="flex flex-col h-full pb-4">
@@ -496,7 +687,11 @@ const Pipeline: React.FC = () => {
                     <option value="medium">Média</option>
                     <option value="low">Baixa</option>
                 </select>
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-2">
+                  <button onClick={() => setIsCreatingRapida(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white rounded-xl hover:bg-amber-600 text-sm font-bold shadow-sm">
+                    <Zap size={15} /> OS Rápida
+                  </button>
                   <button onClick={() => setIsCreatingOS(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 text-sm font-bold shadow-sm">
                     <Plus size={15} /> Nova O.S.
@@ -525,7 +720,9 @@ const Pipeline: React.FC = () => {
                                     {col.map(task => (
                                         <OSCard key={task.id} task={task} allTasks={tasks}
                                             onMove={moveTask} onPaymentConfirm={confirmPayment}
-                                            moving={moving} onViewOS={setViewOSId} />
+                                            moving={moving} onViewOS={setViewOSId}
+                                            onPrint={handlePrint} onExecute={handleExecute}
+                                            onDelete={handleDelete} canDelete={canDeleteOS} />
                                     ))}
                                 </div>
                             </div>
@@ -544,6 +741,39 @@ const Pipeline: React.FC = () => {
                     onConfirm={handleFinancialConfirm}
                     onClose={() => setFinancialModal(null)} />
             )}
+            {revisaoModal && (
+                <RevisaoModal task={revisaoModal}
+                    onResolve={async (action) => {
+                        const task = revisaoModal;
+                        setRevisaoModal(null);
+                        setMoving(task.id);
+                        try {
+                            if (action === 'faturar') {
+                                await updateDoc(doc(db, CollectionName.TASKS, task.id), {
+                                    workflowStatus: WS.AGUARDANDO_FATURAMENTO, statusOS: 'CONCLUIDA',
+                                    status: 'completed', updatedAt: serverTimestamp(),
+                                });
+                                await recordStatusHistory(task.id, WS.AGUARDANDO_FATURAMENTO);
+                            } else if (action === 'reenviar') {
+                                await updateDoc(doc(db, CollectionName.TASKS, task.id), {
+                                    workflowStatus: WS.EM_EXECUCAO, statusOS: null,
+                                    status: 'in-progress', updatedAt: serverTimestamp(),
+                                });
+                                await recordStatusHistory(task.id, WS.EM_EXECUCAO);
+                            } else if (action === 'cancelar') {
+                                await updateDoc(doc(db, CollectionName.TASKS, task.id), {
+                                    workflowStatus: WS.CONCLUIDO, statusOS: 'CANCELADA',
+                                    status: 'completed', updatedAt: serverTimestamp(),
+                                });
+                                await recordStatusHistory(task.id, WS.CONCLUIDO);
+                            }
+                            if ((action === 'faturar' || action === 'cancelar') && (task as any).projectId) {
+                                syncProjectOSCount((task as any).projectId);
+                            }
+                        } finally { setMoving(null); }
+                    }}
+                    onClose={() => setRevisaoModal(null)} />
+            )}
             {viewOSId && (
                 <Suspense fallback={null}>
                     <OSViewModal taskId={viewOSId} onClose={() => setViewOSId(null)} />
@@ -552,6 +782,14 @@ const Pipeline: React.FC = () => {
             {isCreatingOS && (
                 <Suspense fallback={null}>
                     <OSCreationModal isOpen={isCreatingOS} onClose={() => setIsCreatingOS(false)} onSuccess={() => setIsCreatingOS(false)} />
+                </Suspense>
+            )}
+            {isCreatingRapida && (
+                <Suspense fallback={null}>
+                    <OSRapidaModal
+                        open={isCreatingRapida}
+                        onClose={() => setIsCreatingRapida(false)}
+                        onGerada={handleOSGerada} />
                 </Suspense>
             )}
         </div>

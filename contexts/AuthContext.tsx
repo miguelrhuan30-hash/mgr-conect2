@@ -40,10 +40,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (user) {
         // --- SUPER ADMIN OVERRIDE (Blindagem) ---
         // Garante acesso total imediato para o e-mail mestre, independente do banco de dados.
-        if (user.email?.toLowerCase() === 'gestor@mgr.com') {
+        if (user.email?.toLowerCase() === import.meta.env.VITE_MASTER_EMAIL?.toLowerCase()) {
            setUserProfile({
               uid: user.uid,
-              email: user.email,
+              email: user.email ?? '',
               displayName: 'Gestor Mestre',
               role: 'admin', // Força permissão máxima
               xp: 0,
@@ -70,10 +70,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 canManageAttendance: true,
                 requiresTimeClock: false, // CRÍTICO: Mestre não precisa bater ponto
                 canViewFinancials: true,
+                canResetUserPasswords: true,
+                canAccessAcademy: true,
+                canManageAcademy: true,
               }
            });
            setLoading(false);
-           return; 
+           return;
         }
 
         // Real-time listener for User Profile updates

@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDgIijdFVs2_ti7rqndRZhKI3QYpkOlwsg",
@@ -14,6 +15,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Garante que o login persiste no dispositivo até logout explícito.
+// Necessário para o APK mobile — sem isso o Firebase pode limpar a sessão.
+setPersistence(auth, browserLocalPersistence).catch(() => {});
 export const db = getFirestore(app);
 
 // Enable offline persistence
@@ -30,4 +35,5 @@ enableIndexedDbPersistence(db).catch((err) => {
     }
 });
 export const storage = getStorage(app);
+export const functions = getFunctions(app, 'southamerica-east1');
 export default app;

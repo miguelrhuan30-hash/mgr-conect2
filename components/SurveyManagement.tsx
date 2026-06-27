@@ -1,19 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   collection, query, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, Timestamp, getDocs, where, setDoc,
+  doc, Timestamp, getDocs, where, setDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   CollectionName, Survey, SurveyQuestion, SurveyQuestionType, SurveyKpiType,
-  SurveyType, SurveyStatus, SurveyResponse, SurveyTemplate,
+  SurveyType, SurveyStatus, SurveyResponse, SurveyTemplate, SurveyAccessKey,
 } from '../types';
 import {
   ClipboardList, Plus, Trash2, Edit, Play, Square, ChevronDown, ChevronRight,
   Users, BarChart3, AlertTriangle, X, CheckCircle2, Loader2, Eye, Copy,
   LayoutTemplate, RefreshCw, Rocket, FileText, Save, PlusCircle,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Key, Printer, Link, ShieldCheck, QrCode,
 } from 'lucide-react';
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -220,6 +220,15 @@ const SurveyManagement: React.FC = () => {
   const [surveyDescricao, setSurveyDescricao] = useState('');
   const [savingSurvey, setSavingSurvey] = useState(false);
 
+  // ── Access Keys modal (Sprint 52) ──
+  const [showKeysModal, setShowKeysModal] = useState(false);
+  const [keysModalSurvey, setKeysModalSurvey] = useState<Survey | null>(null);
+  const [keyCount, setKeyCount] = useState(10);
+  const [generatedKeys, setGeneratedKeys] = useState<SurveyAccessKey[]>([]);
+  const [generatingKeys, setGeneratingKeys] = useState(false);
+  const [loadingKeys, setLoadingKeys] = useState(false);
+  const printRef = useRef<HTMLDivElement>(null);
+
   // ── Template editing ──
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SurveyTemplate | null>(null);
@@ -393,6 +402,125 @@ const SurveyManagement: React.FC = () => {
       console.error('Erro ao criar pesquisa:', err);
       alert('Erro ao criar pesquisa.');
     } finally { setSavingSurvey(false); }
+  };
+
+  /* ── Access Keys (Sprint 52) ── */
+  const openKeysModal = async (sv: Survey) => {
+    setKeysModalSurvey(sv);
+    setShowKeysModal(true);
+    setGeneratedKeys([]);
+    setLoadingKeys(true);
+    try {
+      const q = query(
+        collection(db, CollectionName.SURVEY_ACCESS_KEYS),
+        where('surveyId', '==', sv.id),
+        orderBy('criadoEm', 'asc'),
+      );
+      const snap = await getDocs(q);
+      setGeneratedKeys(snap.docs.map(d => ({ id: d.id, ...d.data() }) as SurveyAccessKey));
+    } finally {
+      setLoadingKeys(false);
+    }
+  };
+
+  const generateRandomKey = (): string => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem I, O, 0, 1 para evitar confusão
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+      if (i === 4) result += '-';
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  };
+
+  const handleGenerateKeys = async () => {
+    if (!keysModalSurvey || !currentUser) return;
+    setGeneratingKeys(true);
+    try {
+      const batch = writeBatch(db);
+      const newKeys: SurveyAccessKey[] = [];
+      for (let i = 0; i < keyCount; i++) {
+        const ref = doc(collection(db, CollectionName.SURVEY_ACCESS_KEYS));
+        const chave = generateRandomKey();
+        const key: Omit<SurveyAccessKey, 'id'> = {
+          surveyId: keysModalSurvey.id,
+          chave,
+          usado: false,
+          criadoEm: Timestamp.now(),
+        };
+        batch.set(ref, key);
+        newKeys.push({ id: ref.id, ...key });
+      }
+      // Atualiza survey com linkPublico=true e totalParticipantes
+      batch.update(doc(db, CollectionName.SURVEYS, keysModalSurvey.id), {
+        linkPublico: true,
+        totalParticipantes: (keysModalSurvey.totalParticipantes ?? 0) + keyCount,
+      });
+      await batch.commit();
+      setGeneratedKeys(prev => [...prev, ...newKeys]);
+      setKeysModalSurvey(prev => prev ? {
+        ...prev,
+        linkPublico: true,
+        totalParticipantes: (prev.totalParticipantes ?? 0) + keyCount,
+      } : prev);
+    } finally {
+      setGeneratingKeys(false);
+    }
+  };
+
+  const getSurveyPublicUrl = (sv: Survey) => {
+    const base = window.location.origin + window.location.pathname;
+    // HashRouter → URL com #
+    return `${base}#/pesquisa/${sv.id}`;
+  };
+
+  const handlePrint = () => {
+    if (!printRef.current) return;
+    const content = printRef.current.innerHTML;
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { alert('Popup bloqueado. Permita popups para imprimir.'); return; }
+    win.document.write(`
+      <!DOCTYPE html><html><head>
+        <title>Chaves de Acesso — ${keysModalSurvey?.titulo}</title>
+        <meta charset="utf-8">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; background: white; }
+          .page { display: flex; flex-wrap: wrap; gap: 0; }
+          .slip {
+            width: 50%; border: 1px dashed #ccc; padding: 18px 16px;
+            page-break-inside: avoid; display: flex; flex-direction: column;
+            align-items: center; gap: 8px;
+          }
+          .slip-title { font-size: 11px; font-weight: 700; text-transform: uppercase;
+            color: #1e40af; letter-spacing: 0.05em; text-align: center; }
+          .slip-survey { font-size: 13px; font-weight: 700; color: #111827;
+            text-align: center; line-height: 1.3; max-width: 220px; }
+          .slip-qr { width: 140px; height: 140px; border: 2px solid #e5e7eb; border-radius: 8px; }
+          .slip-key-label { font-size: 10px; color: #6b7280; font-weight: 600; }
+          .slip-key { font-size: 22px; font-weight: 800; font-family: monospace;
+            letter-spacing: 0.15em; color: #111827; border: 2px solid #dbeafe;
+            background: #eff6ff; padding: 6px 14px; border-radius: 8px; }
+          .slip-anon { font-size: 10px; color: #15803d; font-weight: 600;
+            text-align: center; max-width: 220px; line-height: 1.4; }
+          .slip-instructions { font-size: 10px; color: #374151; text-align: center;
+            max-width: 220px; line-height: 1.5; }
+          .slip-status { font-size: 10px; font-weight: 700;
+            padding: 2px 8px; border-radius: 9999px; }
+          .slip-status.used { background: #fee2e2; color: #dc2626; }
+          .slip-status.available { background: #dcfce7; color: #16a34a; }
+          .mgr-logo { font-size: 10px; font-weight: 800; color: #1e40af;
+            letter-spacing: 0.1em; }
+          @media print {
+            @page { size: A4; margin: 10mm; }
+            .slip { width: 50%; }
+          }
+        </style>
+      </head><body>${content}</body></html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 500);
   };
 
   /* ── Publish / Close ── */
@@ -602,6 +730,11 @@ const SurveyManagement: React.FC = () => {
                         {TIPO_LABELS[sv.tipo]} · {responseCounts[sv.id] ?? 0} respostas
                         {tpl && <span className="ml-1 text-violet-500">· Modelo: {tpl.nome}</span>}
                         {sv.edicao && <span className="ml-1 text-blue-500">· Edição {sv.edicao}</span>}
+                        {sv.linkPublico && (
+                          <span className="ml-1 text-green-600 font-semibold">
+                            · 🔗 Link público · {sv.totalParticipantes ?? 0} chaves
+                          </span>
+                        )}
                       </p>
                     </div>
                   </button>
@@ -614,10 +747,16 @@ const SurveyManagement: React.FC = () => {
                       </button>
                     )}
                     {sv.status === 'ativo' && (
-                      <button onClick={() => setStatus(sv.id, 'encerrado')} title="Encerrar"
-                        className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
-                        <Square size={14} /> Encerrar
-                      </button>
+                      <>
+                        <button onClick={() => openKeysModal(sv)} title="Chaves de Acesso"
+                          className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                          <Key size={14} /> Chaves
+                        </button>
+                        <button onClick={() => setStatus(sv.id, 'encerrado')} title="Encerrar"
+                          className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                          <Square size={14} /> Encerrar
+                        </button>
+                      </>
                     )}
                     <button onClick={() => handleDeleteSurvey(sv)} title="Excluir"
                       className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
@@ -813,6 +952,159 @@ const SurveyManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ═══ MODAL: CHAVES DE ACESSO (Sprint 52) ═══ */}
+      {showKeysModal && keysModalSurvey && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8">
+
+            {/* header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Key size={20} className="text-blue-600" /> Chaves de Acesso
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">{keysModalSurvey.titulo}</p>
+              </div>
+              <button onClick={() => setShowKeysModal(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"><X size={20} /></button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* link público */}
+              {keysModalSurvey.linkPublico && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+                  <Link size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-blue-800 mb-1">Link Público da Pesquisa</p>
+                    <p className="text-xs font-mono text-blue-700 break-all">{getSurveyPublicUrl(keysModalSurvey)}</p>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(getSurveyPublicUrl(keysModalSurvey))}
+                      className="mt-2 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium"
+                    >
+                      <Copy size={12} /> Copiar link
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* gerar chaves */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <p className="text-sm font-bold text-gray-700 mb-3">Gerar novas chaves de acesso</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 mb-1 block">Quantidade de participantes</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={keyCount}
+                      onChange={e => setKeyCount(Math.max(1, Math.min(200, Number(e.target.value))))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button
+                    onClick={handleGenerateKeys}
+                    disabled={generatingKeys}
+                    className="mt-5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold px-5 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
+                  >
+                    {generatingKeys
+                      ? <><Loader2 size={14} className="animate-spin" /> Gerando...</>
+                      : <><QrCode size={14} /> Gerar Chaves</>}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Cada chave permite exatamente uma resposta. Recomendamos gerar a mesma quantidade de funcionários participantes.
+                </p>
+              </div>
+
+              {/* lista de chaves + imprimir */}
+              {loadingKeys ? (
+                <div className="flex items-center justify-center py-6 text-gray-400">
+                  <Loader2 size={20} className="animate-spin mr-2" /> Carregando chaves...
+                </div>
+              ) : generatedKeys.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-bold text-gray-700">
+                      {generatedKeys.length} chave{generatedKeys.length !== 1 ? 's' : ''} gerada{generatedKeys.length !== 1 ? 's' : ''}
+                      {' '}· {generatedKeys.filter(k => k.usado).length} usada{generatedKeys.filter(k => k.usado).length !== 1 ? 's' : ''}
+                      {' '}· {generatedKeys.filter(k => !k.usado).length} disponível{generatedKeys.filter(k => !k.usado).length !== 1 ? 'eis' : ''}
+                    </p>
+                    <button
+                      onClick={handlePrint}
+                      className="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white font-bold px-4 py-2 rounded-lg text-sm transition-colors"
+                    >
+                      <Printer size={14} /> Imprimir Chaves
+                    </button>
+                  </div>
+
+                  {/* preview da lista */}
+                  <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-xl">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-2 text-gray-500 font-semibold">Chave</th>
+                          <th className="text-left px-3 py-2 text-gray-500 font-semibold">Status</th>
+                          <th className="text-left px-3 py-2 text-gray-500 font-semibold">Usada em</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {generatedKeys.map(k => (
+                          <tr key={k.id} className={k.usado ? 'bg-red-50' : 'bg-white'}>
+                            <td className="px-3 py-2 font-mono font-bold tracking-widest text-gray-800">{k.chave}</td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-0.5 rounded-full font-bold ${k.usado ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-700'}`}>
+                                {k.usado ? 'Usada' : 'Disponível'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-gray-400">
+                              {k.usadoEm ? new Date((k.usadoEm as any).seconds * 1000).toLocaleString('pt-BR') : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ CONTEÚDO DE IMPRESSÃO (oculto no ecrã, injetado na janela de impressão) ═══ */}
+      <div ref={printRef} style={{ display: 'none' }}>
+        {keysModalSurvey && (
+          <div className="page">
+            {generatedKeys.filter(k => !k.usado).map(k => {
+              const url = encodeURIComponent(
+                `${window.location.origin}${window.location.pathname}#/pesquisa/${keysModalSurvey.id}?key=${k.chave}`
+              );
+              const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&format=png&ecc=M&data=${url}`;
+              return (
+                <div key={k.id} className="slip">
+                  <div className="mgr-logo">MGR CONECT</div>
+                  <div className="slip-title">Pesquisa Interna Anônima</div>
+                  <div className="slip-survey">{keysModalSurvey.titulo}</div>
+                  <img src={qrSrc} alt="QR Code" className="slip-qr" />
+                  <div className="slip-key-label">Sua Chave de Acesso</div>
+                  <div className="slip-key">{k.chave}</div>
+                  <div className="slip-anon">🔒 Resposta 100% anônima. Nenhum dado pessoal é coletado.</div>
+                  <div className="slip-instructions">
+                    Aponte a câmera do celular para o QR Code<br />
+                    ou acesse o link e digite sua chave.<br />
+                    Cada chave é de uso único.
+                  </div>
+                  <div className={`slip-status ${k.usado ? 'used' : 'available'}`}>
+                    {k.usado ? 'USADA' : 'DISPONÍVEL'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 };

@@ -10,7 +10,10 @@ import { CollectionName, Task } from '../types';
 import {
   Trophy, Clock, CheckSquare, Briefcase, TrendingUp, Activity,
   AlertTriangle, Zap, Star, Calendar, User, Building2, Flame,
+  ClipboardList,
 } from 'lucide-react';
+import { GanttTaskPrioridade } from '../types';
+import CentralPendencias from './CentralPendencias';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const XP_PER_LEVEL = 1000;
@@ -34,6 +37,7 @@ const Dashboard: React.FC = () => {
   const [statOS, setStatOS] = useState({ abertas: 0, emExecucao: 0, concluidas: 0, atrasadas: 0 });
   const [minhasOS, setMinhasOS] = useState<Task[]>([]);
   const [recentOS, setRecentOS] = useState<Task[]>([]);
+  const [pendingTasks, setPendingTasks] = useState<{ id: string; label: string; descricao?: string; prioridade?: GanttTaskPrioridade; projectId: string; projectName?: string }[]>([]);
 
   // Gamification
   const xp     = (userProfile as any)?.xpTotal ?? (userProfile as any)?.currentPoints ?? 0;
@@ -71,6 +75,42 @@ const Dashboard: React.FC = () => {
       setRecentOS(sorted.slice(0, 6));
     }, () => {});
 
+    // Pending Gantt tasks (no dates) — gestor view
+    let unsubPending = () => {};
+    if (isGestor) {
+      const qPending = query(
+        collection(db, CollectionName.GANTT_TASKS),
+        where('dataInicioPrevista', '==', null),
+      );
+      unsubPending = onSnapshot(qPending, async snap => {
+        const raw = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const projectIds = [...new Set(raw.map((t: any) => t.projectId).filter(Boolean))];
+        const projectNames: Record<string, string> = {};
+        if (projectIds.length > 0) {
+          const { getDocs, documentId } = await import('firebase/firestore');
+          const batches: string[][] = [];
+          for (let i = 0; i < projectIds.length; i += 10) batches.push(projectIds.slice(i, i + 10));
+          for (const batch of batches) {
+            const pSnap = await getDocs(query(collection(db, CollectionName.PROJECTS_V2), where(documentId(), 'in', batch)));
+            pSnap.docs.forEach(d => { projectNames[d.id] = (d.data() as any).nome || (d.data() as any).clientName || d.id; });
+          }
+        }
+        const PRIO_ORDER: Record<string, number> = { urgente: 0, alta: 1, media: 2, baixa: 3 };
+        const sorted = raw
+          .filter((t: any) => t.status !== 'concluido')
+          .map((t: any) => ({
+            id: t.id,
+            label: t.label || '',
+            descricao: t.descricao,
+            prioridade: t.prioridade as GanttTaskPrioridade | undefined,
+            projectId: t.projectId,
+            projectName: projectNames[t.projectId] || t.projectId,
+          }))
+          .sort((a, b) => (PRIO_ORDER[a.prioridade || 'media'] ?? 2) - (PRIO_ORDER[b.prioridade || 'media'] ?? 2));
+        setPendingTasks(sorted);
+      }, () => {});
+    }
+
     // My OS today (tech view)
     if (currentUser && !isGestor) {
       const qMine = query(
@@ -82,9 +122,9 @@ const Dashboard: React.FC = () => {
       const unsubMine = onSnapshot(qMine, snap => {
         setMinhasOS(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task)));
       }, () => {});
-      return () => { unsubAll(); unsubMine(); };
+      return () => { unsubAll(); unsubMine(); unsubPending(); };
     }
-    return () => unsubAll();
+    return () => { unsubAll(); unsubPending(); };
   }, [currentUser, isGestor]);
 
   // ── Stat cards config ──────────────────────────────────────────────────────
@@ -182,6 +222,9 @@ const Dashboard: React.FC = () => {
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-white/5 blur-3xl pointer-events-none" />
       </div>
 
+      {/* Central de Pendências — só para gestores/admin */}
+      {isGestor && <CentralPendencias />}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((stat) => (
@@ -254,6 +297,46 @@ const Dashboard: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Gestor: Tarefas pendentes de agendamento */}
+        {isGestor && pendingTasks.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 lg:col-span-2">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <ClipboardList size={15} className="text-amber-500" /> Tarefas Pendentes de Agendamento
+              </h3>
+              <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                {pendingTasks.length}
+              </span>
+            </div>
+            <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
+              {pendingTasks.map(t => {
+                const prioCfg: Record<string, { bg: string; text: string; label: string }> = {
+                  urgente: { bg: 'bg-red-100', text: 'text-red-700', label: 'Urgente' },
+                  alta:    { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Alta' },
+                  media:   { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Média' },
+                  baixa:   { bg: 'bg-gray-100', text: 'text-gray-500', label: 'Baixa' },
+                };
+                const p = prioCfg[t.prioridade || 'media'] || prioCfg.media;
+                return (
+                  <div key={t.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div className={`w-1.5 h-8 rounded-full flex-shrink-0 ${t.prioridade === 'urgente' ? 'bg-red-500' : t.prioridade === 'alta' ? 'bg-orange-500' : t.prioridade === 'baixa' ? 'bg-gray-300' : 'bg-blue-400'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-gray-900 truncate">{t.label}</p>
+                      <p className="text-[10px] text-gray-400 truncate">
+                        <Building2 size={9} className="inline mr-0.5" />{t.projectName}
+                        {t.descricao && <> · {t.descricao}</>}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ${p.bg} ${p.text}`}>
+                      {p.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Gestor: O.S. atrasadas alert */}
         {isGestor && statOS.atrasadas > 0 && (

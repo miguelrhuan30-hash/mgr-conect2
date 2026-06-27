@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vite-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--host"],
+      "port": 8080,
+      "autoPort": true
+    },
+    {
+      "name": "public-site",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", "public-site", "-p", "4000", "--cors", "-c-1"],
+      "port": 4000
+    }
+  ]
+}

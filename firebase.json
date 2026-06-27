@@ -6,6 +6,13 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": ["node_modules", ".git", "firebase-debug.log", "firebase-debug.*.log"]
+    }
+  ],
   "hosting": [
     {
       "target": "site",
@@ -38,7 +45,16 @@
       "redirects": [
         { "source": "/site", "destination": "/", "type": 301 },
         { "source": "/site/", "destination": "/", "type": 301 },
-        { "source": "/site/:page*", "destination": "/:page", "type": 301 }
+        { "source": "/site/:page*", "destination": "/:page", "type": 301 },
+        { "source": "/apas", "destination": "/Apas", "type": 301 },
+        { "source": "/APAS", "destination": "/Apas", "type": 301 },
+        { "source": "/fispal", "destination": "/Fispal", "type": 301 },
+        { "source": "/FISPAL", "destination": "/Fispal", "type": 301 },
+        { "source": "/Card", "destination": "/card", "type": 301 },
+        { "source": "/CARD", "destination": "/card", "type": 301 }
+      ],
+      "rewrites": [
+        { "source": "/folder", "destination": "/Fispal/index.html" }
       ]
     },
     {

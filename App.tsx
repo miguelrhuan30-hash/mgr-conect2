@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
+import clarity from '@microsoft/clarity';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc, QuerySnapshot, DocumentData } from 'firebase/firestore';
@@ -57,7 +58,7 @@ const Ponto            = lazy(() => import('./components/Ponto'));
 const Tasks            = lazy(() => import('./components/Tasks'));
 const Schedule         = lazy(() => import('./components/Schedule'));
 const TaskTemplates    = lazy(() => import('./components/TaskTemplates'));
-const Projects         = lazy(() => import('./components/Projects'));
+// Projects (antigo módulo os_projects) removido — unificado no ProjectHub/ProjectDetail
 const Inventory        = lazy(() => import('./components/Inventory'));
 const Users            = lazy(() => import('./components/Users'));
 const UserProfile      = lazy(() => import('./components/UserProfile'));
@@ -136,6 +137,8 @@ const EspelhoMensal   = lazy(() => import('./components/EspelhoMensal'));
 const SurveyManagement = lazy(() => import('./components/SurveyManagement'));
 const SurveyResponder  = lazy(() => import('./components/SurveyResponder'));
 const SurveyDashboard  = lazy(() => import('./components/SurveyDashboard'));
+// Sprint 52: pesquisa pública via link/QR code
+const SurveyPublico    = lazy(() => import('./components/SurveyPublico'));
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — Sprint Projetos v2: Ciclo de Vida Completo
@@ -148,6 +151,37 @@ const GanttGerencial   = lazy(() => import('./components/GanttGerencial'));
 const FlowAtendimento  = lazy(() => import('./components/FlowAtendimento'));
 const Fornecedores     = lazy(() => import('./components/Fornecedores'));
 const Candidatos       = lazy(() => import('./components/Candidatos'));
+const CalendarioOS     = lazy(() => import('./components/CalendarioOS'));
+
+// ─────────────────────────────────────────────
+// LAZY LOAD — MGR Academy (LMS interno)
+// ─────────────────────────────────────────────
+const Academy        = lazy(() => import('./components/Academy'));
+const AcademyManage  = lazy(() => import('./components/academy/AcademyManage'));
+const ModuleViewer   = lazy(() => import('./components/academy/ModuleViewer'));
+const AcademyPeople  = lazy(() => import('./components/academy/AcademyPeople'));
+
+// ─────────────────────────────────────────────
+// LAZY LOAD — Instalar App (página de download APK)
+// ─────────────────────────────────────────────
+const InstallarApp = lazy(() => import('./components/InstallarApp'));
+
+// ─────────────────────────────────────────────
+// LAZY LOAD — Feed de Gestão (atividades em tempo real)
+// ─────────────────────────────────────────────
+const FeedGestao = lazy(() => import('./components/FeedGestao'));
+
+// ─────────────────────────────────────────────
+// LAZY LOAD — Field App (APK de campo)
+// ─────────────────────────────────────────────
+const FieldLayout     = lazy(() => import('./components/FieldApp/FieldLayout'));
+const FieldOS         = lazy(() => import('./components/FieldApp/FieldOS'));
+const FieldCalendario = lazy(() => import('./components/FieldApp/FieldCalendario'));
+const FieldGestaoOS   = lazy(() => import('./components/FieldApp/FieldGestaoOS'));
+const FieldPonto      = lazy(() => import('./components/FieldApp/FieldPonto'));
+const FieldPerfil     = lazy(() => import('./components/FieldApp/FieldPerfil'));
+const FieldVeiculo    = lazy(() => import('./components/FieldApp/FieldVeiculo'));
+const FieldAlmoco     = lazy(() => import('./components/FieldApp/FieldAlmoco'));
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -179,14 +213,25 @@ const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean;
 // ─────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────
+const CLARITY_ID = 'wrmn2l1ftm';
+
+// Detecta se está rodando dentro do APK Capacitor (nativo)
+const isNativeApp = (): boolean =>
+  typeof (window as any).Capacitor !== 'undefined' &&
+  (window as any).Capacitor.isNativePlatform?.() === true;
+
 const AppContent: React.FC = () => {
   const { currentUser, userProfile, loading } = useAuth();
   const location = useLocation();
 
+  useEffect(() => {
+    clarity.init(CLARITY_ID);
+  }, []);
+
   const [isShiftOpen, setIsShiftOpen]     = useState(false);
   const [checkingShift, setCheckingShift] = useState(true);
 
-  const isMaster = currentUser?.email?.toLowerCase() === 'gestor@mgr.com';
+  const isMaster = currentUser?.email?.toLowerCase() === import.meta.env.VITE_MASTER_EMAIL?.toLowerCase();
 
   // ── Correção automática de permissões do Master Admin ──
   useEffect(() => {
@@ -281,12 +326,28 @@ const AppContent: React.FC = () => {
       <Routes>
 
         {/* ── ROTAS PÚBLICAS ── */}
-        <Route path="/" element={<LandingPage />} />
+        {/* No APK nativo: / vai direto para /campo (logado) ou /login (deslogado) */}
+        <Route
+          path="/"
+          element={
+            isNativeApp()
+              ? currentUser
+                ? <Navigate to="/campo" replace />
+                : <Navigate to="/login" replace />
+              : <LandingPage />
+          }
+        />
         <Route path="/login" element={<Login />} />
 
         <Route
           path="/aguardando-aprovacao"
           element={currentUser ? <PendingApproval /> : <Navigate to="/login" />}
+        />
+
+        {/* ── ROTA DE IMPRESSÃO (sem Layout — tela limpa para imprimir) ── */}
+        <Route
+          path="/app/os/:osId/print"
+          element={currentUser ? <OSPrintLayout /> : <Navigate to="/login" />}
         />
 
         {/* ── ROTAS PROTEGIDAS ── */}
@@ -337,11 +398,11 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route index element={<Dashboard />} />
           <Route path="perfil" element={<UserProfile />} />
+          <Route path="instalar-app" element={<InstallarApp />} />
 
           <Route path="ponto"
             element={hasPermission('canRegisterAttendance') ? <Ponto /> : <Navigate to="/app" />} />
-          <Route path="projetos"
-            element={hasPermission('canManageProjects') ? <Projects /> : <Navigate to="/app" />} />
+          {/* Rota /projetos removida — unificado no projetos-v2 */}
           <Route path="tarefas"
             element={hasPermission('canViewTasks') ? <Tasks /> : <Navigate to="/app" />} />
           <Route path="agenda"
@@ -417,8 +478,7 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="os-foto-config"
             element={hasPermission('canManageSettings') ? <TaskPhotoConfig /> : <Navigate to="/app" />} />
-          <Route path="os/:osId/print"
-            element={hasPermission('canViewTasks') ? <OSPrintLayout /> : <Navigate to="/app" />} />
+          {/* os/:osId/print movida para fora do Layout — rota independente sem sidebar */}
 
           {/* ════════════════════════════════════════
               SPRINT 47 — Orçamento
@@ -473,6 +533,8 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageProjects') ? <GanttGerencial /> : <Navigate to="/app" />} />
           <Route path="fornecedores"
             element={hasPermission('canManageProjects') ? <Fornecedores /> : <Navigate to="/app" />} />
+          <Route path="calendario"
+            element={hasPermission('canManageProjects') ? <CalendarioOS /> : <Navigate to="/app" />} />
 
           {/* ════════════════════════════════════════
               SPRINT IW-01 — Intel Workspace v2
@@ -480,7 +542,44 @@ const AppContent: React.FC = () => {
           <Route path="inteligencia"
             element={<IntelGuard><IntelWorkspace /></IntelGuard>} />
 
+          {/* ════════════════════════════════════════
+              MGR ACADEMY — LMS interno
+          ════════════════════════════════════════ */}
+          <Route path="academy" element={<Academy />} />
+          <Route path="academy/modulo/:moduleId" element={<ModuleViewer />} />
+          <Route path="academy/gerenciar"
+            element={hasPermission('canManageAcademy') ? <AcademyManage /> : <Navigate to="/app/academy" />} />
+          <Route path="academy/turma"
+            element={hasPermission('canManageAcademy') ? <AcademyPeople /> : <Navigate to="/app/academy" />} />
+
+          {/* ════════════════════════════════════════
+              FEED DE GESTÃO — Atividades em tempo real
+          ════════════════════════════════════════ */}
+          <Route path="feed" element={<FeedGestao />} />
+
         </Route>{/* fim /app */}
+
+        {/* ════════════════════════════════════════
+            CAMPO — App de campo (APK Android)
+            Rota isolada: sem Layout admin, mobile-first
+        ════════════════════════════════════════ */}
+        <Route
+          path="/campo"
+          element={
+            currentUser ? <FieldLayout /> : <Navigate to="/login" />
+          }
+        >
+          <Route index element={<Navigate to="os" replace />} />
+          <Route path="os"        element={<FieldOS />} />
+          <Route path="gestao"    element={<FieldGestaoOS />} />
+          {/* rotas legadas — redirecionam para a view unificada */}
+          <Route path="agenda"    element={<Navigate to="/campo/os" replace />} />
+          <Route path="calendario" element={<Navigate to="/campo/os" replace />} />
+          <Route path="ponto"     element={<FieldPonto />} />
+          <Route path="almoco"    element={<FieldAlmoco />} />
+          <Route path="veiculo"   element={<FieldVeiculo />} />
+          <Route path="perfil"    element={<FieldPerfil />} />
+        </Route>
 
         <Route path="*" element={<Navigate to="/" />} />
 
@@ -497,6 +596,8 @@ const App: React.FC = () => (
           <Route path="/p/:slug" element={<PublicErrorBoundary><ApresentacaoPublica /></PublicErrorBoundary>} />
           <Route path="/proposta/:slug" element={<PublicErrorBoundary><PropostaDocPublica /></PublicErrorBoundary>} />
           <Route path="/orcamentos/:id" element={<PublicErrorBoundary><OrcamentoPublico /></PublicErrorBoundary>} />
+          {/* Sprint 52 — pesquisa pública anônima via link/QR code */}
+          <Route path="/pesquisa/:surveyId" element={<PublicErrorBoundary><SurveyPublico /></PublicErrorBoundary>} />
           <Route path="*" element={<AppContent />} />
         </Routes>
       </Suspense>

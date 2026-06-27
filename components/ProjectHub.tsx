@@ -170,9 +170,22 @@ const ListCard: React.FC<{
               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{fmtDate(project.createdAt)}</span>
             </div>
             {!compact && (
-              <div className="mt-2">
-                <PhaseStepperMini currentPhase={project.fase} />
-              </div>
+              <>
+                {(project.totalOSPrevistas ?? 0) > 0 && (() => {
+                  const pct = Math.round(((project.totalOSConcluidas ?? 0) / (project.totalOSPrevistas ?? 1)) * 100);
+                  return (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-[120px]">
+                        <div className={`h-full rounded-full ${pct >= 100 ? 'bg-green-500' : 'bg-brand-500'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-bold">{pct}% · {project.totalOSConcluidas ?? 0}/{project.totalOSPrevistas} OS</span>
+                    </div>
+                  );
+                })()}
+                <div className="mt-1.5">
+                  <PhaseStepperMini currentPhase={project.fase} />
+                </div>
+              </>
             )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">

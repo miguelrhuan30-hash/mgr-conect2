@@ -28,7 +28,8 @@ export type AlertaCategoria =
   | 'parcela_proxima'
   | 'lead_sem_resposta'
   | 'projeto_parado'
-  | 'suporte_humano';
+  | 'suporte_humano'
+  | 'alteracao_perfil';
 
 export interface Alerta {
   id: string;
@@ -61,6 +62,7 @@ export const useAlertas = (): AlertasResult => {
   const [leads, setLeads] = useState<ProjectLead[]>([]);
   const [projetos, setProjetos] = useState<any[]>([]);
   const [suporteCount, setSuporteCount] = useState(0);
+  const [alteracaoPerfilCount, setAlteracaoPerfilCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadCount, setLoadCount] = useState(0);
 
@@ -114,9 +116,21 @@ export const useAlertas = (): AlertasResult => {
     }, () => incrementLoad());
   }, []);
 
-  // Loading: aguarda os 4 listeners inicializarem
+  // ── Solicitações de alteração de perfil pendentes ──
   useEffect(() => {
-    if (loadCount >= 4) setLoading(false);
+    const q = query(
+      collection(db, 'profile_change_requests'),
+      where('status', '==', 'pendente'),
+    );
+    return onSnapshot(q, snap => {
+      setAlteracaoPerfilCount(snap.size);
+      incrementLoad();
+    }, () => incrementLoad());
+  }, []);
+
+  // Loading: aguarda os 5 listeners inicializarem
+  useEffect(() => {
+    if (loadCount >= 5) setLoading(false);
   }, [loadCount]);
 
   const hoje = new Date();
@@ -191,7 +205,19 @@ export const useAlertas = (): AlertasResult => {
       }
     });
 
-    // ── 5. PROJETOS PARADOS > 7 DIAS ──
+    // ── 5. SOLICITAÇÕES DE ALTERAÇÃO DE PERFIL ──
+    if (alteracaoPerfilCount > 0) {
+      list.push({
+        id: 'alteracao-perfil',
+        categoria: 'alteracao_perfil',
+        severidade: 'critico',
+        titulo: `${alteracaoPerfilCount} solicitação${alteracaoPerfilCount > 1 ? 'ões' : ''} de alteração de perfil`,
+        descricao: 'Colaborador(es) solicitaram alteração de dados cadastrais',
+        link: '/app/dashboard',
+      });
+    }
+
+    // ── 6. PROJETOS PARADOS > 7 DIAS ──
     projetos.forEach(p => {
       const ult = toDate(p.atualizadoEm || p.updatedAt || p.createdAt);
       if (!ult) return;
@@ -213,7 +239,7 @@ export const useAlertas = (): AlertasResult => {
     // Ordenar: crítico → atenção → operacional
     const ord: Record<AlertaSeveridade, number> = { critico: 0, atencao: 1, operacional: 2 };
     return list.sort((a, b) => ord[a.severidade] - ord[b.severidade]);
-  }, [faturamentos, leads, projetos, suporteCount]);
+  }, [faturamentos, leads, projetos, suporteCount, alteracaoPerfilCount]);
 
   const criticos     = alertas.filter(a => a.severidade === 'critico').length;
   const atencao      = alertas.filter(a => a.severidade === 'atencao').length;

@@ -52,6 +52,38 @@ service firebase.storage {
       allow delete: if request.auth != null;
     }
 
+    // ── APK do app de campo: download público (link de instalação) ──
+    match /apk/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // ── MGR Academy: conteúdo dos módulos (PDF, vídeo, infográfico, capa) ──
+    //   academy/{moduleId}/conteudo.pdf
+    //   academy/{moduleId}/video.mp4
+    //   academy/{moduleId}/infografico.(png|jpg|webp)
+    //   academy/{moduleId}/capa.(png|jpg|webp)
+    //   academy/external/{userId}/{fileName}  → comprovantes de cursos externos
+    match /academy/{moduleId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size <= 200 * 1024 * 1024 // max 200MB (vídeo)
+                   && (
+                     request.resource.contentType == 'application/pdf'
+                     || request.resource.contentType.matches('image/.*')
+                     || request.resource.contentType.matches('video/.*')
+                   );
+    }
+    match /academy/external/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size <= 20 * 1024 * 1024
+                   && (
+                     request.resource.contentType == 'application/pdf'
+                     || request.resource.contentType.matches('image/.*')
+                   );
+    }
+
     // ── Regra genérica: somente autenticados podem ler/escrever ──
     match /{allPaths=**} {
       allow read, write: if request.auth != null;

@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, orderBy, getDocs, updateDoc, doc, addDoc, serverTimestamp, Timestamp, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LABELS, CollectionName, OSKpiEntry, RaciFlowEntry, RaciFlowConfig } from '../types';
-import { BarChart3, Loader2, TrendingUp, Clock, CheckCircle2, AlertTriangle, Zap, RefreshCcw, Lightbulb, ChevronRight, Wrench, Tag, Users, Shield, ChevronDown } from 'lucide-react';
+import { BarChart3, Loader2, TrendingUp, Clock, CheckCircle2, AlertTriangle, Zap, RefreshCcw, Lightbulb, ChevronRight, Wrench, Tag, Users, Shield, ChevronDown, QrCode } from 'lucide-react';
 import { format, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import LeadsAnalyticsWidget from './LeadsAnalyticsWidget';
@@ -498,6 +498,92 @@ const RaciMatrizWidget: React.FC = () => {
   );
 };
 
+// ── Card Access Widget ────────────────────────────────────────────────────────
+type CardAccess = { id: string; campaign: string; redirectTarget: string; timestamp: any };
+
+const CardAccessWidget: React.FC = () => {
+    const [accesses, setAccesses] = useState<CardAccess[]>([]);
+    const [loading, setLoading]   = useState(true);
+
+    useEffect(() => onSnapshot(
+        query(collection(db, 'card_accesses'), orderBy('timestamp', 'desc')),
+        snap => { setAccesses(snap.docs.map(d => ({ id: d.id, ...d.data() } as CardAccess))); setLoading(false); },
+        () => setLoading(false)
+    ), []);
+
+    const toMs = (ts: any): number =>
+        ts instanceof Timestamp ? ts.toMillis() : (ts?.seconds ?? 0) * 1000;
+
+    const now   = Date.now();
+    const last7  = accesses.filter(a => now - toMs(a.timestamp) < 7  * 86400000).length;
+    const last30 = accesses.filter(a => now - toMs(a.timestamp) < 30 * 86400000).length;
+
+    const byCampaign = accesses.reduce<Record<string, number>>((acc, a) => {
+        const k = a.campaign || 'sem_campanha';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+    }, {});
+
+    const campaignEntries = Object.entries(byCampaign).sort((a, b) => b[1] - a[1]);
+    const maxCount = campaignEntries[0]?.[1] || 1;
+
+    return (
+        <Widget title="Link /card — QR Code do Cartão de Visita" icon={QrCode} color="violet">
+            {loading ? (
+                <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-violet-500" /></div>
+            ) : (
+                <div className="space-y-4">
+                    {/* Totalizadores */}
+                    <div className="grid grid-cols-3 gap-3">
+                        {[
+                            { label: 'Total', value: accesses.length },
+                            { label: 'Últimos 7 dias', value: last7 },
+                            { label: 'Últimos 30 dias', value: last30 },
+                        ].map(({ label, value }) => (
+                            <div key={label} className="bg-violet-50 rounded-xl p-3 text-center">
+                                <p className="text-2xl font-extrabold text-violet-700">{value}</p>
+                                <p className="text-[10px] text-violet-500 mt-0.5">{label}</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Por campanha */}
+                    {campaignEntries.length > 0 && (
+                        <div>
+                            <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2">Por campanha</p>
+                            <div className="space-y-2">
+                                {campaignEntries.map(([campaign, count]) => (
+                                    <div key={campaign} className="flex items-center gap-3">
+                                        <p className="text-xs text-gray-700 w-28 truncate flex-shrink-0">{campaign}</p>
+                                        <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                                            <div
+                                                className="h-full bg-violet-500 rounded-full transition-all"
+                                                style={{ width: `${(count / maxCount) * 100}%` }}
+                                            />
+                                        </div>
+                                        <p className="text-xs font-bold text-violet-700 w-8 text-right">{count}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {accesses.length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-2">
+                            Nenhum acesso registrado ainda.<br />
+                            <span className="text-gray-300">Use <code className="text-violet-400">mgrrefrigeracao.com.br/card</code> no QR code do cartão.</span>
+                        </p>
+                    )}
+
+                    <p className="text-[9px] text-gray-300 text-center pt-1">
+                        Acessos via <strong>/card</strong> · Campanha atual: <strong>{campaignEntries[0]?.[0] ?? '—'}</strong>
+                    </p>
+                </div>
+            )}
+        </Widget>
+    );
+};
+
 // ── Main BIDashboard ──────────────────────────────────────────────────────────
 const BIDashboard: React.FC = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -526,6 +612,7 @@ const BIDashboard: React.FC = () => {
                     <div className="lg:col-span-2">
                         <LeadsAnalyticsWidget />
                     </div>
+                    <CardAccessWidget />
                     <RaciMatrizWidget />
                     <SLAWidget tasks={tasks} />
                     <EfficiencyWidget tasks={tasks} />

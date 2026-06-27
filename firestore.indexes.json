@@ -12,6 +12,9 @@
     { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assetId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "workflowStatus", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assignedTo", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assignedUsers", "arrayConfig": "CONTAINS" }, { "fieldPath": "status", "order": "ASCENDING" } ] },
+    { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assignedTo", "order": "ASCENDING" }, { "fieldPath": "workflowStatus", "order": "ASCENDING" } ] },
 
     { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "placa", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
     { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "timestamp", "order": "ASCENDING" }, { "fieldPath": "placa", "order": "ASCENDING" } ] },
@@ -82,7 +85,10 @@
     { "collectionGroup": "employee_occurrences", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "data", "order": "ASCENDING" } ] },
     { "collectionGroup": "employee_docs", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "dataReferencia", "order": "ASCENDING" } ] },
 
-    { "collectionGroup": "hub_ishikawa_analyses", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "deleted", "order": "ASCENDING" }, { "fieldPath": "updatedAt", "order": "DESCENDING" } ] }
+    { "collectionGroup": "hub_ishikawa_analyses", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "deleted", "order": "ASCENDING" }, { "fieldPath": "updatedAt", "order": "DESCENDING" } ] },
+
+    { "collectionGroup": "academy_modules", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "order", "order": "ASCENDING" } ] },
+    { "collectionGroup": "academy_questions", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "moduleId", "order": "ASCENDING" }, { "fieldPath": "order", "order": "ASCENDING" } ] }
   ],
   "fieldOverrides": []
 }

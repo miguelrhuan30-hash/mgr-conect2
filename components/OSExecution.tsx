@@ -453,26 +453,32 @@ const OSExecution: React.FC = () => {
     if (!task || !taskId || !currentUser) return;
     setSaving(true);
     try {
-      let statusOS = 'concluida';
-      let shouldClose = true;
+      let statusOS = 'CONCLUIDA';
+      let isBlocked = false;
 
       if (fConcluida === false) {
+        isBlocked = true;
         if (fImpedimento === 'falta_peca' || fImpedimento === 'falta_ferramenta') {
-          statusOS = 'pendente_administrativo';
+          statusOS = 'PENDENTE_ADMIN';
         } else if (fImpedimento === 'tempo_insuficiente') {
-          statusOS = 'reagendar';
-          shouldClose = !fOSFicaAberta; // if user says keep open, stay open
+          statusOS = 'REAGENDAR';
         } else if (fImpedimento === 'problema_diferente') {
-          statusOS = 'em_revisao_tecnica';
+          statusOS = 'EM_REVISAO_TECNICA';
         } else {
-          statusOS = 'pendente_administrativo';
+          statusOS = 'PENDENTE_ADMIN';
         }
       } else if (fNovoProblema) {
-        statusOS = 'concluida_nova_os_sugerida';
+        statusOS = 'CONCLUIDA_NOVA_OS_SUGERIDA';
       }
 
-      const newWorkflow: WS = shouldClose ? WS.AGUARDANDO_FATURAMENTO : (task.workflowStatus || WS.EM_EXECUCAO);
-      const newTaskStatus = shouldClose ? 'completed' : 'in-progress';
+      // Não concluída → vai para REVISAO (gestor decide: reenviar, reagendar, cancelar)
+      // Concluída + faturamento pelo projeto → direto para CONCLUIDO (sem faturamento individual)
+      // Concluída → avança para AGUARDANDO_FATURAMENTO
+      const skipBilling = !isBlocked && (task as any).faturamentoPeloProjeto === true;
+      const newWorkflow: WS = isBlocked ? WS.REVISAO : skipBilling ? WS.CONCLUIDO : WS.AGUARDANDO_FATURAMENTO;
+      const newTaskStatus = isBlocked ? 'in-progress' : 'completed';
+      // Se bloqueada e não tem statusOS específico, marca como NAO_CONCLUIDA
+      if (isBlocked && !statusOS) statusOS = 'NAO_CONCLUIDA';
 
       // Build full answers array
       const respostas = [
@@ -530,8 +536,24 @@ const OSExecution: React.FC = () => {
         } catch { /* silent */ }
       }
 
+      // Sync totalOSConcluidas on project
+      if (!isBlocked && (task as any).projectId) {
+        try {
+          const projId = (task as any).projectId;
+          const osSnap = await getDocs(query(
+            collection(db, CollectionName.TASKS),
+            where('projectId', '==', projId),
+            where('workflowStatus', 'in', [WS.CONCLUIDO, WS.AGUARDANDO_FATURAMENTO, WS.AGUARDANDO_PAGAMENTO]),
+          ));
+          await updateDoc(doc(db, CollectionName.PROJECTS_V2, projId), {
+            totalOSConcluidas: osSnap.size,
+            updatedAt: serverTimestamp(),
+          });
+        } catch { /* silent */ }
+      }
+
       // Sprint 44B — Gamification XP
-      if (shouldClose && currentUser) {
+      if (!isBlocked && currentUser) {
         try {
           const xpGanho =
             50 + // base
@@ -553,7 +575,7 @@ const OSExecution: React.FC = () => {
         } catch { /* silent - gamification never blocks finalization */ }
       }
 
-      if (shouldClose) {
+      if (!isBlocked) {
         setStage('done');
       } else {
         // O.S. stays open (reagendar)
@@ -586,7 +608,7 @@ const OSExecution: React.FC = () => {
           <p className="text-xs text-gray-400">{task.code || taskId}</p>
           <h1 className="text-xl font-bold text-gray-900 truncate">{task.title}</h1>
         </div>
-        <button onClick={() => window.open(`/app/os/${taskId}/print`, '_blank')}
+        <button onClick={() => window.open(`/#/app/os/${taskId}/print`, '_blank')}
           className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50" title="Imprimir O.S.">
           <Printer className="w-4 h-4" />
         </button>

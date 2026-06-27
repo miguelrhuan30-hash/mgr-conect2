@@ -30,38 +30,10 @@ function sanitizePrancheta(data: ProjectV2Prancheta): Record<string, unknown> {
 }
 
 // ── Validações de requisitos por fase destino ──
+// Todas as travas removidas — projetos podem avançar livremente entre fases
 const TRANSITION_REQUIREMENTS: Partial<
   Record<ProjectPhase, (p: ProjectV2) => { valid: boolean; message?: string }>
-> = {
-  em_cotacao: (p) => ({
-    valid: !!p.prancheta?.preenchidoEm,
-    message: 'Preencha a prancheta técnica antes de avançar para cotação.',
-  }),
-  proposta_enviada: (p) => ({
-    // cotações ficam em subcoleção — checar categoriasCotacao (que é salvo no doc do projeto)
-    // ou liberar: se chegou em cotacao_recebida já houve cotação
-    valid: (p.categoriasCotacao?.length ?? 0) > 0 || p.fase === 'cotacao_recebida',
-    message: 'Crie pelo menos um grupo de cotação antes de avançar para a proposta.',
-  }),
-  contrato_enviado: (p) => ({
-    // Aceita: apresentação vinculada OU proposta criada inline (propostaDados presente) OU fase já é proposta_enviada
-    valid: !!p.apresentacaoId || !!p.propostaDados || p.fase === 'proposta_enviada',
-    message: 'Monte a proposta e envie ao cliente antes de avançar para o contrato.',
-  }),
-  contrato_assinado: (p) => ({
-    valid: !!p.contratoId,
-    message: 'Gere o contrato antes de registrar a assinatura.',
-  }),
-  em_execucao: (p) => ({
-    valid: (p.osIds?.length ?? 0) > 0,
-    message: 'Distribua as O.S. antes de iniciar a execução.',
-  }),
-  em_faturamento: (p) => ({
-    valid: !!p.relatorioFinalUrl,
-    message: 'Gere o relatório final antes de ir para faturamento.',
-  }),
-  nao_aprovado: () => ({ valid: true }),
-};
+> = {};
 
 export const useProject = () => {
   const { currentUser, userProfile } = useAuth();

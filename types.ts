@@ -61,6 +61,13 @@ export interface PermissionSet {
 
   // ── People Analytics / Surveys ─────────────────────────────────────────────
   canManageSurveys?: boolean;     // Criar/publicar/ver dashboard de pesquisas
+
+  // ── Segurança / Acesso ──────────────────────────────────────────────────────
+  canResetUserPasswords?: boolean; // Redefinir senha de colaboradores (senha temporária)
+
+  // ── MGR Academy (LMS interno) ───────────────────────────────────────────────
+  canAccessAcademy?: boolean;     // Acessar a Academia MGR (colaborador)
+  canManageAcademy?: boolean;     // Criar/editar módulos, banco de questões, liberar provas
 }
 
 export interface Sector {
@@ -69,6 +76,139 @@ export interface Sector {
   description?: string;
   defaultPermissions: PermissionSet;
   createdAt?: Timestamp;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MGR ACADEMY — LMS interno (estilo Hotmart)
+// Módulos com PDF/vídeo/infográfico, progresso por etapa, prova com timer,
+// badges Bronze/Prata/Ouro por módulo e plano de carreira do colaborador.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type AcademyModuleStatus = 'draft' | 'published';
+export type AcademyBadgeTier = 'bronze' | 'silver' | 'gold';
+export type AcademyVideoSource = 'upload' | 'youtube' | 'vimeo' | 'link';
+export type AcademyAttemptStatus = 'in_progress' | 'submitted' | 'abandoned' | 'expired';
+export type AcademyExternalBadgeType = 'external' | 'certification';
+
+/** Configuração da prova de um módulo (definida pelo adm). */
+export interface AcademyExamConfig {
+  enabled: boolean;            // se a prova faz parte do módulo
+  durationMinutes: number;     // timer da prova (contador server-side)
+  questionsPerExam: number;    // quantas perguntas sortear do banco
+  shuffleOptions: boolean;     // embaralhar alternativas por tentativa
+  rulesText?: string;          // regras exibidas antes do "Iniciar Prova"
+}
+
+/** Checklist de prontidão do módulo — auto-calculado a partir do conteúdo. */
+export interface AcademyReadiness {
+  pdf: boolean;
+  video: boolean;
+  infographic: boolean;
+  exam: boolean;               // banco tem >= questionsPerExam perguntas
+}
+
+/** Módulo de curso. Criado/editado 100% pela interface do adm. */
+export interface AcademyModule {
+  id: string;
+  title: string;
+  description?: string;
+  order: number;
+  trackId?: string;            // roadmap: trilhas de cursos
+  coverUrl?: string;
+  coverPath?: string;
+  status: AcademyModuleStatus; // 'draft' = só adm vê | 'published' = colaborador vê
+
+  // ── Conteúdo (cada peça salva independente / incremental) ──
+  pdfUrl?: string;
+  pdfPath?: string;            // path no Storage (para excluir/trocar)
+  pdfTotalPages?: number;
+  videoUrl?: string;
+  videoSource?: AcademyVideoSource;
+  videoPath?: string;
+  infographicUrl?: string;
+  infographicPath?: string;
+
+  // ── Navegação ──
+  sequential: boolean;         // default true (PDF→vídeo→infográfico→prova)
+  freeNavigation: boolean;     // default false
+
+  // ── Avaliação & gamificação ──
+  exam: AcademyExamConfig;
+  passingScore: number;        // nota de corte % (default 50)
+  xpReward: number;            // XP concedido ao concluir o módulo
+
+  // ── Prontidão (auto-calculada na tela do adm) ──
+  readiness: AcademyReadiness;
+
+  // ── Metadados ──
+  version: number;
+  publishedAt?: Timestamp | null;
+  publishedBy?: string;
+  criadoPor: string;
+  criadoEm: Timestamp;
+  atualizadoEm?: Timestamp;
+}
+
+/** Pergunta do banco de questões (flat collection, ligada por moduleId). */
+export interface AcademyQuestion {
+  id: string;
+  moduleId: string;
+  text: string;
+  options: string[];           // 2 a 6 alternativas
+  correctIndex: number;        // gabarito — só Cloud Function/adm acessam
+  weight: number;              // peso (default 1)
+  order: number;
+  criadoEm: Timestamp;
+}
+
+/** Progresso de um colaborador num módulo. Doc id = `${userId}_${moduleId}`. */
+export interface AcademyProgress {
+  id: string;
+  userId: string;
+  moduleId: string;
+  pdf: { completed: boolean; pagesRead: number[]; totalPages: number };
+  video: { completed: boolean; watchedRatio: number };
+  infographic: { completed: boolean; scrolledEnd: boolean; secondsViewed: number };
+  contentPercent: number;      // 0..100 (média das etapas de conteúdo)
+  examUnlocked: boolean;       // true quando contentPercent == 100
+  badge: AcademyBadgeTier | null;
+  score?: number;
+  scorePercent?: number;
+  completedAt?: Timestamp | null;
+  examBlocked: boolean;        // true se abandonou — só adm libera retry
+  attemptsCount: number;
+  atualizadoEm?: Timestamp;
+}
+
+/** Tentativa de prova — corrigida automaticamente pela Cloud Function. */
+export interface AcademyExamAttempt {
+  id: string;
+  userId: string;
+  moduleId: string;
+  startedAt: Timestamp;
+  expiresAt: Timestamp;        // startedAt + durationMinutes (timer à prova de reload)
+  questionIds: string[];       // perguntas sorteadas
+  answers: Record<string, number>; // qId -> índice escolhido
+  finishedAt?: Timestamp | null;
+  score?: number;
+  scorePercent?: number;
+  badge?: AcademyBadgeTier | null;
+  status: AcademyAttemptStatus;
+}
+
+/** Curso externo ou certificação — cadastro manual pelo adm no perfil. */
+export interface AcademyExternalBadge {
+  id: string;
+  userId: string;
+  type: AcademyExternalBadgeType;
+  title: string;
+  institution?: string;
+  completedDate?: string;      // ISO date
+  validUntil?: string;         // ISO date (certificações que vencem)
+  proofUrl?: string;           // comprovante
+  proofPath?: string;
+  addedByAdmin: string;
+  addedAt: Timestamp;
 }
 
 export interface UserProfile {
@@ -131,6 +271,25 @@ export interface UserProfile {
 
   // Sprint 48 — Nome completo
   nomeCompleto?: string; // Nome completo do colaborador (auto-preenchido do email se vazio)
+
+  // Módulo Redefinição de Senha
+  requiresPasswordChange?: boolean; // true = gestor definiu senha temporária, user deve alterar
+  tempPasswordSetAt?: Timestamp;
+  tempPasswordSetBy?: string;
+  hasCustomPermissions?: boolean;
+}
+
+// ── Pedido de Redefinição de Senha (enviado da tela de login) ─────────────────
+export interface PasswordResetRequest {
+  id?: string;
+  email: string;
+  displayName?: string;
+  uid?: string;
+  status: 'pending' | 'resolved';
+  requestedAt: Timestamp;
+  resolvedAt?: Timestamp;
+  resolvedBy?: string;
+  resolvedByName?: string;
 }
 
 export interface WorkLocation {
@@ -615,6 +774,26 @@ export interface Task {
   reagendamentoPara?: string;       // ID da nova O.S. criada (nesta é a original)
   // Orçamento vinculado
   orcamentoId?: string;
+
+  // ─── Sprint F1: Gerador Rápido de OS ──────────────────────────────────────
+  numeroOS?: string;              // "MGR-2026-05-001" — sequencial automático
+  fonteAbertura?: 'GERADOR_RAPIDO' | 'MODAL_COMPLETO' | 'DIGITALIZACAO_FISICA';
+  dadosCompletos?: boolean;       // false = só número | true = OS preenchida
+  // Financeiros (schema reservado, UI no F3)
+  valorTotalOS?: number;
+  condicaoPagamento?: string;     // "1/1" | "1/2" | "2/2" etc.
+  mesCompetencia?: string;        // "2026-05"
+  statusRecebimento?: 'RECEBIDO' | 'A_RECEBER' | 'INADIMPLENTE';
+  horasExecutadas?: number;
+  // Evidências standalone (F2)
+  evidencias?: Array<{
+    id: string;
+    url: string;
+    tecnicoId: string;
+    tecnicoNome: string;
+    timestamp: any;
+    descricao?: string;
+  }>;
 }
 
 export interface ClientContact {
@@ -658,6 +837,7 @@ export interface Client {
   contacts?: ClientContact[];   // múltiplos contactos por papél
   createdBy?: string;
   updatedAt?: Timestamp;
+  dadosIncompletos?: boolean;
 }
 
 export interface ClientAsset {
@@ -853,22 +1033,34 @@ export enum WorkflowStatus {
   AGUARDANDO_APROVACAO   = 'AGUARDANDO_APROVACAO',
   AGENDADO               = 'AGENDADO',
   EM_EXECUCAO            = 'EM_EXECUCAO',
+  REVISAO                = 'REVISAO',
   AGUARDANDO_FATURAMENTO = 'AGUARDANDO_FATURAMENTO',
   AGUARDANDO_PAGAMENTO   = 'AGUARDANDO_PAGAMENTO',
   CONCLUIDO              = 'CONCLUIDO',
 }
 
+/**
+ * WORKFLOW_ORDER — colunas visíveis no Pipeline Kanban de O.S.
+ * Fases pré-execução (TRIAGEM, PRE_ORCAMENTO, VISITA_TECNICA, ORCAMENTO_FINAL)
+ * foram removidas — essas etapas são tratadas pelo Flow de Atendimento.
+ * OS existentes nessas fases legadas são agrupadas em AGUARDANDO_APROVACAO.
+ */
 export const WORKFLOW_ORDER: WorkflowStatus[] = [
+  WorkflowStatus.AGUARDANDO_APROVACAO,   // "Aguardando Agendamento"
+  WorkflowStatus.AGENDADO,               // "Aguardando Execução" — 1ª coluna da equipe técnica
+  WorkflowStatus.EM_EXECUCAO,
+  WorkflowStatus.REVISAO,                // OS bloqueadas (pendência admin, revisão técnica, reagendar)
+  WorkflowStatus.AGUARDANDO_FATURAMENTO,
+  WorkflowStatus.AGUARDANDO_PAGAMENTO,
+  WorkflowStatus.CONCLUIDO,
+];
+
+/** Fases legadas removidas do Kanban — OS nessas fases migram para a 1ª coluna visível */
+export const WORKFLOW_LEGACY_PHASES: WorkflowStatus[] = [
   WorkflowStatus.TRIAGEM,
   WorkflowStatus.PRE_ORCAMENTO,
   WorkflowStatus.VISITA_TECNICA,
   WorkflowStatus.ORCAMENTO_FINAL,
-  WorkflowStatus.AGUARDANDO_APROVACAO,
-  WorkflowStatus.AGENDADO,
-  WorkflowStatus.EM_EXECUCAO,
-  WorkflowStatus.AGUARDANDO_FATURAMENTO,
-  WorkflowStatus.AGUARDANDO_PAGAMENTO,
-  WorkflowStatus.CONCLUIDO,
 ];
 
 export const WORKFLOW_LABELS: Record<WorkflowStatus, string> = {
@@ -876,9 +1068,10 @@ export const WORKFLOW_LABELS: Record<WorkflowStatus, string> = {
   [WorkflowStatus.PRE_ORCAMENTO]:           'Pré-Orçamento',
   [WorkflowStatus.VISITA_TECNICA]:          'Visita Técnica',
   [WorkflowStatus.ORCAMENTO_FINAL]:         'Orçamento Final',
-  [WorkflowStatus.AGUARDANDO_APROVACAO]:    'Aguardando Aprovação',
-  [WorkflowStatus.AGENDADO]:                'Agendado',
+  [WorkflowStatus.AGUARDANDO_APROVACAO]:    'Aguardando Agendamento',
+  [WorkflowStatus.AGENDADO]:                'Aguardando Execução',
   [WorkflowStatus.EM_EXECUCAO]:             'Em Execução',
+  [WorkflowStatus.REVISAO]:                'Revisão / Pendência',
   [WorkflowStatus.AGUARDANDO_FATURAMENTO]:  'Aguardando Faturamento',
   [WorkflowStatus.AGUARDANDO_PAGAMENTO]:    'Aguardando Pagamento',
   [WorkflowStatus.CONCLUIDO]:               'Concluído',
@@ -892,6 +1085,7 @@ export const WORKFLOW_COLORS: Record<WorkflowStatus, string> = {
   [WorkflowStatus.AGUARDANDO_APROVACAO]:    'bg-amber-50 border-amber-200 text-amber-700',
   [WorkflowStatus.AGENDADO]:                'bg-sky-50 border-sky-200 text-sky-700',
   [WorkflowStatus.EM_EXECUCAO]:             'bg-orange-50 border-orange-200 text-orange-700',
+  [WorkflowStatus.REVISAO]:                'bg-rose-50 border-rose-300 text-rose-800',
   [WorkflowStatus.AGUARDANDO_FATURAMENTO]:  'bg-pink-50 border-pink-200 text-pink-700',
   [WorkflowStatus.AGUARDANDO_PAGAMENTO]:    'bg-red-50 border-red-200 text-red-700',
   [WorkflowStatus.CONCLUIDO]:               'bg-emerald-50 border-emerald-200 text-emerald-700',
@@ -1035,12 +1229,57 @@ export interface OSFinalizacaoResposta {
   timestamp: Timestamp;
 }
 
+// OSStatusFinal — sub-estado de detalhe dentro de cada workflowStatus
+// UPPERCASE unificado (valores legados lowercase são normalizados via normalizeStatusOS)
 export type OSStatusFinal =
-  | 'concluida'
-  | 'reagendar'
-  | 'pendente_administrativo'
-  | 'em_revisao_tecnica'
-  | 'concluida_nova_os_sugerida';
+  | 'NUMERO_GERADO'              // OS Rápida — só número gerado
+  | 'AGUARDANDO_DADOS'           // Dados incompletos
+  | 'EM_EXECUCAO'                // Em execução ativa
+  | 'CONCLUIDA'                  // Concluída com êxito
+  | 'CONCLUIDA_NOVA_OS_SUGERIDA' // Concluída + nova OS necessária
+  | 'REAGENDAR'                  // Precisa reagendar
+  | 'PENDENTE_ADMIN'             // Bloqueio administrativo
+  | 'EM_REVISAO_TECNICA'         // Revisão técnica necessária
+  | 'NAO_CONCLUIDA'              // Não concluída — voltou para fila de execução
+  | 'CANCELADA';                 // Cancelada
+
+// Mapa de statusOS válidos por workflowStatus (null sempre é aceito)
+export const VALID_STATUS_OS_MAP: Partial<Record<WorkflowStatus, OSStatusFinal[]>> = {
+  [WorkflowStatus.AGUARDANDO_APROVACAO]:    ['NUMERO_GERADO', 'AGUARDANDO_DADOS'],
+  [WorkflowStatus.AGENDADO]:               ['NAO_CONCLUIDA'],
+  [WorkflowStatus.EM_EXECUCAO]:             ['EM_EXECUCAO'],
+  [WorkflowStatus.REVISAO]:                ['PENDENTE_ADMIN', 'EM_REVISAO_TECNICA', 'REAGENDAR'],
+  [WorkflowStatus.AGUARDANDO_FATURAMENTO]:  ['CONCLUIDA', 'CONCLUIDA_NOVA_OS_SUGERIDA'],
+  [WorkflowStatus.AGUARDANDO_PAGAMENTO]:    ['CONCLUIDA', 'CONCLUIDA_NOVA_OS_SUGERIDA'],
+  [WorkflowStatus.CONCLUIDO]:               ['CONCLUIDA', 'CONCLUIDA_NOVA_OS_SUGERIDA', 'CANCELADA'],
+};
+
+// Labels legíveis para statusOS (badges no card)
+export const STATUS_OS_LABELS: Record<OSStatusFinal, string> = {
+  'NUMERO_GERADO':              'Aguardando Dados',
+  'AGUARDANDO_DADOS':           'Dados Incompletos',
+  'EM_EXECUCAO':                'Em Execução',
+  'CONCLUIDA':                  'Concluída',
+  'CONCLUIDA_NOVA_OS_SUGERIDA': 'Concluída — Nova OS',
+  'REAGENDAR':                  'Aguardando Reagendamento',
+  'PENDENTE_ADMIN':             'Pendência Administrativa',
+  'EM_REVISAO_TECNICA':         'Revisão Técnica',
+  'NAO_CONCLUIDA':              'Não Concluída — Em Aberto',
+  'CANCELADA':                  'Cancelada',
+};
+
+export const STATUS_OS_COLORS: Record<OSStatusFinal, string> = {
+  'NUMERO_GERADO':              'bg-blue-100 text-blue-700',
+  'AGUARDANDO_DADOS':           'bg-blue-100 text-blue-700',
+  'EM_EXECUCAO':                'bg-orange-100 text-orange-700',
+  'CONCLUIDA':                  'bg-emerald-100 text-emerald-700',
+  'CONCLUIDA_NOVA_OS_SUGERIDA': 'bg-teal-100 text-teal-700',
+  'REAGENDAR':                  'bg-amber-100 text-amber-700',
+  'PENDENTE_ADMIN':             'bg-red-100 text-red-700',
+  'EM_REVISAO_TECNICA':         'bg-orange-100 text-orange-700',
+  'NAO_CONCLUIDA':              'bg-red-100 text-red-700',
+  'CANCELADA':                  'bg-gray-100 text-gray-700',
+};
 
 export interface OSKpiEntry {
   descricaoTarefa: string;
@@ -1122,6 +1361,7 @@ const _BASE_COLLECTIONS = {
   SURVEY_RESPONSES: 'survey_responses',
   SURVEY_PARTICIPATION: 'survey_participation',
   SURVEY_TEMPLATES: 'survey_templates',
+  SURVEY_ACCESS_KEYS: 'survey_access_keys',
   // Sprint 51 — Apresentações Interativas
   PRESENTATIONS: 'presentations',
   PRESENTATION_VIEWS: 'presentationViews', // ORC-08
@@ -1139,6 +1379,8 @@ const _BASE_COLLECTIONS = {
   PROPOSTAS_PDF: 'propostas_pdf',
   // Sprint OpsBI — Hub Melhorias
   HUB_IMPROVEMENTS: 'hub_improvements',
+  // Sprint F1 — Gerador Rápido de OS
+  OS_COUNTERS: 'os_counters',
   // Sprint Veículos — Config
   VEHICLE_CHECK_CONFIG: 'vehicle_check_config',
   // Sprint Projetos v2 — Atividades
@@ -1156,6 +1398,18 @@ const _BASE_COLLECTIONS = {
   ISHIKAWA_ANALYSES:  'hub_ishikawa_analyses',
   // Sprint Proposta Comercial — Documento de Proposta + Banco de Cláusulas
   CLAUSULAS_MODELOS: 'clausulas_modelos',
+  // Sprint Academy — Certificações NR e Vistorias de Supervisão
+  EMPLOYEE_CERTIFICATIONS: 'employee_certifications',
+  SUPERVISION_VISTORIAS: 'supervision_vistorias',
+  // Módulo Redefinição de Senha
+  PASSWORD_RESET_REQUESTS: 'password_reset_requests',
+
+  // MGR Academy — LMS interno (módulos, progresso, provas, badges, carreira)
+  ACADEMY_MODULES: 'academy_modules',
+  ACADEMY_QUESTIONS: 'academy_questions',
+  ACADEMY_PROGRESS: 'academy_progress',
+  ACADEMY_EXAM_ATTEMPTS: 'academy_exam_attempts',
+  ACADEMY_EXTERNAL_BADGES: 'academy_external_badges',
 
 } as const;
 
@@ -1385,6 +1639,7 @@ export interface LunchDayChoice {
   misturas: { id: string; nome: string }[];    // até 2 misturas
   guarnicoes: { id: string; nome: string }[];  // até 2 guarnições
   tamanho?: MarmitaSize;                       // tamanho da marmita
+  observacao?: string;                         // observação livre (ex: sem feijão)
 }
 
 export interface LunchChoice {
@@ -1473,6 +1728,18 @@ export interface Survey {
   totalRespostas?: number;    // calculado
   templateId?: string;        // FK → survey_templates (se criada a partir de modelo)
   edicao?: number;            // edição/rodada contínua (1, 2, 3...)
+  linkPublico?: boolean;      // Sprint 52: acessível via link sem login
+  totalParticipantes?: number; // Sprint 52: nº de chaves geradas
+}
+
+/** Chave de acesso anônima — Sprint 52 */
+export interface SurveyAccessKey {
+  id: string;
+  surveyId: string;
+  chave: string;       // código aleatório de 8 chars alfanumérico
+  usado: boolean;
+  usadoEm?: Timestamp;
+  criadoEm: Timestamp;
 }
 
 /** Uma única resposta anônima (sem userId) */
@@ -1481,6 +1748,7 @@ export interface SurveyResponse {
   surveyId: string;
   respostas: Record<string, string | number | string[]>; // questionId → valor
   respondidoEm: Timestamp;
+  chaveAcesso?: string;  // Sprint 52: chave usada (para controle, não identifica o usuário)
   // userId intencionalmente AUSENTE — anonimato absoluto
 }
 
@@ -1631,6 +1899,7 @@ export interface PresentationView {
 
 export type GanttPartyV2 = 'mgr' | 'cliente' | 'terceiro';
 export type GanttTaskStatus = 'nao_iniciada' | 'em_andamento' | 'concluida' | 'bloqueada' | 'cancelada';
+export type GanttTaskPrioridade = 'urgente' | 'alta' | 'media' | 'baixa';
 
 /** Responsável alocado a uma tarefa do Gantt */
 export interface GanttResponsavel {
@@ -1712,8 +1981,14 @@ export interface GanttTask {
   // Adversidades registradas nesta tarefa
   adversidades?: GanttAdversidade[];
 
+  // Prioridade
+  prioridade?: GanttTaskPrioridade;
+
   // Observação
   observacao?: string;
+
+  // Vínculo com OS (preenchido quando a OS é distribuída a partir desta tarefa)
+  osId?: string | null;
 
   // Metadados
   criadoPor: string;
@@ -2132,6 +2407,12 @@ export interface ProjectV2 {
   createdByNome?: string;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
+
+  // Arquivamento (flow de atendimento)
+  archived?: boolean;
+  archivedAt?: Timestamp;
+  archivedBy?: string;
+  archivedMotivo?: string;
 }
 
 export interface ProjectCotacao {
@@ -2340,4 +2621,55 @@ export interface ProjectFaturamento {
   criadoPor: string;
   criadoPorNome: string;
   atualizadoEm?: Timestamp;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sprint Academy — Certificações NR e Vistorias de Supervisão
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CertificacaoStatus = 'valida' | 'vencendo' | 'vencida';
+
+/** Certificação NR ou técnica do colaborador — gera badge na aba Academy */
+export interface ColaboradorCertificacao {
+  id: string;
+  colaboradorId: string;        // userId do colaborador
+  tipo: string;                 // ex: "NR-10", "NR-35", "NR-12"
+  nome: string;                 // nome completo da certificação
+  dataObtencao: Timestamp;
+  dataValidade?: Timestamp;     // null = sem validade definida
+  documentoUrl?: string;        // upload do certificado escaneado
+  documentoNome?: string;
+  emitidoPor?: string;          // instituição emissora
+  registradoPor: string;        // userId do admin
+  registradoPorNome: string;
+  registradoEm: Timestamp;
+  status: CertificacaoStatus;   // calculado: valida / vencendo (≤30d) / vencida
+}
+
+/** Item individual verificado em uma vistoria de supervisão */
+export interface VistoriaItem {
+  id: string;
+  categoria: string;            // ex: "EPI", "Ferramentas", "Documentação"
+  item: string;                 // ex: "Capacete", "Botina", "Crachá MGR"
+  status: 'conforme' | 'nao_conforme' | 'nao_aplicavel';
+  observacao?: string;
+}
+
+/** Vistoria de supervisão em campo — resultado vinculado ao colaborador */
+export interface VistoriaSupervisao {
+  id: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  dataVistoria: Timestamp;
+  realizadaPor: string;         // userId do gestor
+  realizadaPorNome: string;
+  localDescricao?: string;      // ex: "Cliente Indaiá Pescados"
+  osId?: string;                // OS vinculada (opcional)
+  osNumero?: string;
+  itensVerificados: VistoriaItem[];
+  observacoesGerais?: string;
+  totalItens: number;
+  itensConformes: number;
+  percentualConformidade: number; // 0-100
+  criadoEm: Timestamp;
 }

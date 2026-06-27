@@ -98,9 +98,44 @@ service cloud.firestore {
 
     // ── Tarefas / OS ──────────────────────────────────────────────────────
     match /tasks/{taskId} {
+      // OS sem responsável são visíveis a qualquer técnico autenticado
       allow read: if isAuthenticated()
-        && (resource.data.assignedTo == request.auth.uid || isManager());
-      allow write: if isManager();
+        && (
+          resource.data.get('assignedTo', null) == null
+          || resource.data.get('assignedTo', '') == ''
+          || resource.data.assignedTo == request.auth.uid
+          || request.auth.uid in resource.data.get('assignedUsers', [])
+          || isManager()
+        );
+
+      // Gestores: escrita total
+      allow update, delete: if isManager();
+
+      // Técnicos: podem atualizar status das próprias OS e pegar OS sem responsável
+      allow update: if isAuthenticated() && !isManager() && (
+        // Pegar OS sem responsável (atribui a si e inicia)
+        (
+          (resource.data.get('assignedTo', null) == null || resource.data.get('assignedTo', '') == '')
+          && request.resource.data.assignedTo == request.auth.uid
+        )
+        ||
+        // Atualizar status das próprias OS (ex: in-progress → completed)
+        (
+          resource.data.assignedTo == request.auth.uid
+          || request.auth.uid in resource.data.get('assignedUsers', [])
+        )
+      );
+
+      // Criar OS: gestores ou qualquer autenticado com permissão (validada no app)
+      allow create: if isAuthenticated() && (
+        isManager()
+        || (
+          request.resource.data.get('startDate', null) == null
+          && request.resource.data.status == 'pending'
+          && request.resource.data.criadoPor == request.auth.uid
+          && request.resource.data.keys().hasAll(['title', 'status', 'criadoPor', 'criadoEm'])
+        )
+      );
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -302,6 +337,173 @@ service cloud.firestore {
             .affectedKeys()
             .hasAny(['createdBy', 'createdAt', 'createdByName']);
       allow delete: if false;
+    }
+
+    // ── Sprint 52 — Pesquisas Públicas Anônimas ────────────────────────────
+    // Surveys com linkPublico=true são acessíveis sem autenticação
+    match /surveys/{surveyId} {
+      allow read: if resource.data.get('linkPublico', false) == true
+                   && resource.data.status == 'ativo';
+      // autenticados (catch-all cobre, mas regra explícita aqui para clareza)
+      allow read, write: if isAuthenticated();
+    }
+
+    // Chaves de acesso: leitura pública (para validar), update público restrito
+    match /survey_access_keys/{keyId} {
+      // Qualquer um pode ler para validar a chave
+      allow read: if true;
+      // Criação somente por autenticados (admin gerando chaves)
+      allow create: if isAuthenticated();
+      // Update público: apenas marcar como usado (usado=true, usadoEm)
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['usado', 'usadoEm'])
+                    && request.resource.data.usado == true
+                    && resource.data.usado == false;
+      allow delete: if isAuthenticated();
+    }
+
+    // Respostas: criação pública para pesquisas anônimas
+    match /survey_responses/{responseId} {
+      allow create: if request.resource.data.keys().hasAll(['surveyId', 'respostas', 'respondidoEm'])
+                    && request.resource.data.surveyId is string
+                    && !request.resource.data.keys().hasAny(['userId'])
+                    && request.resource.data.keys().size() <= 5;
+      allow read: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // ── Link /card — contador de acessos via QR code do cartão de visita ──
+    match /card_accesses/{docId} {
+      allow create: if
+        request.resource.data.keys().hasAll(['timestamp', 'campaign', 'redirectTarget'])
+        && request.resource.data.campaign is string
+        && request.resource.data.campaign.size() > 0
+        && request.resource.data.campaign.size() <= 50
+        && request.resource.data.redirectTarget is string
+        && request.resource.data.keys().size() <= 6;
+      allow read: if isAuthenticated() && isManager();
+    }
+
+    // ── Sprint Academy — Certificações NR ────────────────────────────────
+    match /employee_certifications/{certId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isManager()
+        && request.resource.data.keys().hasAll(['colaboradorId', 'tipo', 'nome', 'dataObtencao', 'registradoPor', 'registradoEm', 'status'])
+        && request.resource.data.colaboradorId is string
+        && request.resource.data.tipo is string
+        && request.resource.data.nome is string;
+      allow update: if isAuthenticated() && isManager();
+      allow delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Sprint Academy — Vistorias de Supervisão ─────────────────────────
+    match /supervision_vistorias/{vistoriaId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isManager()
+        && request.resource.data.keys().hasAll(['colaboradorId', 'dataVistoria', 'realizadaPor', 'itensVerificados', 'criadoEm'])
+        && request.resource.data.colaboradorId is string
+        && request.resource.data.realizadaPor == request.auth.uid;
+      allow update: if isAuthenticated() && isManager();
+      allow delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Pedidos de Redefinição de Senha ──────────────────────────────────
+    // Qualquer um pode criar (tela de login sem autenticação)
+    // Somente gestores autenticados podem ler e atualizar
+    match /password_reset_requests/{requestId} {
+      allow create: if
+        request.resource.data.keys().hasAll(['email', 'status', 'requestedAt'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 5
+        && request.resource.data.email.size() < 200
+        && request.resource.data.keys().size() <= 8;
+      allow read, update: if isAuthenticated() && isManager();
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // MGR ACADEMY — LMS interno (módulos, questões, progresso, provas, badges)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Módulos: colaborador lê apenas publicados; rascunho só gestor ──
+    match /academy_modules/{moduleId} {
+      allow read: if isAuthenticated()
+        && (resource.data.get('status', 'draft') == 'published' || isManager());
+      allow create, update, delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Banco de questões: escrita só gestor. ────────────────────────────
+    // ⚠️ Fase 3: o gabarito (correctIndex) é servido ao colaborador SEM a
+    //    resposta via Cloud Function `startExam`. A correção roda na Function
+    //    (Admin SDK). A leitura direta deve ser bloqueada endurecendo o
+    //    catch-all final nesta fase. Por ora só gestor lê/escreve aqui.
+    match /academy_questions/{questionId} {
+      allow read: if isAuthenticated() && isManager();
+      allow create, update, delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Progresso: colaborador escreve só o próprio doc de conteúdo ──
+    match /academy_progress/{progressId} {
+      allow read: if isAuthenticated()
+        && (resource.data.userId == request.auth.uid || isManager());
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      // Colaborador atualiza só campos de progresso de conteúdo;
+      // badge/score/examBlocked ficam para Cloud Function / gestor.
+      allow update: if isAuthenticated()
+        && (
+          (resource.data.userId == request.auth.uid
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['badge', 'score', 'scorePercent', 'examBlocked', 'completedAt']))
+          || isManager()
+        );
+      allow delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Tentativas de prova: colaborador cria/lê as próprias ──
+    // score/badge são gravados pela Cloud Function (Admin SDK ignora estas regras).
+    match /academy_exam_attempts/{attemptId} {
+      allow read: if isAuthenticated()
+        && (resource.data.userId == request.auth.uid || isManager());
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated()
+        && (resource.data.userId == request.auth.uid || isManager());
+      allow delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Badges externos / certificações: cadastro manual pelo gestor ──
+    match /academy_external_badges/{badgeId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated() && isManager();
+    }
+
+    // ── Feed de Gestão — Atividades em tempo real ────────────────────────
+    match /activity_feed/{activityId} {
+      // Qualquer colaborador autenticado cria atividades (ponto, OS, veículo)
+      allow create: if isAuthenticated()
+        && request.resource.data.autorId == request.auth.uid
+        && request.resource.data.keys().hasAll(['tipo', 'autorId', 'autorNome', 'titulo', 'criadoEm']);
+      // Leitura: apenas gestores veem o feed completo
+      allow read: if isAuthenticated() && isManager();
+      // Update: gestores atualizam (ex: respondida, respostasCount)
+      allow update: if isAuthenticated() && isManager();
+      // Delete: apenas admin
+      allow delete: if isAdmin();
+    }
+
+    // Subcoleção de respostas a dúvidas técnicas
+    match /activity_feed/{activityId}/respostas/{replyId} {
+      // Gestores criam respostas
+      allow create: if isAuthenticated() && isManager()
+        && request.resource.data.autorId == request.auth.uid;
+      // Leitura: gestores ou dono da atividade (técnico que abriu a dúvida)
+      allow read: if isAuthenticated() && (
+        isManager()
+        || get(/databases/$(database)/documents/activity_feed/$(activityId)).data.autorId == request.auth.uid
+      );
+      allow update, delete: if isAuthenticated() && isManager();
     }
 
     // ── Regra padrão: apenas autenticados ────────────────────────────────

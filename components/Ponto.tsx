@@ -230,8 +230,9 @@ const Ponto: React.FC = () => {
     );
 
     const unsubscribe = onSnapshot(q, snapshot => {
-      if (snapshot.metadata.hasPendingWrites) return;
-
+      // Não filtrar por snapshot.metadata.hasPendingWrites: isso bloqueava
+      // lastEntry enquanto o updateDoc de biometria rodava em background,
+      // fazendo getNextAction() retornar 'entry' em vez da ação correta.
       const entries = snapshot.docs
         .map(d => ({ id: d.id, ...(d.data() as any) } as TimeEntry))
         .filter(e => !!e.timestamp?.seconds && !e.excluido);
@@ -273,7 +274,14 @@ const Ponto: React.FC = () => {
 
     if (!lunchStart?.timestamp) { setLunchCountdown(null); return; }
 
-    const TOTAL_MS = 60 * 60 * 1000;
+    const entryToday = history
+      .filter(e => e.type === 'entry' && e.timestamp?.toDate?.() >= today)
+      .sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime())[0];
+    const workedBeforeLunchMs = entryToday?.timestamp
+      ? lunchStart.timestamp.toDate().getTime() - entryToday.timestamp.toDate().getTime()
+      : 6 * 60 * 60 * 1000;
+    const TOTAL_MS = workedBeforeLunchMs < 6 * 60 * 60 * 1000 ? 15 * 60 * 1000 : 60 * 60 * 1000;
+
     const tick = () => {
       const remaining = Math.max(
         0,
@@ -343,9 +351,9 @@ const Ponto: React.FC = () => {
         description: 'Finalizar dia de trabalho',
       };
       case 'exit': return {
-        type: 'entry', label: 'NOVA ENTRADA',
-        icon: LogIn, colorClass: 'bg-blue-600 hover:bg-blue-700',
-        description: 'Iniciar novo turno (Extra)',
+        type: 'entry', label: 'EXPEDIENTE ENCERRADO',
+        icon: LogIn, colorClass: 'bg-gray-400 cursor-not-allowed',
+        description: 'Expediente já encerrado hoje — amanhã você poderá registrar novamente',
       };
       default: return {
         type: 'entry', label: 'REGISTRAR ENTRADA',
@@ -365,9 +373,22 @@ const Ponto: React.FC = () => {
 
     if (!lunchStart?.timestamp) return { valid: true };
 
+    // Mínimo de pausa conforme CLT:
+    // Jornada até 6h (trabalhado antes do almoço < 6h) → 15 min de pausa
+    // Jornada acima de 6h → 1h de pausa
+    const entryToday = history
+      .filter(e => e.type === 'entry' && e.timestamp?.toDate?.() >= today)
+      .sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime())[0];
+    const workedBeforeLunchMs = entryToday?.timestamp
+      ? lunchStart.timestamp.toDate().getTime() - entryToday.timestamp.toDate().getTime()
+      : 6 * 60 * 60 * 1000; // conservador: assume 6h se não encontrar entrada
+    const minPauseMs = workedBeforeLunchMs < 6 * 60 * 60 * 1000
+      ? 15 * 60 * 1000   // até 6h trabalhado: 15 min
+      : 60 * 60 * 1000;  // acima de 6h: 1h
+
     const diffMs = Date.now() - lunchStart.timestamp.toDate().getTime();
-    if (diffMs < 60 * 60 * 1000) {
-      const rem = 60 * 60 * 1000 - diffMs;
+    if (diffMs < minPauseMs) {
+      const rem = minPauseMs - diffMs;
       return {
         valid: false,
         remaining: `${String(Math.floor(rem / 60000)).padStart(2, '0')}:${String(Math.floor((rem % 60000) / 1000)).padStart(2, '0')}`,
@@ -521,9 +542,19 @@ const Ponto: React.FC = () => {
   }, [userProfile]);
 
   // ─── REGISTRO PRINCIPAL (Modo Emergencial — nunca trava) ─────────────────
-  const handleRegister = async () => {
+  const handleRegister = async (forceExit?: boolean) => {
     if (processing) return;
-    const nextAction = getNextAction();
+
+    // Bloqueia nova entrada após expediente já encerrado no mesmo dia
+    if (!forceExit && lastEntry?.type === 'exit') {
+      setErrorMessage('Expediente já encerrado hoje. Novo registro só permitido amanhã.');
+      setTimeout(() => setErrorMessage(''), 5000);
+      return;
+    }
+
+    const nextAction = forceExit
+      ? { type: 'exit' as const, label: 'Encerrar Turno Especial', icon: LogOut, colorClass: 'bg-red-600', description: '' }
+      : getNextAction();
 
     if (!localStorage.getItem(BIOMETRIC_CONSENT_KEY)) {
       setShowBiometricConsent(true);
@@ -540,8 +571,26 @@ const Ponto: React.FC = () => {
       return;
     }
 
-    // ── Validação de almoço (regra de negócio, não hardware — mantida) ──────
-    if (nextAction.type === 'lunch_end') {
+    // Regra CLT para turno especial sem almoço
+    if (forceExit) {
+      const entryEntry = history.find(e => e.type === 'entry');
+      const workedMin = entryEntry?.timestamp
+        ? (Date.now() - entryEntry.timestamp.toDate().getTime()) / 60000
+        : 0;
+      if (workedMin >= 360) {
+        setErrorMessage('Jornada acima de 6h — intervalo de almoço é obrigatório por lei (CLT Art. 71). Registre o almoço antes de encerrar.');
+        setTimeout(() => setErrorMessage(''), 6000);
+        return;
+      }
+      if (workedMin >= 240) {
+        setErrorMessage('Jornada entre 4h e 6h — pausa de 15 min obrigatória por lei. Registre a pausa antes de encerrar.');
+        setTimeout(() => setErrorMessage(''), 6000);
+        return;
+      }
+    }
+
+    // Validação de almoço mínimo (apenas no fluxo normal, não no turno especial)
+    if (!forceExit && nextAction.type === 'lunch_end') {
       const check = validateLunchMinTime();
       if (!check.valid) {
         setErrorMessage(`Almoço mínimo de 1h não cumprido. Retorne em ${check.remaining}.`);
@@ -726,11 +775,23 @@ const Ponto: React.FC = () => {
   // ─── Computed ─────────────────────────────────────────────────────────────
   const nextAction = getNextAction();
   const isLunchBlocked = lunchCountdown !== null && nextAction.type === 'lunch_end';
+  // Expediente encerrado = último registro do dia foi uma saída (history já é filtrado para hoje)
+  const isDayComplete = lastEntry?.type === 'exit';
+
+  // Regra CLT para "Encerrar Turno Especial" — só disponível quando lastEntry é 'entry'
+  const entryForSpecial = lastEntry?.type === 'entry' ? lastEntry : null;
+  const workedMinutesSpecial = entryForSpecial?.timestamp
+    ? (currentTime.getTime() - entryForSpecial.timestamp.toDate().getTime()) / 60000
+    : 0;
+  const specialExitCLT: 'free' | 'warn_15' | 'blocked' =
+    workedMinutesSpecial < 240 ? 'free' : workedMinutesSpecial < 360 ? 'warn_15' : 'blocked';
+  const showSpecialExit = !!entryForSpecial && !isDayComplete;
   const isBlocked =
     processing ||
     !!successMessage ||
     !!errorMessage ||
     isLunchBlocked ||
+    isDayComplete ||
     showBiometricConsent;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -838,6 +899,14 @@ const Ponto: React.FC = () => {
             {/* Botão de ação */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
 
+              {isDayComplete && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center mb-4">
+                  <div className="text-2xl mb-1">✅</div>
+                  <div className="text-sm font-bold text-green-700">Expediente encerrado!</div>
+                  <div className="text-xs text-green-600 mt-1">Novo registro disponível amanhã.</div>
+                </div>
+              )}
+
               {isLunchBlocked && (
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center mb-4">
                   <div className="text-[10px] text-orange-600 font-bold uppercase tracking-wider mb-2">
@@ -875,7 +944,7 @@ const Ponto: React.FC = () => {
                 </div>
               )}
 
-              <button onClick={handleRegister} disabled={isBlocked}
+              <button onClick={() => handleRegister()} disabled={isBlocked}
                 className={`w-full py-4 rounded-xl font-bold text-lg text-white shadow-lg flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${nextAction.colorClass}`}>
                 {processing
                   ? <Loader2 className="animate-spin" />
@@ -889,6 +958,42 @@ const Ponto: React.FC = () => {
                 }
               </button>
               <p className="text-center text-xs text-gray-500 mt-2">{nextAction.description}</p>
+
+              {/* Encerrar Turno Especial — apenas quando lastEntry é 'entry' (sem almoço ainda) */}
+              {showSpecialExit && (
+                <div className="mt-4 border-t border-dashed border-gray-200 pt-4 space-y-2">
+                  {specialExitCLT === 'warn_15' && (
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                      <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-amber-700 leading-snug">
+                        <strong>Jornada entre 4h e 6h</strong> — pausa de 15 min obrigatória por lei. Use o botão "Iniciar Almoço" acima para registrar a pausa.
+                      </p>
+                    </div>
+                  )}
+                  {specialExitCLT === 'blocked' && (
+                    <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                      <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-red-700 leading-snug">
+                        <strong>Jornada acima de 6h</strong> — intervalo de almoço obrigatório por lei (CLT Art. 71). Registre o almoço antes de encerrar.
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleRegister(true)}
+                    disabled={processing || !!successMessage || specialExitCLT !== 'free'}
+                    className={`w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed border-2
+                      ${specialExitCLT !== 'free'
+                        ? 'text-gray-400 border-gray-200 bg-gray-50 cursor-not-allowed'
+                        : 'text-red-700 border-red-200 bg-red-50 hover:bg-red-100'}`}
+                  >
+                    <LogOut size={16} />
+                    Encerrar Turno Especial
+                  </button>
+                  <p className="text-center text-[11px] text-gray-400 mt-1 leading-snug">
+                    Utilize para encerrar turnos de meio período em que não foi realizado almoço ou pausa, independente do horário.
+                  </p>
+                </div>
+              )}
             </div>
 
             {lastEntry && (

@@ -263,7 +263,7 @@ const OSViewModal: React.FC<OSViewModalProps> = ({ taskId, onClose }) => {
                     <Edit2 size={16} />
                   </button>
                   <button
-                    onClick={() => navigate(`/app/os/${taskId}/print`)}
+                    onClick={() => window.open(`/#/app/os/${taskId}/print`, '_blank')}
                     className="p-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 transition-colors"
                     title="Imprimir O.S."
                   >
@@ -375,6 +375,127 @@ const OSViewModal: React.FC<OSViewModalProps> = ({ taskId, onClose }) => {
                     <span key={f} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs">{f}</span>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Relatório de Execução — dados registrados pelo app de campo */}
+            {((task as any).fotosIniciais?.length > 0
+              || (task as any).fotosFinais?.length > 0
+              || (task as any).relatorioFinal
+              || tarefasOS.some((t: any) => t.fotosApp?.length > 0 || t.observacaoApp)
+            ) && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Camera size={13} /> Relatório de Execução (App)
+                </h3>
+
+                {/* Helper inline para renderizar mídia (foto ou vídeo) */}
+                {(() => {
+                  const isVid = (url: string) => /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/i.test(url);
+                  const MediaThumb = ({ url, size = 'md' }: { url: string; size?: 'sm' | 'md' }) => {
+                    const cls = size === 'sm'
+                      ? 'w-16 h-16 object-cover rounded-lg border border-gray-200 hover:opacity-80 transition-opacity'
+                      : 'w-20 h-20 object-cover rounded-lg border border-gray-200 hover:opacity-80 transition-opacity';
+                    return (
+                      <a href={url} target="_blank" rel="noreferrer" className="relative block">
+                        {isVid(url)
+                          ? <video src={url} className={cls} muted playsInline />
+                          : <img src={url} alt="" className={cls} />
+                        }
+                        {isVid(url) && (
+                          <span className="absolute top-1 left-1 bg-black/60 text-white text-[8px] font-bold px-1 rounded">▶</span>
+                        )}
+                      </a>
+                    );
+                  };
+
+                  return (
+                    <>
+                      {/* Mídias iniciais do local/equipamento */}
+                      {(task as any).fotosIniciais?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-2">Mídias iniciais do local</p>
+                          <div className="flex flex-wrap gap-2">
+                            {(task as any).fotosIniciais.map((url: string, i: number) => (
+                              <MediaThumb key={i} url={url} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Evidências por tarefa (fotosApp + observacaoApp) */}
+                      {tarefasOS.some((t: any) => t.fotosApp?.length > 0 || t.observacaoApp) && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-2">Evidências por tarefa</p>
+                          <div className="space-y-3">
+                            {tarefasOS.map((t: any) => {
+                              if (!t.fotosApp?.length && !t.observacaoApp) return null;
+                              return (
+                                <div key={t.id} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                                  <div className="flex items-start gap-2">
+                                    <span className={`mt-0.5 text-xs font-bold px-1.5 py-0.5 rounded ${
+                                      t.status === 'concluida'     ? 'bg-emerald-100 text-emerald-700' :
+                                      t.status === 'nao_executada' ? 'bg-orange-100 text-orange-700'  :
+                                                                     'bg-gray-100 text-gray-600'
+                                    }`}>
+                                      {t.status === 'concluida' ? '✓' : t.status === 'nao_executada' ? '✗' : '○'}
+                                    </span>
+                                    <p className="text-sm text-gray-700 leading-snug">{t.descricao}</p>
+                                  </div>
+                                  {t.observacaoApp && (
+                                    <p className="text-xs text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-2 leading-snug">
+                                      {t.observacaoApp}
+                                    </p>
+                                  )}
+                                  {t.fotosApp?.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {t.fotosApp.map((url: string, i: number) => (
+                                        <MediaThumb key={i} url={url} size="sm" />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Mídias finais */}
+                      {(task as any).fotosFinais?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-2">Mídias de finalização</p>
+                          <div className="flex flex-wrap gap-2">
+                            {(task as any).fotosFinais.map((url: string, i: number) => (
+                              <MediaThumb key={i} url={url} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* Pendência e Recomendação */}
+                {(task as any).relatorioFinal && (
+                  <div className="space-y-2">
+                    {(task as any).relatorioFinal.pendencia && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5">
+                        <p className="text-xs font-bold text-orange-700 mb-1">Pendência registrada</p>
+                        <p className="text-sm text-orange-800">{(task as any).relatorioFinal.pendencia}</p>
+                      </div>
+                    )}
+                    {(task as any).relatorioFinal.recomendacao && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5">
+                        <p className="text-xs font-bold text-blue-700 mb-1">Recomendação ao proprietário</p>
+                        <p className="text-sm text-blue-800">{(task as any).relatorioFinal.recomendacao}</p>
+                      </div>
+                    )}
+                    {!(task as any).relatorioFinal.pendencia && !(task as any).relatorioFinal.recomendacao && (
+                      <p className="text-xs text-gray-400">Sem pendências ou recomendações registradas.</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

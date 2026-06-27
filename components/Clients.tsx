@@ -603,7 +603,14 @@ const Clients: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h3 className="font-bold text-gray-900">{client.name}</h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-bold text-gray-900">{client.name}</h3>
+                          {(client as any).dadosIncompletos && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-200">
+                              ⚠ Dados incompletos
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 flex-wrap mt-0.5">
                           {client.document && <span className="text-xs text-gray-400 font-mono">{client.document}</span>}
                           {client.segment && (
