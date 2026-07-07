@@ -163,6 +163,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
   const [gateStep, setGateStep] = useState<'escolha' | 'chat'>('chat');
   const [tarefaSelId, setTarefaSelId] = useState('');
   const [kbSalvas, setKbSalvas] = useState<Set<string>>(new Set());
+  const [erroEnvio, setErroEnvio] = useState('');
 
   const tarefasOS = task.tarefasOS || [];
   const tarefaSelDescricao = tarefasOS.find(t => t.id === tarefaSelId)?.descricao;
@@ -296,8 +297,8 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
   const enviarMensagem = async () => {
     if (!texto.trim() || !currentUser || sending) return;
     setSending(true);
+    setErroEnvio('');
     const txt = texto.trim();
-    setTexto('');
     try {
       await addDoc(collection(db, CollectionName.OS_SUPORTE_MSGS), {
         osId,
@@ -305,8 +306,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
         osTitulo: task.title || '',
         clienteNome: (task as any).clientName || '',
         projectId: (task as any).projectId || '',
-        tarefaId: tarefaSelId || undefined,
-        tarefaDescricao: tarefaSelDescricao || undefined,
+        ...(tarefaSelId ? { tarefaId: tarefaSelId, tarefaDescricao: tarefaSelDescricao || '' } : {}),
         tipoServico: task.tipoServico || '',
         texto: txt,
         autorId: currentUser.uid,
@@ -316,6 +316,8 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
         leitoPorGestor: isGestor,
         leitoPorTecnico: !isGestor,
       } as Omit<OSSuporteMsg, 'id'>);
+
+      setTexto('');
 
       if (!isGestor) {
         const nomeTecnico = (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Técnico';
@@ -327,11 +329,14 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
           descricao: txt,
           osId, osNumero: task.code, osTitulo: task.title,
           clienteNome: (task as any).clientName,
-          meta: { tarefaId: tarefaSelId || undefined, projectId: (task as any).projectId || undefined },
+          meta: { ...(tarefaSelId ? { tarefaId: tarefaSelId } : {}), projectId: (task as any).projectId || '' },
         });
       }
 
       notificarNovaMsgSuporte(txt);
+    } catch (e) {
+      console.error('[OSSuporteChat] enviarMensagem:', e);
+      setErroEnvio('Não foi possível enviar. Verifique a conexão e tente de novo.');
     } finally {
       setSending(false);
     }
@@ -342,6 +347,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
     setUploadingFoto(true);
+    setErroEnvio('');
     try {
       const path = `os_suporte_evidencias/${osId}/${Date.now()}_${currentUser.uid}.jpg`;
       const snap = await uploadBytes(storageRef(storage, path), file);
@@ -352,8 +358,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
         osTitulo: task.title || '',
         clienteNome: (task as any).clientName || '',
         projectId: (task as any).projectId || '',
-        tarefaId: tarefaSelId || undefined,
-        tarefaDescricao: tarefaSelDescricao || undefined,
+        ...(tarefaSelId ? { tarefaId: tarefaSelId, tarefaDescricao: tarefaSelDescricao || '' } : {}),
         tipoServico: task.tipoServico || '',
         texto: `📷 Evidência enviada`,
         autorId: currentUser.uid,
@@ -365,8 +370,12 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
         fotosURLs: [url],
       } as any);
       notificarNovaMsgSuporte('📷 enviou uma evidência');
+    } catch (err) {
+      console.error('[OSSuporteChat] handleFotoEvid:', err);
+      setErroEnvio('Não foi possível enviar a foto/vídeo. Tente de novo.');
     } finally {
       setUploadingFoto(false);
+      e.target.value = '';
     }
   };
 
@@ -393,9 +402,10 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
           await addDoc(collection(db, CollectionName.OS_SUPORTE_MSGS), {
             osId,
             osCode: task.code || task.id.slice(0, 8),
+            osTitulo: task.title || '',
+            clienteNome: (task as any).clientName || '',
             projectId: (task as any).projectId || '',
-            tarefaId: tarefaSelId || undefined,
-            tarefaDescricao: tarefaSelDescricao || undefined,
+            ...(tarefaSelId ? { tarefaId: tarefaSelId, tarefaDescricao: tarefaSelDescricao || '' } : {}),
             tipoServico: task.tipoServico || '',
             texto: `🎙️ Áudio enviado`,
             autorId: currentUser.uid,
@@ -407,7 +417,10 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
             audioURL: audioUrl,
           } as any);
           notificarNovaMsgSuporte('🎙️ enviou um áudio');
-        } catch { /* best-effort */ }
+        } catch (err) {
+          console.error('[OSSuporteChat] toggleGravacao:', err);
+          setErroEnvio('Não foi possível enviar o áudio. Tente de novo.');
+        }
       };
       rec.start();
       mediaRef.current = rec;
@@ -500,15 +513,22 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
           <>
             {/* Chip com o contexto da dúvida atual (só técnico) */}
             {!isGestor && (
-              <div className={`px-4 py-2 border-b flex items-center justify-between ${theme.inputArea}`}>
-                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${theme.chip}`}>
+              <div className={`px-4 py-2 border-b flex items-center justify-between gap-2 ${theme.inputArea}`}>
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 truncate ${theme.chip}`}>
                   {tarefaSelDescricao ? <><ClipboardList size={11} /> {tarefaSelDescricao}</> : <><Headphones size={11} /> Dúvida geral da O.S.</>}
                 </span>
-                {tarefasOS.length > 0 && (
-                  <button onClick={() => setGateStep('escolha')} className="text-[10px] text-purple-500 underline">
-                    trocar
-                  </button>
-                )}
+                <button
+                  onClick={() => setGateStep('escolha')}
+                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-bold text-purple-500 border border-purple-300 rounded-full px-2.5 py-1 hover:bg-purple-50"
+                >
+                  <X size={11} /> Encerrar Suporte
+                </button>
+              </div>
+            )}
+
+            {erroEnvio && (
+              <div className="px-4 py-2 bg-red-50 border-b border-red-200">
+                <p className="text-xs text-red-600 font-semibold">{erroEnvio}</p>
               </div>
             )}
 
