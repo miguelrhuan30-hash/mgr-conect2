@@ -174,7 +174,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
   const fotoRef   = useRef<HTMLInputElement>(null);
   const gestoresRef = useRef<string[] | null>(null);
 
-  const isGestor = ['admin', 'gestor', 'manager'].includes(userProfile?.role || '');
+  const isGestor = ['admin', 'gestor', 'manager', 'developer'].includes(userProfile?.role || '');
 
   // ── Subscribe to messages ─────────────────────────────────────────────────
   useEffect(() => {
@@ -233,7 +233,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
     const ids = snap.docs
       .filter(d => {
         const u: any = d.data();
-        return ['admin', 'gestor', 'manager'].includes(u.role || '') || u.permissions?.canViewFeed === true;
+        return ['admin', 'gestor', 'manager', 'developer'].includes(u.role || '') || u.permissions?.canViewFeed === true;
       })
       .map(d => d.id);
     gestoresRef.current = ids;
