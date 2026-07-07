@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, doc, getDocs, serverTimestamp, Timestamp,
+  addDoc, updateDoc, setDoc, doc, getDocs, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -200,14 +200,13 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
   }, [osId, isGestor]);
 
   // ── Gate: técnico escolhe tarefa específica ou dúvida geral ANTES de poder
-  // compor mensagem. Só aparece numa conversa nova (sem histórico ainda) e só
-  // se a O.S. tiver tarefas pra escolher — senão vai direto pra "geral". ────
+  // compor mensagem — toda vez que abre o Suporte, não só na primeira vez.
+  // Só pula direto pro chat se a O.S. não tiver tarefas pra escolher. ────
   useEffect(() => {
-    if (isGestor || !msgsCarregadas) return;
-    if (msgs.length > 0) { setGateStep('chat'); return; }
+    if (isGestor) return;
     setGateStep(tarefasOS.length > 0 ? 'escolha' : 'chat');
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [msgsCarregadas, msgs.length, isGestor]);
+  }, [isGestor]);
 
   // Auto-scroll
   useEffect(() => {
@@ -294,6 +293,27 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
     }
   };
 
+  // ── Gestor marca a dúvida como resolvida manualmente — some da aba
+  // "Abertas" do Suporte mesmo que a O.S. continue em andamento. Se o
+  // técnico escrever de novo depois, a Cloud Function reabre automaticamente. ──
+  const [encerrando, setEncerrando] = useState(false);
+  const encerrarDuvida = async () => {
+    if (!isGestor || encerrando) return;
+    if (!confirm('Marcar esta dúvida como resolvida? Ela sai da lista de conversas abertas.')) return;
+    setEncerrando(true);
+    try {
+      await setDoc(doc(db, CollectionName.OS_SUPORTE_THREADS, osId), {
+        archived: true,
+        archivedEm: Timestamp.now(),
+      }, { merge: true });
+      onClose();
+    } catch {
+      alert('Erro ao marcar como resolvida. Tente de novo.');
+    } finally {
+      setEncerrando(false);
+    }
+  };
+
   const enviarMensagem = async () => {
     if (!texto.trim() || !currentUser || sending) return;
     setSending(true);
@@ -312,7 +332,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
         autorId: currentUser.uid,
         autorNome: userProfile?.displayName || currentUser.email || 'Usuário',
         autorRole: userProfile?.role || 'technician',
-        criadaEm: serverTimestamp(),
+        criadaEm: Timestamp.now(),
         leitoPorGestor: isGestor,
         leitoPorTecnico: !isGestor,
       } as Omit<OSSuporteMsg, 'id'>);
@@ -364,7 +384,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
         autorId: currentUser.uid,
         autorNome: userProfile?.displayName || currentUser.email || 'Usuário',
         autorRole: userProfile?.role || 'technician',
-        criadaEm: serverTimestamp(),
+        criadaEm: Timestamp.now(),
         leitoPorGestor: isGestor,
         leitoPorTecnico: !isGestor,
         fotosURLs: [url],
@@ -411,7 +431,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
             autorId: currentUser.uid,
             autorNome: userProfile?.displayName || currentUser.email || 'Usuário',
             autorRole: userProfile?.role || 'technician',
-            criadaEm: serverTimestamp(),
+            criadaEm: Timestamp.now(),
             leitoPorGestor: isGestor,
             leitoPorTecnico: !isGestor,
             audioURL: audioUrl,
@@ -471,6 +491,17 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
             <p className={`text-sm font-bold ${theme.title}`}>Suporte</p>
             <p className={`text-[10px] truncate ${theme.subtitle}`}>O.S.: {task.code || task.id.slice(0, 8)} — {task.title}</p>
           </div>
+          {isGestor && (
+            <button
+              onClick={encerrarDuvida}
+              disabled={encerrando}
+              className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 border border-emerald-300 rounded-full px-2.5 py-1 hover:bg-emerald-50 disabled:opacity-50 flex-shrink-0"
+              title="Marcar como resolvida — some da lista de conversas abertas"
+            >
+              {encerrando ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+              Resolvida
+            </button>
+          )}
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100/20">
             <X size={18} />
           </button>

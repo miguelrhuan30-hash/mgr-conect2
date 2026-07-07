@@ -299,7 +299,7 @@ const Layout: React.FC = () => {
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
     { to: '/app/feed', icon: Activity, label: 'Feed de Atividades', visible: can('canManageProjects') || ['admin','gestor','manager'].includes(userProfile?.role || '') },
-    { to: '/app/suporte', icon: Headphones, label: 'Suporte', visible: can('canManageProjects') || ['admin','gestor','manager'].includes(userProfile?.role || '') },
+    { to: '/app/suporte', icon: Headphones, label: 'Suporte', visible: isGestorLayout },
 
     // ── Flow de Atendimento — Ciclo de Vida (grupo com submenu) ──
     {

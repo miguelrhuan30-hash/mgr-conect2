@@ -90,8 +90,10 @@ service cloud.firestore {
 
     // ── Usuários ──────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isAuthenticated()
-        && (isOwner(userId) || isManager());
+      // Leitura ampla: técnico precisa listar gestores pra notificar dúvidas
+      // de Suporte, reatribuição de O.S. e outros fluxos internos já
+      // existentes precisam ler outros perfis além do próprio.
+      allow read: if isAuthenticated();
       allow write: if isAuthenticated()
         && (isOwner(userId) || isAdmin());
     }
