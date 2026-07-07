@@ -20,7 +20,7 @@ interface Props {
   tarefa: TarefaComEvidencia;
   taskId: string;
   uid: string;
-  onSalvar: (tarefaAtualizada: TarefaComEvidencia) => Promise<void>;
+  onSalvar: (tarefaAtualizada: TarefaComEvidencia, fotosApagadas: string[]) => Promise<void>;
   onCancelar: () => void;
 }
 
@@ -30,8 +30,10 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
   const [uploading, setUploading]   = useState(false);
   const [progresso, setProgresso]   = useState('');
   const [erro, setErro]             = useState('');
+  const [fotosParaApagar, setFotosParaApagar] = useState<Set<string>>(new Set());
   const cameraRef  = useRef<HTMLInputElement>(null);
   const galeriaRef = useRef<HTMLInputElement>(null);
+  const videoRef   = useRef<HTMLInputElement>(null);
 
   const addFiles = (fileList: FileList | null) => {
     if (!fileList?.length) return;
@@ -43,9 +45,12 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
 
   const remover = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
 
+  const jaExecutada = tarefa.status !== 'pendente';
+
   const salvar = async (novoStatus: 'concluida' | 'nao_executada') => {
     setErro('');
-    const jaTemMidia = (tarefa.fotos ?? []).length > 0;
+    const apagadas = Array.from(fotosParaApagar);
+    const jaTemMidia = (tarefa.fotos ?? []).filter(u => !fotosParaApagar.has(u)).length > 0;
     if (novoStatus === 'concluida' && items.length === 0 && !jaTemMidia) {
       setErro('Adicione pelo menos 1 foto ou vídeo como evidência da conclusão.'); return;
     }
@@ -54,7 +59,7 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
     }
     setUploading(true);
     try {
-      let midiaURLs: string[] = tarefa.fotos ?? [];
+      let midiaURLs: string[] = (tarefa.fotos ?? []).filter(u => !fotosParaApagar.has(u));
       if (items.length > 0) {
         const ts = Date.now();
         const novas = await uploadMedia(
@@ -64,7 +69,29 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
         );
         midiaURLs = [...midiaURLs, ...novas];
       }
-      await onSalvar({ ...tarefa, status: novoStatus, fotos: midiaURLs, observacao: observacao.trim() });
+      await onSalvar({ ...tarefa, status: novoStatus, fotos: midiaURLs, observacao: observacao.trim() }, apagadas);
+    } catch {
+      setErro('Erro ao salvar. Tente novamente.');
+      setUploading(false);
+    }
+  };
+
+  const salvarEdicao = async () => {
+    setErro('');
+    setUploading(true);
+    try {
+      const apagadas = Array.from(fotosParaApagar);
+      let midiaURLs = (tarefa.fotos ?? []).filter(u => !fotosParaApagar.has(u));
+      if (items.length > 0) {
+        const ts = Date.now();
+        const novas = await uploadMedia(
+          items.map(m => m.file),
+          (i, ext) => `os_evidencias/${taskId}/tarefas/${tarefa.id}_${ts}_${i}.${ext}`,
+          (done, total) => setProgresso(`${done}/${total}`),
+        );
+        midiaURLs = [...midiaURLs, ...novas];
+      }
+      await onSalvar({ ...tarefa, fotos: midiaURLs, observacao: observacao.trim() }, apagadas);
     } catch {
       setErro('Erro ao salvar. Tente novamente.');
       setUploading(false);
@@ -81,7 +108,7 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
           <ArrowLeft size={20} className="text-gray-400" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Executar Tarefa</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">{jaExecutada ? 'Editar Tarefa' : 'Executar Tarefa'}</p>
           <h2 className="text-sm font-bold text-white leading-snug line-clamp-2">{tarefa.descricao}</h2>
         </div>
       </div>
@@ -89,26 +116,41 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
 
         {/* Mídias já salvas */}
-        {fotasSalvas.length > 0 && (
+        {fotasSalvas.filter(u => !fotosParaApagar.has(u)).length > 0 && (
           <div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Evidências salvas</p>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
+              Evidências salvas {fotosParaApagar.size > 0 && <span className="text-red-400">({fotosParaApagar.size} para apagar)</span>}
+            </p>
             <div className="grid grid-cols-3 gap-2">
-              {fotasSalvas.map((url, i) => (
-                <div key={`s${i}`} className="relative aspect-square rounded-xl overflow-hidden bg-gray-800 border border-emerald-600/30">
-                  {isVideoUrl(url)
-                    ? <video src={url} className="w-full h-full object-cover" muted playsInline />
-                    : <img src={url} alt="" className="w-full h-full object-cover" />
-                  }
-                  {isVideoUrl(url) && (
-                    <div className="absolute top-1 left-1 bg-black/60 rounded-full p-0.5">
-                      <Video size={10} className="text-white" />
-                    </div>
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 bg-emerald-700/80 text-center py-0.5">
-                    <span className="text-[9px] text-white font-bold">SALVA</span>
+              {fotasSalvas.map((url, i) => {
+                const paraApagar = fotosParaApagar.has(url);
+                return (
+                  <div key={`s${i}`} className={`relative aspect-square rounded-xl overflow-hidden bg-gray-800 border ${paraApagar ? 'border-red-500/60 opacity-50' : 'border-emerald-600/30'}`}>
+                    {isVideoUrl(url)
+                      ? <video src={url} className="w-full h-full object-cover" muted playsInline />
+                      : <img src={url} alt="" className="w-full h-full object-cover" />
+                    }
+                    {isVideoUrl(url) && !paraApagar && (
+                      <div className="absolute top-1 left-1 bg-black/60 rounded-full p-0.5">
+                        <Video size={10} className="text-white" />
+                      </div>
+                    )}
+                    {paraApagar && (
+                      <div className="absolute inset-0 bg-red-900/50 flex items-center justify-center">
+                        <span className="text-[9px] text-red-300 font-bold">APAGAR</span>
+                      </div>
+                    )}
+                    {!uploading && (
+                      <button
+                        onClick={() => setFotosParaApagar(prev => { const n = new Set(prev); n.has(url) ? n.delete(url) : n.add(url); return n; })}
+                        className={`absolute top-1 right-1 rounded-full p-1 ${paraApagar ? 'bg-red-500/80' : 'bg-black/60'}`}
+                      >
+                        <X size={12} className="text-white" />
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -159,11 +201,21 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
               <Image size={18} className="text-blue-400" />
               <span className="text-xs text-gray-400">Galeria / Vídeo</span>
             </button>
+            <button
+              onClick={() => videoRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-700 bg-gray-800/50 active:bg-gray-800 disabled:opacity-50 col-span-2"
+            >
+              <Video size={18} className="text-red-400" />
+              <span className="text-xs text-gray-400">Gravar Vídeo</span>
+            </button>
           </div>
 
           <input ref={cameraRef}  type="file" accept="image/*" capture="environment" className="hidden"
             onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
           <input ref={galeriaRef} type="file" accept="image/*,video/*" multiple className="hidden"
+            onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+          <input ref={videoRef} type="file" accept="video/*" capture="environment" className="hidden"
             onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
         </div>
 
@@ -192,22 +244,32 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
             <Loader2 size={16} className="animate-spin" /> Enviando {progresso}...
           </div>
         )}
-        <div className="grid grid-cols-2 gap-2.5">
+        {jaExecutada ? (
           <button
-            onClick={() => salvar('nao_executada')}
+            onClick={salvarEdicao}
             disabled={uploading}
-            className="flex items-center justify-center gap-1.5 py-3.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-2xl font-bold text-sm disabled:opacity-50 active:bg-orange-500/20"
+            className="w-full flex items-center justify-center gap-2 py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-sm disabled:opacity-50 active:bg-blue-700"
           >
-            <XCircle size={16} /> Não Executada
+            <CheckCircle2 size={16} /> Salvar alterações
           </button>
-          <button
-            onClick={() => salvar('concluida')}
-            disabled={uploading}
-            className="flex items-center justify-center gap-1.5 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-sm disabled:opacity-50 active:bg-emerald-700"
-          >
-            <CheckCircle2 size={16} /> Concluída
-          </button>
-        </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              onClick={() => salvar('nao_executada')}
+              disabled={uploading}
+              className="flex items-center justify-center gap-1.5 py-3.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-2xl font-bold text-sm disabled:opacity-50 active:bg-orange-500/20"
+            >
+              <XCircle size={16} /> Não Executada
+            </button>
+            <button
+              onClick={() => salvar('concluida')}
+              disabled={uploading}
+              className="flex items-center justify-center gap-1.5 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-sm disabled:opacity-50 active:bg-emerald-700"
+            >
+              <CheckCircle2 size={16} /> Concluída
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

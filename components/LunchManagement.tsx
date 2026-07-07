@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 import * as XLSX from 'xlsx';
+import { notificarVarios } from '../services/notificationService';
 
 /* ════════════════════════════════════════════════════════════════
    HELPERS
@@ -262,6 +263,20 @@ const LunchManagement: React.FC = () => {
         criadoPorNome: userProfile.displayName,
         criadoEm: Timestamp.now(),
       });
+
+      // Notifica toda a equipe: novo cardápio do dia liberado (som + em tela)
+      getDocs(collection(db, CollectionName.USERS)).then(snap => {
+        const uids = snap.docs.map(d => d.id).filter(uid => uid !== currentUser.uid);
+        notificarVarios(uids, {
+          tipo: 'almoco_novo_cardapio',
+          canal: 'almoco',
+          titulo: '🍽️ Cardápio de hoje liberado!',
+          corpo: 'O cardápio do dia já está disponível. Faça seu pedido de almoço.',
+          som: true,
+          rota: '/campo/almoco',
+        });
+      }).catch(() => {});
+
       setShowForm(false);
       setMisturasTags([]);
       setGuarnicoesTags([]);

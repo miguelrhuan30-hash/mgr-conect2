@@ -506,6 +506,19 @@ export default function FieldAlmoco() {
                 )
               }
             </div>
+          ) : isDayLocked(todayKey) ? (
+            <div className="flex flex-col items-center text-center gap-3 py-6">
+              <div className="w-14 h-14 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center">
+                <Clock size={24} className="text-red-400" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-red-300">Pedidos encerrados</p>
+                <p className="text-xs text-gray-500 mt-1 max-w-xs">
+                  O horário limite ({horarioLimite}) para pedir o almoço de hoje já passou.
+                  Fale com a gestão se precisar de algo.
+                </p>
+              </div>
+            </div>
           ) : (
             <div className="space-y-4">
               {renderDayForm(todayKey)}

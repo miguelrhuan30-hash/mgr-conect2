@@ -6,6 +6,7 @@ import { auth, db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { PermissionSet, CollectionName } from '../types';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { useNotificacoes } from '../src/hooks/useNotificacoes';
 import { 
   LayoutDashboard, 
   Clock, 
@@ -76,12 +77,16 @@ const Layout: React.FC = () => {
   // Sprint 46 — expandable submenu
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
+  // Ouve a Central de Notificações globalmente (som + badge no ícone do app),
+  // igual ao FieldApp já faz via FieldNotificacoes — antes o gestor no web
+  // não tinha nenhum alerta sonoro/visual pra notificações em tempo real.
+  useNotificacoes();
+
   useEffect(() => {
     if (!isGestorLayout || !currentUser) return;
     const q = query(
       collection(db, CollectionName.OS_SUPORTE_MSGS),
       where('leitoPorGestor', '==', false),
-      where('solicitouHumano', '==', true),
     );
     return onSnapshot(q, snap => setSuporteNaoLidos(snap.size));
   }, [isGestorLayout, currentUser]);
@@ -294,6 +299,7 @@ const Layout: React.FC = () => {
     { to: '/app/ponto', icon: Clock, label: 'Registrar Ponto', visible: can('canRegisterAttendance') },
     { to: '/app/estoque', icon: Package, label: 'Almoxarifado', visible: can('canViewInventory') },
     { to: '/app/feed', icon: Activity, label: 'Feed de Atividades', visible: can('canManageProjects') || ['admin','gestor','manager'].includes(userProfile?.role || '') },
+    { to: '/app/suporte', icon: Headphones, label: 'Suporte', visible: can('canManageProjects') || ['admin','gestor','manager'].includes(userProfile?.role || '') },
 
     // ── Flow de Atendimento — Ciclo de Vida (grupo com submenu) ──
     {
@@ -324,6 +330,8 @@ const Layout: React.FC = () => {
         { to: '/app/inteligencia', icon: Brain,     label: 'Inteligência MGR 🧠',
           visible: can('canViewIntel') || ['admin','developer','intel_admin','intel_analyst','intel_viewer'].includes(userProfile?.role || '') },
         { to: '/app/bi',           icon: BarChart3, label: 'BI / Dashboard',
+          visible: can('canViewBI') || can('canManageSettings') },
+        { to: '/app/tracker-colaborador', icon: Car, label: 'Tracker do Colaborador',
           visible: can('canViewBI') || can('canManageSettings') },
       ],
     },
@@ -369,6 +377,7 @@ const Layout: React.FC = () => {
       children: [
         { to: '/app/veiculos',        icon: Car,      label: 'Abertura de Veículo',          visible: can('canRegisterAttendance') },
         { to: '/app/veiculos',        icon: Car,      label: 'Controle de Veículos', visible: can('canViewVehicles') || can('canViewAttendanceReports') },
+        { to: '/app/veiculos/frota',  icon: Car,      label: 'Frota (cadastro)',     visible: can('canViewVehicles') || can('canManageSettings') },
         { to: '/app/veiculos/config', icon: Settings, label: 'Config. Veículos',     visible: can('canManageSettings') },
       ],
     },
@@ -453,12 +462,12 @@ const Layout: React.FC = () => {
         {/* 🔔 AlertasCentral — Sprint 17 */}
         {isGestorLayout && <AlertasCentral />}
 
-        {/* Sprint 46A — Suporte Primário badge para gestores */}
+        {/* Badge de Suporte — dúvidas de técnicos aguardando resposta */}
         {isGestorLayout && suporteNaoLidos > 0 && (
           <button
-            onClick={() => navigate('/app/pipeline')}
+            onClick={() => navigate('/app/suporte')}
             className="relative p-2 bg-purple-600 text-white rounded-xl flex items-center gap-1.5 text-xs font-bold shadow animate-pulse"
-            title="Técnico solicitando suporte"
+            title="Dúvidas de suporte aguardando resposta"
           >
             <Headphones size={16} />
             <span className="bg-red-500 text-white text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">

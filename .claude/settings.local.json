@@ -24,7 +24,8 @@
       "Read(//tmp/**)",
       "Bash(wait b3w1fcz4t *)",
       "Bash(firebase deploy *)",
-      "Bash(node -e \"const p=require\\('./package.json'\\); const d={...p.dependencies,...p.devDependencies}; console.log\\(Object.keys\\(d\\).filter\\(k=>/pdf|react-pdf|pspdf|worker/i.test\\(k\\)\\).map\\(k=>k+'@'+d[k]\\).join\\('\\\\n'\\)||'NO PDF LIB'\\); console.log\\('--- react:', d.react, 'vite:', d.vite\\);\")"
+      "Bash(node -e \"const p=require\\('./package.json'\\); const d={...p.dependencies,...p.devDependencies}; console.log\\(Object.keys\\(d\\).filter\\(k=>/pdf|react-pdf|pspdf|worker/i.test\\(k\\)\\).map\\(k=>k+'@'+d[k]\\).join\\('\\\\n'\\)||'NO PDF LIB'\\); console.log\\('--- react:', d.react, 'vite:', d.vite\\);\")",
+      "Bash(tail -n 10 \"/c/Users/Cliente/AppData/Local/Temp/claude/C--Users-Cliente-Desktop-mgr-conect2/aa93fd3b-3885-4823-b052-63dcfb695a1c/tasks/b9kqri3gq.output\" 2>&1)"
     ]
   }
 }

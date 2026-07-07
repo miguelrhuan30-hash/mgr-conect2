@@ -28,6 +28,8 @@ try {
 } catch { /* storage not configured */ }
 import { useProject } from '../hooks/useProject';
 import { useProjectOS } from '../hooks/useProjectOS';
+import ProjectTaskBacklog from './ProjectTaskBacklog';
+import ProjectConversas from './ProjectConversas';
 import ProjectPrancheta from './ProjectPrancheta';
 import ProjectCotacao from './ProjectCotacao';
 import ProjectContrato from './ProjectContrato';
@@ -242,6 +244,8 @@ const ProjectDetail: React.FC = () => {
   const fromFlow = searchParams.get('from') === 'flow';
   const backPath = fromFlow ? '/app/flow-atendimento' : '/app/projetos-v2';
   const { ordens, stats: osStats, vincularOS, desvincularOS } = useProjectOS(projectId ?? '');
+  // Mapa id -> numeroOS, usado para exibir a origem dos documentos vindos de uma O.S.
+  const ordensPorId = useMemo(() => new Map(ordens.map(t => [t.id, t.numeroOS ?? t.title])), [ordens]);
   const [activeTab, setActiveTab] = useState<TabKey>('cotacao');
   // Modal não aprovado
   const [showNaoAprovado, setShowNaoAprovado] = useState(false);
@@ -255,6 +259,7 @@ const ProjectDetail: React.FC = () => {
   // Documentos do projeto
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [soDocsDeOS, setSoDocsDeOS] = useState(false);
   // Checklist de fases expandida
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
 
@@ -528,24 +533,44 @@ const ProjectDetail: React.FC = () => {
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
             <FolderOpen size={13} /> Documentos ({documents.length})
           </h3>
-          <label className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold cursor-pointer hover:bg-gray-200">
-            {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-            Upload
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadDoc(f); e.target.value = ''; }} className="hidden" />
-          </label>
+          <div className="flex items-center gap-2">
+            {documents.some(d => d.origemOsId) && (
+              <button
+                onClick={() => setSoDocsDeOS(v => !v)}
+                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-colors ${
+                  soDocsDeOS ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                Só de O.S.
+              </button>
+            )}
+            <label className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold cursor-pointer hover:bg-gray-200">
+              {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+              Upload
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadDoc(f); e.target.value = ''; }} className="hidden" />
+            </label>
+          </div>
         </div>
         {documents.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-6">Nenhum documento anexado.</p>
         ) : (
           <div className="space-y-2">
-            {documents.map(d => (
-              <div key={d.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2">
-                {d.tipo === 'pdf' ? <FileText size={16} className="text-red-500" /> : <Image size={16} className="text-blue-500" />}
-                <a href={d.url} target="_blank" rel="noreferrer" className="flex-1 text-sm font-medium text-gray-700 truncate hover:text-brand-600">{d.nome}</a>
-                <span className="text-[9px] text-gray-400">{d.uploadEm ? format((d.uploadEm as any).toDate(), 'dd/MM/yy') : ''}</span>
-                <button onClick={() => handleDeleteDoc(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={12} /></button>
-              </div>
-            ))}
+            {(soDocsDeOS ? documents.filter(d => d.origemOsId) : documents).map(d => {
+              const osOrigem = d.origemOsId ? ordensPorId.get(d.origemOsId) : undefined;
+              return (
+                <div key={d.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2">
+                  {d.tipo === 'pdf' ? <FileText size={16} className="text-red-500" /> : <Image size={16} className="text-blue-500" />}
+                  <a href={d.url} target="_blank" rel="noreferrer" className="flex-1 text-sm font-medium text-gray-700 truncate hover:text-brand-600">{d.nome}</a>
+                  {d.origemOsId && (
+                    <span className="text-[9px] font-bold text-brand-600 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5 flex-shrink-0">
+                      via {osOrigem ?? 'O.S.'}
+                    </span>
+                  )}
+                  <span className="text-[9px] text-gray-400">{d.uploadEm ? format((d.uploadEm as any).toDate(), 'dd/MM/yy') : ''}</span>
+                  <button onClick={() => handleDeleteDoc(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={12} /></button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -582,6 +607,17 @@ const ProjectDetail: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Hub de Tarefas do Projeto ── */}
+      <ProjectTaskBacklog
+        projectId={projectId ?? ''}
+        projectName={project.nome}
+        clientId={(project as any).clientId}
+        clientName={project.clientName}
+      />
+
+      {/* ── Conversas do Projeto (dúvidas + suporte) ── */}
+      <ProjectConversas projectId={projectId ?? ''} />
 
       {/* ── Checklist de Fases do Flow ── */}
       {project.faseHistorico && project.faseHistorico.length > 0 && (

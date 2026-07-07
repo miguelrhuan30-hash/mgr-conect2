@@ -706,7 +706,7 @@ const Schedule: React.FC = () => {
                         className="w-full rounded-lg border-gray-300 text-sm"
                      >
                         <option value="">Sem Responsável</option>
-                        {users.map(u => (
+                        {users.filter(u => u.ativo !== false || u.uid === editFormAssignee).map(u => (
                            <option key={u.uid} value={u.uid}>{u.displayName}</option>
                         ))}
                      </select>
@@ -723,7 +723,7 @@ const Schedule: React.FC = () => {
                         <User className="w-4 h-4 mr-1 text-gray-400" /> Colaboradores Adicionais
                      </label>
                      <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                        {users.map(u => (
+                        {users.filter(u => u.ativo !== false || editFormAssignedUsers.includes(u.uid)).map(u => (
                           <label key={u.uid} className={`
                              flex items-center gap-2 px-2 py-1 rounded border text-xs cursor-pointer transition-colors
                              ${editFormAssignedUsers.includes(u.uid) ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}

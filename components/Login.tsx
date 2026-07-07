@@ -48,6 +48,8 @@ const Login: React.FC = () => {
       case 'auth/wrong-password':
       case 'auth/invalid-credential':
         return 'E-mail ou senha incorretos.';
+      case 'auth/user-disabled':
+        return 'Este acesso foi desativado. Fale com a gestão de RH se acredita que isso é um engano.';
       case 'auth/too-many-requests':
         return 'Muitas tentativas falhas. Tente novamente mais tarde.';
       default:

@@ -24,6 +24,7 @@ import { checkPontoRateLimit } from '../../src/hooks/usePontoRateLimit';
 import { fetchImageAsBase64, sanitizeUserAgent, sanitizeErrorForLog } from '../../utils/imageUtils';
 import { logEvent } from '../../utils/logger';
 import { registrarAtividade, ActivityTipo } from '../../services/activityFeedService';
+import { criarNotificacao } from '../../services/notificationService';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type ActionType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
@@ -50,6 +51,44 @@ interface LocationResult {
 }
 
 const BIOMETRIC_CONSENT_KEY = 'mgr_biometric_consent_v1';
+
+/**
+ * Cobrança de check de veículo (M3). Se o colaborador é responsável fixo
+ * por algum veículo ativo e ainda não abriu NENHUM veículo hoje, dispara
+ * notificação em tela + som pedindo o registro. Fire-and-forget.
+ */
+async function verificarChecklistVeiculo(uid: string) {
+  try {
+    const veiculosSnap = await getDocs(query(
+      collection(db, CollectionName.VEHICLES),
+      where('responsavelId', '==', uid),
+      where('ativo', '==', true),
+    ));
+    if (veiculosSnap.empty) return;
+
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const checksSnap = await getDocs(query(
+      collection(db, CollectionName.VEHICLE_CHECKS),
+      where('userId', '==', uid),
+      where('timestamp', '>=', Timestamp.fromDate(hoje)),
+    ));
+    if (!checksSnap.empty) return; // já abriu algum veículo hoje
+
+    const placas = veiculosSnap.docs.map(d => d.data().placa).join(', ');
+    criarNotificacao({
+      destinatarioId: uid,
+      tipo: 'veiculo_check_pendente',
+      canal: 'veiculo',
+      titulo: '🚗 Abertura de veículo pendente',
+      corpo: `Você é responsável pelo(s) veículo(s) ${placas} e ainda não registrou a abertura hoje.`,
+      som: true,
+      prioridade: 'alta',
+      rota: '/campo/veiculo',
+    });
+  } catch {
+    // silencioso — não deve bloquear o fluxo de ponto
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getDistanceInMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -456,7 +495,7 @@ export default function FieldPonto() {
         lunch_end:   'Retorno do almoço registrado',
         exit:        'Ponto de saída registrado',
       };
-      const displayName = userProfile?.nomeCompleto || userProfile?.displayName || currentUser.email || 'Técnico';
+      const displayName = userProfile?.nomeCompleto || userProfile?.displayName || 'Técnico';
       registrarAtividade({
         tipo:      PONTO_TIPO[effectiveType] ?? 'ponto_entrada',
         autorId:   currentUser.uid,
@@ -466,6 +505,12 @@ export default function FieldPonto() {
         lat:       locationResult.loc?.lat ?? undefined,
         lng:       locationResult.loc?.lng ?? undefined,
       });
+
+      // Cobrança de check de veículo: se o colaborador é responsável fixo por
+      // algum carro e ainda não abriu nenhum veículo hoje, cobra o registro.
+      if (effectiveType === 'entry') {
+        verificarChecklistVeiculo(currentUser.uid);
+      }
 
       // Biometria em background
       if (photoResult.photo) {

@@ -1,10 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp } from 'firebase/firestore';
-import { db } from '../firebase';
-import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus } from '../types';
+import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp, updateDoc, doc } from 'firebase/firestore';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus, BacklogTarefa, ProjectDocument, OSArquivoApoio } from '../types';
 import { gerarNumeroOS } from '../services/osService';
-import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft, MapPin, Clock, UserPlus, ExternalLink, AlertTriangle } from 'lucide-react';
+import { registrarAtividade } from '../services/activityFeedService';
+import { useAuth } from '../contexts/AuthContext';
+import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft, MapPin, Clock, UserPlus, ExternalLink, AlertTriangle, Paperclip, Video, Image as ImageIcon, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+
+function tipoArquivoFromName(nome: string): OSArquivoApoio['tipo'] {
+  const ext = nome.split('.').pop()?.toLowerCase() || '';
+  if (ext === 'pdf') return 'pdf';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return 'imagem';
+  if (['mp4', 'webm', 'mov'].includes(ext)) return 'video';
+  return 'outro';
+}
 
 interface OSCreationModalProps {
   isOpen: boolean;
@@ -14,6 +25,7 @@ interface OSCreationModalProps {
 
 const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const navigate = useNavigate();
+  const { currentUser, userProfile } = useAuth();
 
   // Form State
   const [title, setTitle] = useState('');
@@ -22,6 +34,17 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [clientId, setClientId] = useState('');
   const [projectId, setProjectId] = useState('');
   const [faturamentoPeloProjeto, setFaturamentoPeloProjeto] = useState(false);
+
+  // Hub de Tarefas do Projeto — itens do backlog disponíveis para distribuir
+  const [backlogItens, setBacklogItens] = useState<BacklogTarefa[]>([]);
+  const [backlogSelecionados, setBacklogSelecionados] = useState<Set<string>>(new Set());
+
+  // Informações Adicionais — instrução + arquivos de apoio (novos ou já do projeto)
+  const [infoTexto, setInfoTexto] = useState('');
+  const [novosArquivos, setNovosArquivos] = useState<File[]>([]);
+  const [projectDocs, setProjectDocs] = useState<ProjectDocument[]>([]);
+  const [docsSelecionados, setDocsSelecionados] = useState<Set<string>>(new Set());
+  const infoArquivoRef = useRef<HTMLInputElement>(null);
   const [assigneeId, setAssigneeId] = useState('');
   const [assignedUsers, setAssignedUsers] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
@@ -115,6 +138,52 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
       .then(snap => setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
       .catch(() => setAtivos([]));
   }, [clientId]);
+
+  // Hub de Tarefas — carrega itens do backlog do projeto (status 'backlog')
+  useEffect(() => {
+    setBacklogSelecionados(new Set());
+    if (!projectId) { setBacklogItens([]); return; }
+    getDocs(query(
+      collection(db, CollectionName.PROJECT_TASK_BACKLOG),
+      where('projectId', '==', projectId),
+      where('status', '==', 'backlog'),
+    ))
+      .then(snap => setBacklogItens(snap.docs.map(d => ({ id: d.id, ...d.data() } as BacklogTarefa))))
+      .catch(() => setBacklogItens([]));
+  }, [projectId]);
+
+  const toggleBacklogItem = (id: string) => {
+    setBacklogSelecionados(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  // Informações Adicionais — carrega arquivos já existentes do projeto
+  // (PROJECT_DOCS já é estruturalmente só suporte técnico — cotação, contrato
+  // e apresentação vivem em coleções próprias e nunca aparecem aqui).
+  useEffect(() => {
+    setDocsSelecionados(new Set());
+    if (!projectId) { setProjectDocs([]); return; }
+    getDocs(query(collection(db, CollectionName.PROJECT_DOCS), where('projectId', '==', projectId)))
+      .then(snap => setProjectDocs(snap.docs.map(d => ({ id: d.id, ...d.data() } as ProjectDocument))))
+      .catch(() => setProjectDocs([]));
+  }, [projectId]);
+
+  const toggleProjectDoc = (id: string) => {
+    setDocsSelecionados(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  const addNovosArquivos = (files: FileList | null) => {
+    if (!files?.length) return;
+    setNovosArquivos(prev => [...prev, ...Array.from(files)]);
+  };
+  const removerNovoArquivo = (i: number) => setNovosArquivos(prev => prev.filter((_, idx) => idx !== i));
 
   // Sprint 43 — buscar tipos
   const buscarTipos = async (val: string) => {
@@ -228,23 +297,105 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         assignedUserNames,
         startDate: startDate ? Timestamp.fromDate(new Date(startDate)) : null,
         endDate: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
-        tarefasOS: checklist.map(item => ({
-          id:          item.id,
-          descricao:   item.text,
-          status:      item.completed ? 'concluida' : 'pendente',
-          iniciadaEm:  null,
-          concluidaEm: null,
-          fotoSlots:   (item as any).fotoSlots ?? [],
-        })),
+        tarefasOS: [
+          ...checklist.map(item => ({
+            id:          item.id,
+            descricao:   item.text,
+            status:      item.completed ? 'concluida' : 'pendente',
+            iniciadaEm:  null,
+            concluidaEm: null,
+            fotoSlots:   (item as any).fotoSlots ?? [],
+          })),
+          ...backlogItens.filter(b => backlogSelecionados.has(b.id)).map(b => ({
+            id:          `backlog_${b.id}`,
+            descricao:   b.descricao,
+            status:      'pendente',
+            iniciadaEm:  null,
+            concluidaEm: null,
+            fotoSlots:   [],
+            backlogId:   b.id,
+          })),
+        ],
         tools,
         tipoServico: tipoServico || null,
         ativoId: ativoId || null,
         ativoNome: ativoNome || null,
         ponto: { permiteEntrada: pontoEntrada, permiteSaida: pontoSaida },
+        ...((infoTexto.trim() || docsSelecionados.size > 0) ? {
+          informacoesAdicionais: {
+            texto: infoTexto.trim() || undefined,
+            arquivos: projectDocs.filter(d => docsSelecionados.has(d.id)).map(d => ({
+              url: d.url, nome: d.nome, tipo: d.tipo, projectDocId: d.id,
+            } as OSArquivoApoio)),
+          },
+        } : {}),
         createdAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, CollectionName.TASKS), taskPayload);
+      const ref = await addDoc(collection(db, CollectionName.TASKS), taskPayload);
+
+      // Marca os itens do backlog selecionados como distribuídos nesta O.S.
+      const backlogSelecionadosArr = backlogItens.filter(b => backlogSelecionados.has(b.id));
+      for (const item of backlogSelecionadosArr) {
+        updateDoc(doc(db, CollectionName.PROJECT_TASK_BACKLOG, item.id), {
+          status: 'em_os',
+          osDestinoId: ref.id,
+        }).catch(() => {});
+      }
+
+      // Informações Adicionais: novos arquivos — sobem para o Storage, entram
+      // no histórico de documentos do projeto E ficam vinculados à O.S.
+      if (novosArquivos.length > 0) {
+        try {
+          const nomeAutor = (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor';
+          const uploads: OSArquivoApoio[] = [];
+          for (const file of novosArquivos) {
+            const path = `os_evidencias/${ref.id}/informacoes-adicionais/${Date.now()}_${file.name}`;
+            const snap = await uploadBytes(storageRef(storage, path), file);
+            const url = await getDownloadURL(snap.ref);
+            const tipo = tipoArquivoFromName(file.name);
+            uploads.push({ url, nome: file.name, tipo });
+
+            if (projectId) {
+              await addDoc(collection(db, CollectionName.PROJECT_DOCS), {
+                projectId,
+                nome: file.name,
+                tipo,
+                url,
+                tamanhoBytes: file.size,
+                uploadPor: currentUser?.uid || '',
+                uploadPorNome: nomeAutor,
+                uploadEm: serverTimestamp(),
+                origemOsId: ref.id,
+              });
+            }
+          }
+          const existentes = projectDocs.filter(d => docsSelecionados.has(d.id)).map(d => ({
+            url: d.url, nome: d.nome, tipo: d.tipo, projectDocId: d.id,
+          } as OSArquivoApoio));
+          await updateDoc(doc(db, CollectionName.TASKS, ref.id), {
+            informacoesAdicionais: {
+              texto: infoTexto.trim() || undefined,
+              arquivos: [...existentes, ...uploads],
+            },
+          });
+        } catch {
+          // Falha no upload não deve impedir a criação da O.S. — o gestor pode reenviar depois via edição.
+        }
+      }
+
+      registrarAtividade({
+        tipo: 'os_aberta',
+        autorId: currentUser?.uid ?? 'web',
+        autorNome: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor',
+        titulo: `O.S. criada: ${taskPayload.title || numeroOS}`,
+        descricao: clientName ? `Cliente: ${clientName}` : undefined,
+        osId: ref.id,
+        osNumero: taskPayload.numeroOS,
+        osTitulo: taskPayload.title || taskPayload.numeroOS,
+        clienteNome: clientName || undefined,
+        meta: { ambiente: 'web' },
+      });
 
       // Upsert tipo de serviço
       if (tipoServico.trim()) {
@@ -450,6 +601,29 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       </label>
                     </div>
                   )}
+                  {projectId && backlogItens.length > 0 && (
+                    <div className="col-span-2 bg-brand-50/60 border border-brand-100 rounded-xl p-3">
+                      <p className="text-xs font-bold text-brand-700 flex items-center gap-1.5 mb-2">
+                        <ListTodo size={13} /> Tarefas do backlog do projeto ({backlogSelecionados.size} selecionada{backlogSelecionados.size !== 1 ? 's' : ''})
+                      </p>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {backlogItens.map(item => (
+                          <label key={item.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={backlogSelecionados.has(item.id)}
+                              onChange={() => toggleBacklogItem(item.id)}
+                              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            <span className="text-sm text-gray-700 flex-1">{item.descricao}</span>
+                            {item.origem === 'nao_concluida' && (
+                              <span className="text-[9px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">retomada</span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -522,7 +696,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
                     >
                       <option value="">Selecione...</option>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.displayName || u.email}</option>)}
+                      {users.filter(u => u.ativo !== false).map(u => <option key={u.id} value={u.id}>{u.displayName || u.email}</option>)}
                     </select>
                   </div>
                 </div>
@@ -533,7 +707,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       <Users className="w-4 h-4 mr-1 text-gray-400" /> Colaboradores Adicionais
                    </label>
                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                      {users.map(u => (
+                      {users.filter(u => u.ativo !== false).map(u => (
                         <label key={u.id} className={`
                            flex items-center gap-2 px-2 py-1 rounded border text-xs cursor-pointer transition-colors
                            ${assignedUsers.includes(u.id) ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
@@ -603,6 +777,73 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                     <input type="checkbox" checked={pontoSaida} onChange={e => setPontoSaida(e.target.checked)} className="w-4 h-4 accent-blue-600" />
                     Permite ponto de saída neste local
                   </label>
+                </div>
+
+                {/* Informações Adicionais — instrução + arquivos de apoio para o técnico */}
+                <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/50">
+                  <div className="flex items-center gap-1 px-3 py-2 bg-gray-50 border-b border-gray-200">
+                    <Paperclip className="w-4 h-4 text-brand-500" />
+                    <label className="text-sm font-bold text-gray-700">Informações Adicionais</label>
+                    <span className="text-[10px] text-gray-400 ml-1">(opcional)</span>
+                  </div>
+                  <div className="p-3 space-y-3">
+                    <textarea
+                      value={infoTexto}
+                      onChange={e => setInfoTexto(e.target.value)}
+                      placeholder="Instrução rápida para o técnico (ex: seguir planta baixa em anexo, atenção ao ponto X do croqui...)"
+                      rows={2}
+                      className="w-full text-sm rounded-lg border-gray-200 bg-white text-gray-900 px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-brand-300"
+                    />
+
+                    {/* Upload de arquivo novo */}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => infoArquivoRef.current?.click()}
+                        className="flex items-center gap-1.5 text-xs font-bold text-brand-600 bg-brand-50 border border-brand-100 rounded-lg px-3 py-1.5 hover:bg-brand-100"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Anexar foto, vídeo ou arquivo
+                      </button>
+                      <input
+                        ref={infoArquivoRef} type="file" multiple accept="image/*,video/*,.pdf" className="hidden"
+                        onChange={e => { addNovosArquivos(e.target.files); e.target.value = ''; }}
+                      />
+                      {novosArquivos.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {novosArquivos.map((f, i) => (
+                            <span key={i} className="flex items-center gap-1.5 text-xs bg-white border border-gray-200 rounded-lg px-2 py-1">
+                              {f.type.startsWith('video') ? <Video className="w-3 h-3 text-gray-400" /> : f.type.startsWith('image') ? <ImageIcon className="w-3 h-3 text-gray-400" /> : <FileText className="w-3 h-3 text-gray-400" />}
+                              <span className="max-w-[140px] truncate">{f.name}</span>
+                              <button type="button" onClick={() => removerNovoArquivo(i)} className="text-gray-400 hover:text-red-500">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-gray-400 mt-1">Novos arquivos ficam salvos no histórico de documentos do projeto.</p>
+                    </div>
+
+                    {/* Selecionar arquivos já existentes do projeto */}
+                    {projectId && projectDocs.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">Arquivos já existentes no projeto</p>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {projectDocs.map(d => {
+                            const sel = docsSelecionados.has(d.id);
+                            return (
+                              <label key={d.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer border ${sel ? 'border-brand-300 bg-brand-50' : 'border-transparent hover:bg-gray-100'}`}>
+                                <input type="checkbox" checked={sel} onChange={() => toggleProjectDoc(d.id)} className="w-3.5 h-3.5 accent-brand-600" />
+                                {d.tipo === 'video' ? <Video className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> : d.tipo === 'imagem' ? <ImageIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> : <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                                <span className="text-xs text-gray-700 truncate flex-1">{d.nome}</span>
+                                {sel && <Check className="w-3.5 h-3.5 text-brand-600 flex-shrink-0" />}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Checklist / Tarefas com foto slots por tarefa */}

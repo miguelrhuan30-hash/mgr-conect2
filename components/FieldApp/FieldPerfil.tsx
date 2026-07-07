@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProfileAlerta } from '../../src/hooks/useProfileAlerta';
 import {
   collection, query, where, getDocs, addDoc, Timestamp,
 } from 'firebase/firestore';
@@ -10,8 +12,11 @@ import {
   User, Mail, LogOut, Shield, Phone, CreditCard, Building2,
   Clock, CalendarDays, Award, AlertTriangle, ChevronRight,
   CheckCircle2, AlertCircle, XCircle, Send, X, FileText,
-  Briefcase, BadgeCheck, Loader2,
+  Briefcase, BadgeCheck, Loader2, Download, RefreshCw, PackageCheck,
+  Settings,
 } from 'lucide-react';
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 
 /* ── helpers ────────────────────────────────────────────── */
 const DAYS: Record<string, string> = {
@@ -59,6 +64,7 @@ interface CampoAlteracao {
 
 export default function FieldPerfil() {
   const { currentUser, userProfile } = useAuth();
+  const navigate = useNavigate();
   const [tab, setTab]               = useState<Tab>('dados');
   const [certs, setCerts]           = useState<any[]>([]);
   const [loadingCerts, setLoadingCerts] = useState(true);
@@ -71,6 +77,15 @@ export default function FieldPerfil() {
   const [enviado, setEnviado]       = useState(false);
 
   const p = userProfile as any;
+  const profileAlerta = useProfileAlerta();
+
+  /* ── marca solicitações resolvidas como vistas ao entrar no perfil ── */
+  useEffect(() => {
+    if (profileAlerta.requestId && (profileAlerta.tipo === 'aprovado' || profileAlerta.tipo === 'rejeitado')) {
+      profileAlerta.marcarComoVisto(profileAlerta.requestId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileAlerta.requestId, profileAlerta.tipo]);
 
   /* ── campos incompletos ─────────────────────────────── */
   const camposObrigatorios = [
@@ -140,6 +155,53 @@ export default function FieldPerfil() {
 
   /* ── logout ─────────────────────────────────────────── */
   const handleLogout = () => signOut(auth);
+
+  /* ── atualização do APK ─────────────────────────────── */
+  const [checkingApk, setCheckingApk]           = useState(false);
+  const [remoteApk, setRemoteApk]               = useState<{build:number;version:string;url:string;notas:string}|null>(null);
+  const [installedBuild, setInstalledBuild]     = useState<number|null>(null);
+  const [installedVersion, setInstalledVersion] = useState<string|null>(null);
+  const [apkError, setApkError]                 = useState(false);
+
+  const verificarAtualizacao = async () => {
+    setCheckingApk(true);
+    setApkError(false);
+
+    // ① Buscar versão remota (independente da plataforma)
+    let remote: typeof remoteApk = null;
+    try {
+      const res = await fetch('/apk-version.json?t=' + Date.now());
+      remote = await res.json() as typeof remoteApk;
+      setRemoteApk(remote);
+    } catch {
+      setApkError(true);
+    }
+
+    // ② Buscar versão instalada (só em nativo — não bloqueia o fluxo se falhar)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const info = await App.getInfo();
+        setInstalledBuild(parseInt(info.build, 10));
+        setInstalledVersion(info.version);
+      } catch {
+        // App.getInfo() indisponível — exibe "—" mas não cancela o restante
+      }
+    }
+
+    setCheckingApk(false);
+  };
+
+  /* auto-check ao montar */
+  useEffect(() => { verificarAtualizacao(); }, []);
+
+  /* Versão instalada como número (para comparar) */
+  const temAtualizacao = remoteApk !== null
+    && installedBuild !== null
+    && remoteApk.build > installedBuild;
+
+  const baixarApk = () => {
+    if (remoteApk?.url) window.open(remoteApk.url, '_system');
+  };
 
   /* ── jornada ─────────────────────────────────────────── */
   const ws = p?.workSchedule;
@@ -416,10 +478,107 @@ export default function FieldPerfil() {
           </div>
         )}
 
+        {/* Versão do App */}
+        <div className="mt-6 bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
+            <PackageCheck size={14} className="text-gray-500" />
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Versão do App</span>
+          </div>
+          <div className="px-4 py-4 space-y-3">
+
+            {/* Versão instalada */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Instalada</span>
+              {checkingApk && installedVersion === null ? (
+                <Loader2 size={12} className="animate-spin text-gray-500" />
+              ) : installedVersion !== null ? (
+                <span className="text-xs font-bold text-gray-300">
+                  {installedVersion} (build {installedBuild})
+                </span>
+              ) : (
+                <span className="text-xs text-gray-600">
+                  {Capacitor.isNativePlatform() ? 'Não lido' : 'Via web'}
+                </span>
+              )}
+            </div>
+
+            {/* Versão disponível */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Disponível</span>
+              {checkingApk && remoteApk === null ? (
+                <Loader2 size={12} className="animate-spin text-gray-500" />
+              ) : remoteApk ? (
+                <span className={`text-xs font-bold ${temAtualizacao ? 'text-orange-400' : 'text-emerald-400'}`}>
+                  {remoteApk.version} (build {remoteApk.build})
+                </span>
+              ) : (
+                <span className="text-xs text-gray-600">—</span>
+              )}
+            </div>
+
+            {/* Banner de status */}
+            {!checkingApk && apkError && (
+              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                <AlertCircle size={13} className="text-red-400 flex-shrink-0" />
+                <span className="text-[11px] text-red-400">Falha ao verificar. Tente novamente.</span>
+              </div>
+            )}
+            {!checkingApk && !apkError && remoteApk && temAtualizacao && (
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
+                <p className="text-[11px] font-bold text-orange-400 mb-1">Nova versão disponível!</p>
+                <p className="text-[10px] text-orange-400/80 leading-relaxed">{remoteApk.notas}</p>
+              </div>
+            )}
+            {!checkingApk && !apkError && remoteApk && !temAtualizacao && installedBuild !== null && (
+              <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 rounded-xl px-3 py-2">
+                <CheckCircle2 size={14} />
+                <span className="text-xs font-semibold">Você está na versão mais recente</span>
+              </div>
+            )}
+
+            {/* Botão de download — visível sempre que houver atualização */}
+            {temAtualizacao && remoteApk && (
+              <button
+                onClick={baixarApk}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-orange-500 text-white rounded-xl font-bold text-sm active:bg-orange-600"
+              >
+                <Download size={15} /> Baixar e Instalar v{remoteApk.version}
+              </button>
+            )}
+
+            {/* Botão verificar — sempre visível */}
+            <button
+              onClick={verificarAtualizacao}
+              disabled={checkingApk}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-800 border border-gray-700 text-gray-400 rounded-xl font-semibold text-xs active:bg-gray-700 disabled:opacity-50"
+            >
+              {checkingApk
+                ? <><Loader2 size={13} className="animate-spin" /> Verificando...</>
+                : <><RefreshCw size={13} /> Verificar atualização</>
+              }
+            </button>
+          </div>
+        </div>
+
+        {/* Configurações do App */}
+        <button
+          onClick={() => navigate('/campo/configuracoes')}
+          className="flex items-center gap-3 w-full px-4 py-4 rounded-2xl bg-gray-900 border border-gray-800 text-gray-200 font-bold text-sm active:bg-gray-800 mt-4"
+        >
+          <div className="w-9 h-9 rounded-xl bg-gray-800 flex items-center justify-center flex-shrink-0">
+            <Settings size={16} className="text-gray-400" />
+          </div>
+          <div className="flex-1 text-left">
+            <p className="text-sm font-bold text-white">Configurações do App</p>
+            <p className="text-[11px] text-gray-500">Permissões e preferências do dispositivo</p>
+          </div>
+          <ChevronRight size={16} className="text-gray-600" />
+        </button>
+
         {/* Logout */}
         <button
           onClick={handleLogout}
-          className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl bg-red-600/10 border border-red-500/20 text-red-400 font-bold text-sm active:bg-red-600/20 mt-6"
+          className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl bg-red-600/10 border border-red-500/20 text-red-400 font-bold text-sm active:bg-red-600/20 mt-3"
         >
           <LogOut size={16} /> Sair do app
         </button>

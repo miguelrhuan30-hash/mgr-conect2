@@ -9,12 +9,11 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, Wrench, User,
-  CalendarDays, ChevronRight, Plus, Shield, Activity,
+  CalendarDays, ChevronRight, Plus, Shield,
 } from 'lucide-react';
 import { OSField } from './FieldOS';
 import FieldGestaoOSDetail from './FieldGestaoOSDetail';
 import FieldOSPendenciaModal from './FieldOSPendenciaModal';
-import FieldFeed from './FieldFeed';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   'pending':     { label: 'Pendente',     color: 'bg-orange-500/20 text-orange-400 border-orange-500/30',    icon: <AlertCircle size={11} /> },
@@ -33,16 +32,18 @@ const diasEmAberto = (os: OSField): number => {
   return Math.floor((Date.now() - criado.getTime()) / 86400000);
 };
 
-type TabGestao = 'feed' | 'pendentes' | 'andamento' | 'agendadas' | 'concluidas';
+type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas';
 
 export default function FieldGestaoOS() {
   const { userProfile } = useAuth();
-  const isAdmin    = ['admin', 'gestor', 'manager'].includes(userProfile?.role || '');
-  const canCreate  = !!(userProfile?.permissions?.canCreateTasks);
+  const isAdmin   = ['admin', 'gestor', 'manager'].includes(userProfile?.role || '')
+                  || !!(userProfile?.permissions?.canManageProjects)
+                  || !!(userProfile?.permissions?.canEditTasks && userProfile?.permissions?.canDeleteTasks);
+  const canCreate = !!(userProfile?.permissions?.canCreateTasks);
 
   const [allOS, setAllOS]           = useState<OSField[]>([]);
   const [loading, setLoading]       = useState(true);
-  const [tab, setTab]               = useState<TabGestao>('feed');
+  const [tab, setTab]               = useState<TabGestao>('pendentes');
   const [selectedOS, setSelectedOS] = useState<OSField | null>(null);
   const [showModal, setShowModal]   = useState(false);
 
@@ -177,10 +178,9 @@ export default function FieldGestaoOS() {
   };
 
   const TABS: { id: TabGestao; label: string; count: number; icon?: React.ReactNode }[] = [
-    { id: 'feed',      label: 'Feed',       count: 0, icon: <Activity size={11} /> },
-    { id: 'pendentes', label: 'Pendentes',  count: pendentes.length  },
-    { id: 'andamento', label: 'Em Campo',   count: andamento.length  },
-    { id: 'agendadas', label: 'Agendadas',  count: agendadas.length  },
+    { id: 'pendentes',  label: 'Pendentes',  count: pendentes.length  },
+    { id: 'andamento',  label: 'Em Campo',   count: andamento.length  },
+    { id: 'agendadas',  label: 'Agendadas',  count: agendadas.length  },
     { id: 'concluidas', label: 'Concluídas', count: concluidas.length },
   ];
 
@@ -240,23 +240,17 @@ export default function FieldGestaoOS() {
         ))}
       </div>
 
-      {/* List / Feed */}
-      {tab === 'feed' ? (
-        <div className="flex-1 overflow-hidden">
-          <FieldFeed />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {currentList.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-600">
-              <ClipboardList size={40} className="mb-3 opacity-30" />
-              <p className="text-sm font-medium">Nenhuma O.S. nesta categoria</p>
-            </div>
-          ) : (
-            currentList.map(os => <OSGestaoCard key={os.id} os={os} />)
-          )}
-        </div>
-      )}
+      {/* List */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {currentList.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-600">
+            <ClipboardList size={40} className="mb-3 opacity-30" />
+            <p className="text-sm font-medium">Nenhuma O.S. nesta categoria</p>
+          </div>
+        ) : (
+          currentList.map(os => <OSGestaoCard key={os.id} os={os} />)
+        )}
+      </div>
     </div>
     </>
   );

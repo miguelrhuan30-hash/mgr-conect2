@@ -82,6 +82,7 @@ const Pipeline    = lazy(() => import('./components/Pipeline'));
 const OSExecution = lazy(() => import('./components/OSExecution'));
 const Billing     = lazy(() => import('./components/Billing'));
 const BIDashboard = lazy(() => import('./components/BIDashboard'));
+const TrackerColaborador = lazy(() => import('./components/TrackerColaborador'));
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT VEÍCULOS
@@ -89,6 +90,7 @@ const BIDashboard = lazy(() => import('./components/BIDashboard'));
 const VehicleLog          = lazy(() => import('./components/VehicleLog'));
 const VehicleDetail       = lazy(() => import('./components/VehicleDetail'));
 const VehicleCheckConfig  = lazy(() => import('./components/VehicleCheckConfig'));
+const VehicleManagement   = lazy(() => import('./components/VehicleManagement'));
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — SPRINT 38-45: Módulo O.S. Completo
@@ -170,6 +172,7 @@ const InstallarApp = lazy(() => import('./components/InstallarApp'));
 // LAZY LOAD — Feed de Gestão (atividades em tempo real)
 // ─────────────────────────────────────────────
 const FeedGestao = lazy(() => import('./components/FeedGestao'));
+const SuporteInbox = lazy(() => import('./components/SuporteInbox'));
 
 // ─────────────────────────────────────────────
 // LAZY LOAD — Field App (APK de campo)
@@ -178,8 +181,10 @@ const FieldLayout     = lazy(() => import('./components/FieldApp/FieldLayout'));
 const FieldOS         = lazy(() => import('./components/FieldApp/FieldOS'));
 const FieldCalendario = lazy(() => import('./components/FieldApp/FieldCalendario'));
 const FieldGestaoOS   = lazy(() => import('./components/FieldApp/FieldGestaoOS'));
+const FieldFeedPage   = lazy(() => import('./components/FieldApp/FieldFeed'));
 const FieldPonto      = lazy(() => import('./components/FieldApp/FieldPonto'));
-const FieldPerfil     = lazy(() => import('./components/FieldApp/FieldPerfil'));
+const FieldPerfil        = lazy(() => import('./components/FieldApp/FieldPerfil'));
+const FieldConfiguracoes = lazy(() => import('./components/FieldApp/FieldConfiguracoes'));
 const FieldVeiculo    = lazy(() => import('./components/FieldApp/FieldVeiculo'));
 const FieldAlmoco     = lazy(() => import('./components/FieldApp/FieldAlmoco'));
 
@@ -462,6 +467,8 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="bi"
             element={hasPermission('canManageSettings') ? <BIDashboard /> : <Navigate to="/app" />} />
+          <Route path="tracker-colaborador"
+            element={(hasPermission('canViewBI') || hasPermission('canManageSettings')) ? <TrackerColaborador /> : <Navigate to="/app" />} />
 
           {/* ════════════════════════════════════════
               SPRINT VEÍCULOS — Controle de Frota
@@ -470,6 +477,8 @@ const AppContent: React.FC = () => {
             element={(hasPermission('canRegisterAttendance') || hasPermission('canViewAttendanceReports')) ? <VehicleLog /> : <Navigate to="/app" />} />
           <Route path="veiculos/config"
             element={hasPermission('canManageSettings') ? <VehicleCheckConfig /> : <Navigate to="/app/veiculos" />} />
+          <Route path="veiculos/frota"
+            element={(hasPermission('canViewVehicles') || hasPermission('canManageSettings')) ? <VehicleManagement /> : <Navigate to="/app/veiculos" />} />
           <Route path="veiculos/:id"
             element={hasPermission('canViewAttendanceReports') ? <VehicleDetail /> : <Navigate to="/app" />} />
 
@@ -557,6 +566,11 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="feed" element={<FeedGestao />} />
 
+          {/* ════════════════════════════════════════
+              SUPORTE — inbox agrupado por O.S.
+          ════════════════════════════════════════ */}
+          <Route path="suporte" element={<SuporteInbox />} />
+
         </Route>{/* fim /app */}
 
         {/* ════════════════════════════════════════
@@ -571,6 +585,7 @@ const AppContent: React.FC = () => {
         >
           <Route index element={<Navigate to="os" replace />} />
           <Route path="os"        element={<FieldOS />} />
+          <Route path="feed"      element={<FieldFeedPage />} />
           <Route path="gestao"    element={<FieldGestaoOS />} />
           {/* rotas legadas — redirecionam para a view unificada */}
           <Route path="agenda"    element={<Navigate to="/campo/os" replace />} />
@@ -578,7 +593,8 @@ const AppContent: React.FC = () => {
           <Route path="ponto"     element={<FieldPonto />} />
           <Route path="almoco"    element={<FieldAlmoco />} />
           <Route path="veiculo"   element={<FieldVeiculo />} />
-          <Route path="perfil"    element={<FieldPerfil />} />
+          <Route path="perfil"         element={<FieldPerfil />} />
+          <Route path="configuracoes"  element={<FieldConfiguracoes />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" />} />

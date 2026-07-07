@@ -1,11 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDoc, doc, query, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { CollectionName } from '../types';
+import { CollectionName, Vehicle } from '../types';
 import { Analytics } from '../utils/mgr-analytics';
-import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X, Check } from 'lucide-react';
+import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X, Check, ChevronDown } from 'lucide-react';
 import { SlotConfig, FOTO_SLOTS_DEFAULT } from './VehicleCheckConfig';
 
 // ─── Tipo dinâmico (string em vez de literal union) ───────────────────────────
@@ -23,6 +23,88 @@ function aplicarMascara(valor: string): string {
   }
   // Padrão: AAA-0000
   return v.slice(0, 3) + '-' + v.slice(3, 7);
+}
+
+// ─── Frota cadastrada — usada para selecionar a placa em vez de digitar ──────
+
+function useVeiculosAtivos() {
+  const [veiculos, setVeiculos] = useState<Vehicle[]>([]);
+  const [loading, setLoading]   = useState(true);
+  useEffect(() => {
+    getDocs(query(collection(db, CollectionName.VEHICLES), where('ativo', '==', true)))
+      .then(snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Vehicle));
+        list.sort((a, b) => a.placa.localeCompare(b.placa));
+        setVeiculos(list);
+      })
+      .catch(() => setVeiculos([]))
+      .finally(() => setLoading(false));
+  }, []);
+  return { veiculos, loadingVeiculos: loading };
+}
+
+/** Campo de placa: seletor da frota cadastrada, com fallback para digitar
+ * manualmente caso nenhum veículo esteja cadastrado ainda (tema claro/web). */
+function CampoPlaca({
+  placa, onChange, veiculos, loadingVeiculos,
+}: {
+  placa: string; onChange: (v: string) => void;
+  veiculos: Vehicle[]; loadingVeiculos: boolean;
+}) {
+  const [manual, setManual] = useState(false);
+
+  if (loadingVeiculos) {
+    return (
+      <div className="w-full border border-gray-300 rounded-lg px-3 py-2.5 flex items-center gap-2 text-gray-400 text-sm">
+        <Loader2 className="w-4 h-4 animate-spin" /> Carregando frota...
+      </div>
+    );
+  }
+
+  if (veiculos.length === 0 || manual) {
+    return (
+      <div className="space-y-1">
+        <input
+          type="text" maxLength={8} placeholder="ABC-1234 ou ABC1D23"
+          value={placa} onChange={e => onChange(aplicarMascara(e.target.value))}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-mono uppercase
+                     focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        {veiculos.length > 0 && (
+          <button onClick={() => setManual(false)} className="text-[11px] text-blue-600 underline">
+            Selecionar da frota cadastrada
+          </button>
+        )}
+        {veiculos.length === 0 && (
+          <p className="text-[11px] text-gray-400">Nenhum veículo cadastrado na frota ainda — peça ao gestor para cadastrar em Frota.</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="relative">
+        <select
+          value={placa}
+          onChange={e => onChange(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-mono uppercase
+                     appearance-none bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Selecione o veículo...</option>
+          {veiculos.map(v => (
+            <option key={v.id} value={v.placa}>
+              {v.placa}{v.modelo ? ` — ${v.modelo}` : ''}{v.responsavelNome ? ` (${v.responsavelNome})` : ''}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+      </div>
+      <button onClick={() => setManual(true)} className="text-[11px] text-blue-600 underline">
+        Digitar placa manualmente
+      </button>
+    </div>
+  );
 }
 
 // ─── Helper: comprimir imagem (Canvas) ────────────────────────────────────────
@@ -113,6 +195,8 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
   const [saved, setSaved]           = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState('');
+
+  const { veiculos, loadingVeiculos } = useVeiculosAtivos();
 
   const inputRefs = useRef<Partial<Record<FotoKey, HTMLInputElement | null>>>({});
 
@@ -287,14 +371,9 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         {/* Placa */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Placa do veículo *</label>
-          <input
-            type="text"
-            maxLength={8}
-            placeholder="ABC-1234 ou ABC1D23"
-            value={placa}
-            onChange={e => setPlaca(aplicarMascara(e.target.value))}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-mono uppercase
-                       focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <CampoPlaca
+            placa={placa} onChange={setPlaca}
+            veiculos={veiculos} loadingVeiculos={loadingVeiculos}
           />
         </div>
 

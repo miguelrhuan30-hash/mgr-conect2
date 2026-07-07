@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
-import { doc, updateDoc, Timestamp } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { doc, updateDoc, addDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { WorkflowStatus } from '../../types';
+import { WorkflowStatus, CollectionName, Task } from '../../types';
 import { OSField } from './FieldOS';
 import FieldOSInicioModal from './FieldOSInicioModal';
 import FieldOSTarefaDetalhe, { TarefaComEvidencia } from './FieldOSTarefaDetalhe';
 import FieldOSEncerramentoModal, { RelatorioFinal } from './FieldOSEncerramentoModal';
-import { registrarAtividade } from '../../services/activityFeedService';
+import { registrarAtividade, marcarFotoApagada } from '../../services/activityFeedService';
+import { isVideoUrl } from './photoUtils';
+import OSSuporteChat from '../OSSuporteChat';
 import {
   User, MapPin, Wrench, CheckCircle2, Play, CheckSquare, Square,
-  XSquare, ArrowLeft, FileText, Calendar, UserPlus, Camera,
+  XSquare, ArrowLeft, FileText, Calendar, UserPlus, Camera, Plus, Clock, Paperclip, Headphones,
 } from 'lucide-react';
 
 interface Props {
@@ -46,11 +48,29 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
   const [tarefaSel, setTarefaSel] = useState<TarefaComEvidencia | null>(null);
   const [pegarFlag, setPegarFlag] = useState(false);
   const [erro, setErro]           = useState('');
+  const [showNovaTarefa, setShowNovaTarefa] = useState(false);
+  const [novaTarefaDesc, setNovaTarefaDesc] = useState('');
+  const [criandoTarefa, setCriandoTarefa]   = useState(false);
+  const [lightboxArquivo, setLightboxArquivo] = useState<string | null>(null);
+  const [showSuporte, setShowSuporte] = useState(false);
+  const [naoLidasSuporte, setNaoLidasSuporte] = useState(0);
+
+  // Contagem de mensagens de suporte não lidas pelo técnico nesta O.S.
+  useEffect(() => {
+    const q = query(
+      collection(db, CollectionName.OS_SUPORTE_MSGS),
+      where('osId', '==', os.id),
+      where('leitoPorTecnico', '==', false),
+    );
+    const unsub = onSnapshot(q, snap => setNaoLidasSuporte(snap.size), () => {});
+    return unsub;
+  }, [os.id]);
 
   const tituloOS  = os.title ?? 'Sem título';
   const cliente   = os.clientName ?? null;
   const local     = os.localizacao ?? null;
   const descricao = os.description ?? null;
+  const infoAdicionais = (os as any).informacoesAdicionais as { texto?: string; arquivos: { url: string; nome: string; tipo: string }[] } | undefined;
   const dataStr   = os.startDate
     ? os.startDate.toDate().toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
     : null;
@@ -74,22 +94,40 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
       (os.tarefasOS ?? []).map((t: any) => [t.id, t])
     );
     await updateDoc(doc(db, 'tasks', os.id), {
-      tarefasOS: novas.map(t => ({
-        ...(rawMap[t.id] ?? {}),           // preserva fotos Record, fotoSlots, iniciadaEm, etc.
-        id: t.id,
-        descricao: t.descricao,
-        status: t.status,
-        fotosApp: t.fotos ?? [],           // campo exclusivo do app de campo (string[])
-        observacaoApp: t.observacao ?? '', // campo exclusivo do app de campo
-        concluidaEm: t.status !== 'pendente' ? Timestamp.now() : null,
-      })),
+      tarefasOS: novas.map(t => {
+        const raw = rawMap[t.id] ?? {};
+        // Fase de evidência: ao mudar de um status definitivo (concluida/nao_executada)
+        // para outro, arquiva a fase anterior (fotos+motivo) em vez de sobrescrever —
+        // refazer a tarefa nunca apaga o que já foi registrado.
+        const statusAnteriorDefinitivo = raw.status === 'concluida' || raw.status === 'nao_executada';
+        const mudouStatus = raw.status && raw.status !== t.status;
+        const fasesAnteriores = Array.isArray(raw.fasesAnteriores) ? raw.fasesAnteriores : [];
+        const novasFasesAnteriores = (mudouStatus && statusAnteriorDefinitivo)
+          ? [...fasesAnteriores, {
+              status: raw.status,
+              fotos: raw.fotosApp ?? [],
+              observacao: raw.observacaoApp ?? '',
+              finalizadaEm: raw.concluidaEm ?? Timestamp.now(),
+            }]
+          : fasesAnteriores;
+        return {
+          ...raw,                            // preserva fotos Record, fotoSlots, iniciadaEm, etc.
+          id: t.id,
+          descricao: t.descricao,
+          status: t.status,
+          fotosApp: t.fotos ?? [],            // campo exclusivo do app de campo (string[]) — fase ATUAL
+          observacaoApp: t.observacao ?? '',  // campo exclusivo do app de campo — fase ATUAL
+          concluidaEm: t.status !== 'pendente' ? Timestamp.now() : null,
+          fasesAnteriores: novasFasesAnteriores,
+        };
+      }),
     });
   };
 
   /* ─── Iniciar (com fotos) ─────────────────────────── */
   const handleInicioConfirmado = async (fotosIniciais: string[]) => {
     if (!currentUser || !userProfile) return;
-    const nome = userProfile.nomeCompleto || userProfile.displayName || currentUser.email || 'Técnico';
+    const nome = userProfile.nomeCompleto || userProfile.displayName || 'Técnico';
     const campos: any = {
       status: 'in-progress',
       workflowStatus: WorkflowStatus.EM_EXECUCAO,
@@ -107,16 +145,41 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
       campos.startDate = os.startDate ?? Timestamp.now();
     }
     await updateDoc(doc(db, 'tasks', os.id), campos);
-    registrarAtividade({
-      tipo: 'os_iniciada',
+
+    const osBaseInicio = {
       autorId: currentUser.uid,
       autorNome: nome,
-      titulo: `O.S. iniciada: ${os.title ?? 'Sem título'}`,
       osId: os.id,
       osNumero: (os as any).numeroOS ?? undefined,
       osTitulo: os.title ?? undefined,
       clienteNome: os.clientName ?? undefined,
+    };
+
+    registrarAtividade({
+      ...osBaseInicio,
+      tipo: 'os_iniciada',
+      titulo: `O.S. iniciada: ${os.title ?? 'Sem título'}`,
     });
+
+    // Cada evidência de início (foto/vídeo) gera um card no feed
+    for (const url of fotosIniciais ?? []) {
+      if (isVideoUrl(url)) {
+        registrarAtividade({
+          ...osBaseInicio,
+          tipo: 'video_gravado',
+          titulo: `Evidência de início: ${os.title ?? 'O.S.'}`,
+          videoUrl: url,
+        });
+      } else {
+        registrarAtividade({
+          ...osBaseInicio,
+          tipo: 'foto_tarefa',
+          titulo: `Evidência de início: ${os.title ?? 'O.S.'}`,
+          fotoUrl: url,
+        });
+      }
+    }
+
     onUpdate({
       ...os,
       status: 'in-progress',
@@ -127,27 +190,143 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
   };
 
   /* ─── Tarefa concluída / não executada ───────────── */
-  const handleTarefaSalva = async (tarefaAtualizada: TarefaComEvidencia) => {
+  const handleTarefaSalva = async (tarefaAtualizada: TarefaComEvidencia, fotosApagadas: string[]) => {
     const novas = tarefas.map(t => t.id === tarefaAtualizada.id ? tarefaAtualizada : t);
     setTarefas(novas);
     await salvarTarefasFirestore(novas);
-    if (tarefaAtualizada.status === 'concluida' && currentUser && userProfile) {
-      const nome = (userProfile as any).nomeCompleto || (userProfile as any).displayName || currentUser.email || 'Técnico';
+
+    if (currentUser && userProfile) {
+      const nome = (userProfile as any).nomeCompleto || (userProfile as any).displayName || 'Técnico';
+
+      // Marcar fotos apagadas no feed (soft delete — post fica vermelho)
+      for (const url of fotosApagadas) {
+        marcarFotoApagada(url);
+      }
+
+      // Compute new media vs old
+      const tarefaOriginal = tarefas.find(t => t.id === tarefaAtualizada.id);
+      const fotosAntigas   = tarefaOriginal?.fotos ?? [];
+      const midiaNovas     = (tarefaAtualizada.fotos ?? []).filter(u => !fotosAntigas.includes(u));
+      const videosNovos    = midiaNovas.filter(u => isVideoUrl(u));
+      const fotosNovas     = midiaNovas.filter(u => !isVideoUrl(u));
+
+      const osBase = {
+        autorId:     currentUser.uid,
+        autorNome:   nome,
+        osId:        os.id,
+        osNumero:    (os as any).numeroOS ?? undefined,
+        osTitulo:    os.title ?? undefined,
+        clienteNome: os.clientName ?? undefined,
+      };
+
+      // Cada foto nova gera post independente no feed (permite soft-delete por foto)
+      for (const fotoUrl of fotosNovas) {
+        registrarAtividade({
+          ...osBase,
+          tipo:      'foto_tarefa',
+          titulo:    `Evidência adicionada: ${tarefaAtualizada.descricao}`,
+          descricao: tarefaAtualizada.observacao || undefined,
+          fotoUrl,
+        });
+      }
+
+      // Cada vídeo novo gera post independente
+      for (const videoUrl of videosNovos) {
+        registrarAtividade({
+          ...osBase,
+          tipo:  'video_gravado',
+          titulo: `Vídeo gravado: ${tarefaAtualizada.descricao}`,
+          videoUrl,
+        });
+      }
+
+      // tarefa_concluida somente na transição pendente → concluída sem mídia nova
+      if (
+        tarefaAtualizada.status === 'concluida' &&
+        tarefaOriginal?.status !== 'concluida' &&
+        fotosNovas.length === 0 &&
+        videosNovos.length === 0
+      ) {
+        registrarAtividade({
+          ...osBase,
+          tipo:      'tarefa_concluida',
+          titulo:    `Tarefa concluída: ${tarefaAtualizada.descricao}`,
+          descricao: tarefaAtualizada.observacao || undefined,
+        });
+      }
+
+      // Tarefa marcada como não concluída: sempre gera post com o motivo,
+      // para o gestor conseguir redistribuir/criar nova O.S. a partir dela.
+      if (
+        tarefaAtualizada.status === 'nao_executada' &&
+        tarefaOriginal?.status !== 'nao_executada'
+      ) {
+        registrarAtividade({
+          ...osBase,
+          tipo:      'tarefa_nao_concluida',
+          titulo:    `Tarefa não concluída: ${tarefaAtualizada.descricao}`,
+          descricao: tarefaAtualizada.observacao || 'Sem motivo informado',
+          meta:      { tarefaId: tarefaAtualizada.id },
+        });
+
+        // Hub de Tarefas do Projeto: se a O.S. pertence a um projeto, a tarefa
+        // volta automaticamente ao backlog para o gestor redistribuir.
+        const projId = (os as any).projectId;
+        if (projId) {
+          addDoc(collection(db, CollectionName.PROJECT_TASK_BACKLOG), {
+            projectId: projId,
+            projectName: (os as any).projectName || '',
+            clientId: (os as any).clientId || '',
+            clientName: os.clientName || '',
+            descricao: tarefaAtualizada.descricao,
+            status: 'backlog',
+            origem: 'nao_concluida',
+            osOrigemId: os.id,
+            motivoNaoConclusao: tarefaAtualizada.observacao || 'Sem motivo informado',
+            criadoEm: Timestamp.now(),
+            criadoPor: currentUser.uid,
+            criadoPorNome: nome,
+          }).catch(() => {});
+        }
+      }
+    }
+    setFlow('idle');
+    setTarefaSel(null);
+  };
+
+  /* ─── Nova Tarefa criada pelo técnico ────────────── */
+  const handleNovaTarefa = async () => {
+    if (!novaTarefaDesc.trim() || !currentUser || !userProfile) return;
+    setCriandoTarefa(true);
+    try {
+      const nome = (userProfile as any).nomeCompleto || (userProfile as any).displayName || 'Técnico';
+      const novaTarefa: TarefaComEvidencia = {
+        id:         'tecnico_' + Date.now(),
+        descricao:  novaTarefaDesc.trim(),
+        status:     'pendente',
+        fotos:      [],
+        observacao: '',
+      };
+      const novas = [...tarefas, novaTarefa];
+      setTarefas(novas);
+      await salvarTarefasFirestore(novas);
       registrarAtividade({
-        tipo: tarefaAtualizada.fotos?.length ? 'foto_tarefa' : 'tarefa_concluida',
+        tipo: 'tarefa_criada_tecnico',
         autorId: currentUser.uid,
         autorNome: nome,
-        titulo: `Tarefa concluída: ${tarefaAtualizada.descricao}`,
-        descricao: tarefaAtualizada.observacao || undefined,
+        titulo: `Nova tarefa criada: ${novaTarefa.descricao}`,
         osId: os.id,
         osNumero: (os as any).numeroOS ?? undefined,
         osTitulo: os.title ?? undefined,
         clienteNome: os.clientName ?? undefined,
-        fotoUrl: tarefaAtualizada.fotos?.[0] ?? undefined,
       });
+      setNovaTarefaDesc('');
+      setShowNovaTarefa(false);
+    } catch {
+      // silent
+    } finally {
+      setCriandoTarefa(false);
     }
-    setFlow('idle');
-    setTarefaSel(null);
   };
 
   /* ─── Encerramento da O.S. ───────────────────────── */
@@ -165,7 +344,7 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
       'execution.actualEndTime': Timestamp.now(),
     });
     if (currentUser && userProfile) {
-      const nome = (userProfile as any).nomeCompleto || (userProfile as any).displayName || currentUser.email || 'Técnico';
+      const nome = (userProfile as any).nomeCompleto || (userProfile as any).displayName || 'Técnico';
       registrarAtividade({
         tipo: 'os_concluida',
         autorId: currentUser.uid,
@@ -180,6 +359,34 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
       });
     }
     onUpdate({ ...os, status: 'completed' });
+    onClose();
+  };
+
+  /* ─── Encerrar parcialmente (dia parcial) ──────────
+   * A O.S. NÃO é concluída — volta para 'pending' com o que já foi feito
+   * preservado (cada tarefa mantém seu status/evidência individual).
+   * Ao retomar, o técnico continua de onde parou; tarefas 'nao_executada'
+   * podem ser refeitas sem perder o histórico (ver salvarTarefasFirestore). */
+  const handleEncerrarParcial = async () => {
+    if (!currentUser || !userProfile) return;
+    if (!confirm(`Encerrar o dia com ${concluidasTarefas}/${totalTarefas} tarefas concluídas? A O.S. ficará pendente para retomar depois.`)) return;
+    const nome = (userProfile as any).nomeCompleto || (userProfile as any).displayName || 'Técnico';
+    await updateDoc(doc(db, 'tasks', os.id), {
+      status: 'pending',
+      'execution.checkOut': Timestamp.now(),
+    });
+    registrarAtividade({
+      tipo: 'os_status_mudou',
+      autorId: currentUser.uid,
+      autorNome: nome,
+      titulo: `O.S. encerrada parcialmente: ${os.title ?? 'Sem título'}`,
+      descricao: `${concluidasTarefas}/${totalTarefas} tarefas concluídas — retomar depois`,
+      osId: os.id,
+      osNumero: (os as any).numeroOS ?? undefined,
+      osTitulo: os.title ?? undefined,
+      clienteNome: os.clientName ?? undefined,
+    });
+    onUpdate({ ...os, status: 'pending' });
     onClose();
   };
 
@@ -255,6 +462,37 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
             </div>
           )}
 
+          {/* Informações Adicionais — instrução + arquivos de apoio (fotos, vídeos, plantas) */}
+          {(infoAdicionais?.texto || (infoAdicionais?.arquivos?.length ?? 0) > 0) && (
+            <div className="px-4 py-4 border-b border-gray-800 bg-blue-500/5">
+              <p className="text-xs font-bold text-blue-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <Paperclip size={11} /> Informações Adicionais
+              </p>
+              {infoAdicionais?.texto && (
+                <p className="text-sm text-gray-300 leading-relaxed mb-3">{infoAdicionais.texto}</p>
+              )}
+              {(infoAdicionais?.arquivos?.length ?? 0) > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {infoAdicionais!.arquivos.map((a, i) => (
+                    <button
+                      key={i}
+                      onClick={() => a.tipo === 'imagem' || a.tipo === 'video' ? setLightboxArquivo(a.url) : window.open(a.url, '_blank')}
+                      className="relative aspect-square rounded-xl overflow-hidden bg-gray-800 border border-gray-700 flex items-center justify-center"
+                    >
+                      {a.tipo === 'video'
+                        ? <video src={a.url} className="w-full h-full object-cover" muted playsInline />
+                        : a.tipo === 'imagem'
+                        ? <img src={a.url} alt={a.nome} className="w-full h-full object-cover" />
+                        : <FileText size={24} className="text-gray-500" />
+                      }
+                      <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] px-1 py-0.5 truncate">{a.nome}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Tarefas */}
           {tarefas.length > 0 && (
             <div className="px-4 py-4 border-b border-gray-800">
@@ -262,9 +500,19 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
                   <CheckSquare size={11} /> Tarefas
                 </p>
-                <span className={`text-xs font-bold ${todasConcluidas ? 'text-emerald-400' : 'text-gray-500'}`}>
-                  {concluidasTarefas}/{totalTarefas}
-                </span>
+                <div className="flex items-center gap-3">
+                  {emExecucao && (
+                    <button
+                      onClick={() => setShowNovaTarefa(true)}
+                      className="flex items-center gap-1 text-[11px] font-bold text-emerald-400 active:opacity-70"
+                    >
+                      <Plus size={14} /> Nova tarefa
+                    </button>
+                  )}
+                  <span className={`text-xs font-bold ${todasConcluidas ? 'text-emerald-400' : 'text-gray-500'}`}>
+                    {concluidasTarefas}/{totalTarefas}
+                  </span>
+                </div>
               </div>
 
               {/* Barra de progresso */}
@@ -326,6 +574,22 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
           <div className="h-36" />
         </div>
 
+        {/* FAB: Suporte — só quando o técnico é responsável e a O.S. não está concluída */}
+        {euSouResponsavel && os.status !== 'completed' && (
+          <button
+            onClick={() => setShowSuporte(true)}
+            className="fixed bottom-32 right-4 z-40 flex items-center gap-2 bg-purple-600 active:bg-purple-700 text-white px-4 py-3 rounded-2xl shadow-xl font-bold text-sm"
+          >
+            <Headphones size={18} />
+            Suporte
+            {naoLidasSuporte > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center -ml-1">
+                {naoLidasSuporte}
+              </span>
+            )}
+          </button>
+        )}
+
         {/* Botões de ação */}
         <div className="px-4 py-4 bg-gray-900 border-t border-gray-800 space-y-2.5 safe-area-bottom">
           {erro && <p className="text-xs text-red-400 text-center">{erro}</p>}
@@ -354,6 +618,15 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
               className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-2xl font-bold text-base active:bg-emerald-700"
             >
               <CheckCircle2 size={18} /> Concluir O.S.
+            </button>
+          )}
+
+          {podeConcluir && !todasConcluidas && (
+            <button
+              onClick={handleEncerrarParcial}
+              className="w-full flex items-center justify-center gap-2 py-3.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-2xl font-bold text-sm active:bg-orange-500/20"
+            >
+              <Clock size={16} /> Encerrar por hoje (retomar depois)
             </button>
           )}
 
@@ -396,6 +669,61 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
           uid={currentUser?.uid ?? ''}
           onConfirmar={handleEncerramentoConfirmado}
           onCancelar={() => setFlow('idle')}
+        />
+      )}
+
+      {/* Modal: Nova Tarefa */}
+      {showNovaTarefa && (
+        <div className="fixed inset-0 z-[70] bg-black/80 flex items-end">
+          <div className="w-full bg-gray-900 rounded-t-3xl p-6 space-y-4">
+            <h3 className="text-base font-black text-white">Nova Tarefa</h3>
+            <p className="text-xs text-gray-400">Descreva a tarefa adicional que identificou como necessária.</p>
+            <textarea
+              value={novaTarefaDesc}
+              onChange={e => setNovaTarefaDesc(e.target.value)}
+              placeholder="Ex: Troca de válvula de alívio..."
+              rows={3}
+              autoFocus
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-emerald-500"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => { setShowNovaTarefa(false); setNovaTarefaDesc(''); }}
+                disabled={criandoTarefa}
+                className="py-3.5 bg-gray-800 text-gray-300 rounded-2xl font-bold text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleNovaTarefa}
+                disabled={criandoTarefa || !novaTarefaDesc.trim()}
+                className="py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-sm disabled:opacity-50"
+              >
+                {criandoTarefa ? 'Salvando...' : 'Criar Tarefa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox: arquivos de Informações Adicionais */}
+      {lightboxArquivo && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightboxArquivo(null)}
+        >
+          {infoAdicionais?.arquivos.find(a => a.url === lightboxArquivo)?.tipo === 'video'
+            ? <video src={lightboxArquivo} controls autoPlay className="max-w-full max-h-full rounded-xl" />
+            : <img src={lightboxArquivo} alt="" className="max-w-full max-h-full rounded-xl object-contain" />}
+        </div>
+      )}
+
+      {/* Modal: Suporte */}
+      {showSuporte && (
+        <OSSuporteChat
+          task={os as unknown as Task}
+          onClose={() => setShowSuporte(false)}
+          variant="dark"
         />
       )}
     </>

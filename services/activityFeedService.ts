@@ -3,7 +3,7 @@
  * Registra atividades das equipes de campo (ponto, O.S., fotos, veículo, dúvidas).
  * Cada atividade vira um card no feed estilo rede social para gestores acompanharem.
  */
-import { addDoc, collection, Timestamp } from 'firebase/firestore';
+import { addDoc, collection, Timestamp, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export type ActivityTipo =
@@ -14,11 +14,22 @@ export type ActivityTipo =
   | 'os_aberta'
   | 'os_iniciada'
   | 'os_concluida'
+  | 'os_editada'
+  | 'os_status_mudou'
+  | 'os_atribuida'
+  | 'os_arquivada'
+  | 'os_excluida'
+  | 'os_reagendada'
   | 'tarefa_concluida'
+  | 'tarefa_nao_concluida'
+  | 'observacao_gestor'
   | 'foto_tarefa'
   | 'veiculo_aberto'
   | 'veiculo_fechado'
-  | 'duvida_os';
+  | 'duvida_os'
+  | 'foto_apagada'
+  | 'tarefa_criada_tecnico'
+  | 'video_gravado';
 
 export interface FeedAtividade {
   id: string;
@@ -36,6 +47,8 @@ export interface FeedAtividade {
   clienteNome?: string;
   // Mídia
   fotoUrl?: string;
+  apagada?: boolean;
+  videoUrl?: string;
   // Localização
   lat?: number;
   lng?: number;
@@ -68,6 +81,7 @@ export interface RegistrarParams {
   osTitulo?: string;
   clienteNome?: string;
   fotoUrl?: string;
+  videoUrl?: string;
   lat?: number;
   lng?: number;
   endereco?: string;
@@ -95,4 +109,16 @@ export const registrarAtividade = (params: RegistrarParams): void => {
   addDoc(collection(db, ACTIVITY_FEED_COLLECTION), payload).catch(e => {
     console.error('[activityFeed] registrar:', e);
   });
+};
+
+export const marcarFotoApagada = async (fotoUrl: string): Promise<void> => {
+  try {
+    const q = query(collection(db, ACTIVITY_FEED_COLLECTION), where('fotoUrl', '==', fotoUrl));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      await updateDoc(d.ref, { apagada: true });
+    }
+  } catch (e) {
+    console.error('[activityFeed] marcarFotoApagada:', e);
+  }
 };

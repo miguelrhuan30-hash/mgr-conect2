@@ -1,4 +1,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
@@ -47,6 +49,340 @@ exports.adminResetUserPassword = onCall(
     });
 
     return { success: true };
+  }
+);
+
+/**
+ * adminCreateUser
+ * Callable Cloud Function — Cria um novo colaborador (Auth + perfil Firestore) direto pelo admin,
+ * sem exigir autocadastro. Requer: canManageUsers no perfil do chamador, OU role === 'admin'.
+ */
+exports.adminCreateUser = onCall(
+  { region: 'southamerica-east1', enforceAppCheck: false },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Você precisa estar autenticado.');
+    }
+
+    const callerId = request.auth.uid;
+    const { email, password, nomeCompleto, cargo, sectorId, sectorName, permissions, role } = request.data;
+
+    if (!email || typeof email !== 'string') {
+      throw new HttpsError('invalid-argument', 'E-mail inválido.');
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      throw new HttpsError('invalid-argument', 'A senha temporária deve ter pelo menos 8 caracteres.');
+    }
+    if (!nomeCompleto || typeof nomeCompleto !== 'string') {
+      throw new HttpsError('invalid-argument', 'Nome completo é obrigatório.');
+    }
+
+    const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
+    const callerData = callerDoc.data();
+
+    const isAdmin = callerData?.role === 'admin';
+    const hasPermission = callerData?.permissions?.canManageUsers === true;
+
+    if (!isAdmin && !hasPermission) {
+      throw new HttpsError('permission-denied', 'Sem permissão para criar colaboradores.');
+    }
+
+    let userRecord;
+    try {
+      userRecord = await admin.auth().createUser({
+        email,
+        password,
+        displayName: nomeCompleto,
+      });
+    } catch (err) {
+      if (err.code === 'auth/email-already-exists') {
+        throw new HttpsError('already-exists', 'Este e-mail já está cadastrado.');
+      }
+      throw new HttpsError('internal', err.message || 'Erro ao criar usuário.');
+    }
+
+    await admin.firestore().doc(`users/${userRecord.uid}`).set({
+      uid: userRecord.uid,
+      email,
+      displayName: nomeCompleto,
+      nomeCompleto,
+      cargo: cargo || null,
+      role: role || 'employee',
+      sectorId: sectorId || null,
+      sectorName: sectorName || null,
+      permissions: permissions || {},
+      hasCustomPermissions: !sectorId,
+      ativo: true,
+      xp: 0,
+      level: 1,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      requiresPasswordChange: true,
+      tempPasswordSetAt: admin.firestore.FieldValue.serverTimestamp(),
+      tempPasswordSetBy: callerId,
+    });
+
+    return { success: true, uid: userRecord.uid };
+  }
+);
+
+/**
+ * adminSetUserActive
+ * Callable Cloud Function — Ativa/desativa (desliga) um colaborador.
+ * Ao desativar: desabilita o login no Firebase Auth (perde acesso), mas mantém todo o
+ * histórico no Firestore intacto (documentos, ocorrências, O.S., ponto, etc.).
+ * Requer: canManageUsers no perfil do chamador, OU role === 'admin'.
+ */
+exports.adminSetUserActive = onCall(
+  { region: 'southamerica-east1', enforceAppCheck: false },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Você precisa estar autenticado.');
+    }
+
+    const callerId = request.auth.uid;
+    const { targetUid, ativo } = request.data;
+
+    if (!targetUid || typeof targetUid !== 'string') {
+      throw new HttpsError('invalid-argument', 'targetUid inválido.');
+    }
+    if (typeof ativo !== 'boolean') {
+      throw new HttpsError('invalid-argument', 'Parâmetro ativo inválido.');
+    }
+
+    const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
+    const callerData = callerDoc.data();
+
+    const isAdmin = callerData?.role === 'admin';
+    const hasPermission = callerData?.permissions?.canManageUsers === true;
+
+    if (!isAdmin && !hasPermission) {
+      throw new HttpsError('permission-denied', 'Sem permissão para ativar/desativar colaboradores.');
+    }
+    if (targetUid === callerId) {
+      throw new HttpsError('failed-precondition', 'Você não pode desativar sua própria conta.');
+    }
+
+    try {
+      await admin.auth().updateUser(targetUid, { disabled: !ativo });
+    } catch (err) {
+      // Perfis criados manualmente/legados podem não ter conta correspondente no Firebase Auth.
+      // Nesse caso não há login a bloquear — seguimos e só atualizamos o status no Firestore.
+      if (err.code !== 'auth/user-not-found') {
+        throw new HttpsError('internal', err.message || 'Erro ao atualizar o acesso do colaborador.');
+      }
+    }
+
+    const updateData = ativo
+      ? {
+          ativo: true,
+          reativadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        }
+      : {
+          ativo: false,
+          desligadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          desligadoPor: callerId,
+          desligadoPorNome: callerData?.nomeCompleto || callerData?.displayName || null,
+        };
+
+    await admin.firestore().doc(`users/${targetUid}`).update(updateData);
+
+    return { success: true };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNDAÇÃO F-A — Push FCM ao criar notificação
+// Observa a coleção `notifications`; ao surgir um doc, busca os tokens do
+// destinatário em `push_tokens` e envia o push. Tokens inválidos são removidos.
+// ═══════════════════════════════════════════════════════════════════════════
+exports.enviarPushNotificacao = onDocumentCreated(
+  { region: 'southamerica-east1', document: 'notifications/{notifId}' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const notif = snap.data() || {};
+    const destinatarioId = notif.destinatarioId;
+    if (!destinatarioId) return;
+
+    // Busca tokens do destinatário
+    const tokensSnap = await admin.firestore()
+      .collection('push_tokens')
+      .where('userId', '==', destinatarioId)
+      .get();
+
+    if (tokensSnap.empty) return;
+    const tokens = tokensSnap.docs.map(d => d.id);
+
+    const message = {
+      tokens,
+      notification: {
+        title: notif.titulo || 'MGR Connect',
+        body: notif.corpo || '',
+      },
+      data: {
+        tipo: String(notif.tipo || 'geral'),
+        canal: String(notif.canal || 'geral'),
+        rota: String(notif.rota || ''),
+        osId: String(notif.osId || ''),
+        notifId: event.params.notifId,
+      },
+      android: {
+        priority: notif.prioridade === 'alta' ? 'high' : 'normal',
+        notification: {
+          sound: notif.som === false ? undefined : 'default',
+          channelId: `mgr_${notif.canal || 'geral'}`,
+        },
+      },
+    };
+
+    try {
+      const resp = await admin.messaging().sendEachForMulticast(message);
+      // Limpa tokens inválidos
+      const paraRemover = [];
+      resp.responses.forEach((r, i) => {
+        if (!r.success) {
+          const code = r.error && r.error.code;
+          if (code === 'messaging/invalid-registration-token'
+            || code === 'messaging/registration-token-not-registered') {
+            paraRemover.push(tokens[i]);
+          }
+        }
+      });
+      await Promise.all(paraRemover.map(t =>
+        admin.firestore().doc(`push_tokens/${t}`).delete().catch(() => {})
+      ));
+    } catch (e) {
+      console.error('[enviarPushNotificacao] erro ao enviar FCM:', e);
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPORTE — resumo de conversa por O.S. (mantém os_suporte_threads)
+// Observa `os_suporte_msgs`; a cada mensagem nova, faz upsert do doc-resumo
+// correspondente (última mensagem + contagem de não lidas), pra a aba
+// Suporte do gestor não precisar reagregar tudo client-side toda vez que abre.
+// ═══════════════════════════════════════════════════════════════════════════
+exports.atualizarThreadSuporte = onDocumentCreated(
+  { region: 'southamerica-east1', document: 'os_suporte_msgs/{msgId}' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const msg = snap.data() || {};
+    const osId = msg.osId;
+    if (!osId) return;
+
+    const msgsBase = admin.firestore().collection('os_suporte_msgs').where('osId', '==', osId);
+    const [naoLidasGestorSnap, naoLidasTecnicoSnap] = await Promise.all([
+      msgsBase.where('leitoPorGestor', '==', false).count().get(),
+      msgsBase.where('leitoPorTecnico', '==', false).count().get(),
+    ]);
+
+    await admin.firestore().doc(`os_suporte_threads/${osId}`).set({
+      osCode: msg.osCode || '',
+      osTitulo: msg.osTitulo || '',
+      clienteNome: msg.clienteNome || '',
+      projectId: msg.projectId || '',
+      ultimaMsgTexto: msg.texto || '',
+      ultimaMsgAutorNome: msg.autorNome || '',
+      ultimaMsgEm: msg.criadaEm || admin.firestore.Timestamp.now(),
+      naoLidasGestor: naoLidasGestorSnap.data().count,
+      naoLidasTecnico: naoLidasTecnicoSnap.data().count,
+      archived: false,
+    }, { merge: true });
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPORTE — arquivamento automático ao concluir a O.S.
+// Observa `tasks`; na transição para status 'completed', marca em lote todas
+// as mensagens de suporte daquela O.S. como arquivadas (não apaga — vira
+// histórico consultável pelo gestor e dataset futuro de IA/treino).
+// ═══════════════════════════════════════════════════════════════════════════
+exports.arquivarSuporteAoConcluirOS = onDocumentUpdated(
+  { region: 'southamerica-east1', document: 'tasks/{taskId}' },
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after  = event.data.after.data() || {};
+    if (before.status === 'completed' || after.status !== 'completed') return;
+
+    const osId = event.params.taskId;
+    const msgsSnap = await admin.firestore()
+      .collection('os_suporte_msgs')
+      .where('osId', '==', osId)
+      .get();
+
+    if (!msgsSnap.empty) {
+      const docs = msgsSnap.docs;
+      const agora = admin.firestore.Timestamp.now();
+      for (let i = 0; i < docs.length; i += 450) {
+        const batch = admin.firestore().batch();
+        docs.slice(i, i + 450).forEach(d => batch.update(d.ref, { archived: true, archivedEm: agora }));
+        await batch.commit();
+      }
+    }
+
+    await admin.firestore().doc(`os_suporte_threads/${osId}`).set({
+      archived: true,
+      archivedEm: admin.firestore.Timestamp.now(),
+    }, { merge: true });
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ALMOÇO — Lembrete 10 min antes do horário limite, só p/ quem não pediu
+// Roda a cada 5 min; usa um marcador diário em lunch_config/sede para não
+// disparar mais de uma vez no mesmo dia.
+// ═══════════════════════════════════════════════════════════════════════════
+exports.lembreteFechamentoAlmoco = onSchedule(
+  { region: 'southamerica-east1', schedule: 'every 5 minutes', timeZone: 'America/Sao_Paulo' },
+  async () => {
+    const configRef = db().doc('lunch_config/sede');
+    const configSnap = await configRef.get();
+    if (!configSnap.exists) return;
+    const config = configSnap.data() || {};
+    const horarioLimite = config.horarioLimite || '10:00';
+
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const [hh, mm] = horarioLimite.split(':').map(Number);
+    const limiteMinutes = hh * 60 + mm;
+    const targetMinutes = limiteMinutes - 10; // 10 min antes do fechamento
+
+    // Só age dentro da janela do tick de 5 min que cobre o alvo
+    if (nowMinutes < targetMinutes || nowMinutes >= targetMinutes + 5) return;
+
+    const todayISO = now.toISOString().split('T')[0];
+    if (config.ultimoLembreteData === todayISO) return; // já disparou hoje
+
+    // Cardápio ativo do dia
+    const menuSnap = await db().collection('lunch_menus').where('status', '==', 'ativo').limit(1).get();
+    if (menuSnap.empty) { await configRef.set({ ultimoLembreteData: todayISO }, { merge: true }); return; }
+    const menuId = menuSnap.docs[0].id;
+
+    // Quem já pediu
+    const choicesSnap = await db().collection('lunch_choices').where('menuId', '==', menuId).get();
+    const jaPediram = new Set(choicesSnap.docs.map(d => d.data().userId));
+
+    // Todos os colaboradores
+    const usersSnap = await db().collection('users').get();
+    const semPedido = usersSnap.docs.filter(d => !jaPediram.has(d.id));
+
+    const batchWrites = semPedido.map(d => db().collection('notifications').add({
+      destinatarioId: d.id,
+      tipo: 'almoco_lembrete_fechamento',
+      canal: 'almoco',
+      titulo: '⏰ Faltam 10 minutos para o pedido de almoço fechar!',
+      corpo: `Você ainda não fez seu pedido de hoje. Prazo: ${horarioLimite}.`,
+      lida: false,
+      criadoEm: FieldValue.serverTimestamp(),
+      som: true,
+      prioridade: 'alta',
+      rota: '/campo/almoco',
+    }));
+    await Promise.all(batchWrites);
+
+    await configRef.set({ ultimoLembreteData: todayISO }, { merge: true });
   }
 );
 

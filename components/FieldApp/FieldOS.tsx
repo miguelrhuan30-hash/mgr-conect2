@@ -8,10 +8,12 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, Wrench, User,
-  MapPin, Sun, ChevronRight, CalendarDays, Plus, ChevronLeft, Inbox,
+  MapPin, Sun, ChevronRight, CalendarDays, Plus, ChevronLeft, Inbox, Shield,
 } from 'lucide-react';
 import FieldOSPendenciaModal from './FieldOSPendenciaModal';
 import FieldOSDetail from './FieldOSDetail';
+import FieldGestaoOS from './FieldGestaoOS';
+import FieldTarefasAvulsas from './FieldTarefasAvulsas';
 
 export interface OSField {
   id: string;
@@ -51,7 +53,7 @@ const toKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const isSameDay = (a: Date, b: Date) => toKey(a) === toKey(b);
 
-type Tab = 'hoje' | 'calendario' | 'pendencias' | 'concluidas';
+type Tab = 'hoje' | 'calendario' | 'pendencias' | 'avulsas' | 'concluidas' | 'geral';
 
 export default function FieldOS() {
   const { currentUser, userProfile } = useAuth();
@@ -67,6 +69,9 @@ export default function FieldOS() {
   });
   const [diaSel, setDiaSel]                 = useState<Date | null>(new Date());
   const canCreateOS = !!(userProfile?.permissions?.canCreateTasks);
+  const canViewAll  = ['admin', 'gestor', 'manager'].includes(userProfile?.role || '')
+                    || !!(userProfile?.permissions?.canManageProjects)
+                    || !!(userProfile?.permissions?.canEditTasks && userProfile?.permissions?.canDeleteTasks);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -355,24 +360,33 @@ export default function FieldOS() {
             </button>
           )}
         </div>
-        <p className="text-lg font-black text-white mt-1">Minhas O.S.</p>
+        <p className="text-lg font-black text-white mt-1">
+          {tab === 'geral' ? 'Gestão Geral de O.S.' : 'Minhas O.S.'}
+        </p>
       </div>
 
       {/* ── Tab bar ── */}
       <div className="flex gap-1 px-4 pt-2.5 pb-2 overflow-x-auto scrollbar-none bg-gray-900 border-b border-gray-800 flex-shrink-0">
         {([
-          { id: 'hoje',       label: 'Hoje',        badge: totalHoje > 0 ? totalHoje : null },
-          { id: 'calendario', label: 'Calendário',  badge: null },
-          { id: 'pendencias', label: 'Pendências',  badge: totalPendencias > 0 ? totalPendencias : null },
-          { id: 'concluidas', label: 'Concluídas',  badge: concluidas.length > 0 ? concluidas.length : null },
-        ] as { id: Tab; label: string; badge: number | null }[]).map(({ id, label, badge }) => (
+          { id: 'hoje',       label: 'Hoje',        badge: totalHoje > 0 ? totalHoje : null,           icon: null,                              adminOnly: false },
+          { id: 'calendario', label: 'Calendário',  badge: null,                                       icon: null,                              adminOnly: false },
+          { id: 'pendencias', label: 'Pendências',  badge: totalPendencias > 0 ? totalPendencias : null, icon: null,                            adminOnly: false },
+          { id: 'avulsas',    label: 'Avulsas',      badge: null,                                       icon: null,                              adminOnly: false },
+          { id: 'concluidas', label: 'Concluídas',  badge: concluidas.length > 0 ? concluidas.length : null, icon: null,                       adminOnly: false },
+          { id: 'geral',      label: 'Geral',       badge: null,                                       icon: <Shield size={10} />,              adminOnly: true  },
+        ] as { id: Tab; label: string; badge: number | null; icon: React.ReactNode; adminOnly: boolean }[])
+          .filter(t => !t.adminOnly || canViewAll)
+          .map(({ id, label, badge, icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap flex-shrink-0 ${
-              tab === id ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400 active:bg-gray-700'
+              tab === id
+                ? id === 'geral' ? 'bg-orange-600 text-white' : 'bg-emerald-600 text-white'
+                : 'bg-gray-800 text-gray-400 active:bg-gray-700'
             }`}
           >
+            {icon && <span className="flex-shrink-0">{icon}</span>}
             {label}
             {badge !== null && (
               <span className={`text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center ${
@@ -385,7 +399,14 @@ export default function FieldOS() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      {/* ══════════════ ABA: GERAL (admin) ══════════════ */}
+      {tab === 'geral' && (
+        <div className="flex-1 overflow-hidden">
+          <FieldGestaoOS />
+        </div>
+      )}
+
+      <div className={`flex-1 overflow-y-auto ${tab === 'geral' ? 'hidden' : ''}`}>
 
         {/* ══════════════ ABA: HOJE ══════════════ */}
         {tab === 'hoje' && (
@@ -602,6 +623,9 @@ export default function FieldOS() {
             )}
           </div>
         )}
+
+        {/* ══════════════ ABA: TAREFAS AVULSAS (Hub de Tarefas do Projeto) ══════════════ */}
+        {tab === 'avulsas' && <FieldTarefasAvulsas />}
 
         {/* ══════════════ ABA: CONCLUÍDAS ══════════════ */}
         {tab === 'concluidas' && (

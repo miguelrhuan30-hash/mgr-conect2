@@ -68,6 +68,9 @@ export interface PermissionSet {
   // ── MGR Academy (LMS interno) ───────────────────────────────────────────────
   canAccessAcademy?: boolean;     // Acessar a Academia MGR (colaborador)
   canManageAcademy?: boolean;     // Criar/editar módulos, banco de questões, liberar provas
+
+  // ── Feed de Atividades ───────────────────────────────────────────────────────
+  canViewFeed?: boolean;          // Ver feed de atividades da equipe no app campo
 }
 
 export interface Sector {
@@ -277,6 +280,13 @@ export interface UserProfile {
   tempPasswordSetAt?: Timestamp;
   tempPasswordSetBy?: string;
   hasCustomPermissions?: boolean;
+
+  // Módulo Desligamento / Equipe Arquivada
+  ativo?: boolean; // false = colaborador desligado: perde acesso, some das novas atividades, mas mantém histórico. undefined/true = ativo
+  desligadoEm?: Timestamp | null;
+  desligadoPor?: string | null;
+  desligadoPorNome?: string | null;
+  reativadoEm?: Timestamp | null;
 }
 
 // ── Pedido de Redefinição de Senha (enviado da tela de login) ─────────────────
@@ -894,12 +904,25 @@ export interface ProjectDocument {
   id: string;
   projectId: string;
   nome: string;
-  tipo: 'pdf' | 'imagem' | 'outro';
+  tipo: 'pdf' | 'imagem' | 'video' | 'outro';
   url: string;                      // URL Firebase Storage
   tamanhoBytes?: number;
   uploadPor: string;
   uploadPorNome: string;
   uploadEm: Timestamp;
+  origemOsId?: string;               // se veio de uma O.S. (upload rápido na criação)
+}
+
+/** Arquivo de apoio anexado à O.S. — foto/vídeo/planta com instrução, visível
+ * ao técnico. Pode ser um upload novo (que também entra no histórico do
+ * projeto em ProjectDocument) ou uma referência a um documento já existente
+ * do projeto (croqui, foto, desenho — nunca documentos comerciais, que
+ * vivem em coleções separadas: cotações, contratos, apresentações). */
+export interface OSArquivoApoio {
+  url: string;
+  nome: string;
+  tipo: 'pdf' | 'imagem' | 'video' | 'outro';
+  projectDocId?: string;             // se referencia um doc já existente do projeto
 }
 
 // ─── Sprint 47: Orçamento ────────────────────────────────────────────────────
@@ -1128,6 +1151,50 @@ export interface VehicleCheck {
   timeEntryId?: string;    // vínculo com time_entry do ponto
 }
 
+/**
+ * Vehicle — cadastro permanente de frota (M3). Cada veículo tem um
+ * responsável fixo; nem todo colaborador dirige, então essa atribuição é
+ * explícita. Usado para: (a) pré-preencher a placa nas telas de campo,
+ * (b) cobrar o responsável se ele bater ponto e não abrir o veículo.
+ */
+export interface Vehicle {
+  id: string;
+  placa: string;
+  modelo?: string;
+  marca?: string;
+  ano?: number;
+  cor?: string;
+  responsavelId?: string;
+  responsavelNome?: string;
+  ativo: boolean;
+  criadoEm: Timestamp;
+  criadoPor?: string;
+  atualizadoEm?: Timestamp;
+}
+
+export type TipoCombustivel = 'gasolina' | 'etanol' | 'diesel' | 'gnv' | 'flex';
+
+/**
+ * VehicleFueling — registro de abastecimento. O KM é dado SECUNDÁRIO aqui:
+ * serve para cruzar com os KM das aberturas (vehicle_checks) e reconstruir a
+ * timeline de deslocamento do veículo (abertura → abastecimento → abertura...),
+ * permitindo calcular litros/KM rodado entre pontos e separar deslocamento
+ * geral de deslocamento por O.S.
+ */
+export interface VehicleFueling {
+  id: string;
+  userId: string;
+  userName: string;
+  placa: string;
+  km: number;                       // odômetro no momento do abastecimento
+  litros: number;
+  valorTotal: number;
+  tipoCombustivel: TipoCombustivel;
+  comprovanteUrl?: string;
+  timestamp: Timestamp;
+  origem: 'field_app' | 'web';
+}
+
 // ─── Sprint 38-45: Tipos auxiliares da O.S. ─────────────────────────────────
 
 export interface OSEdicao {
@@ -1220,6 +1287,7 @@ export interface OSObservacao {
   criadaEm: Timestamp;
   editada?: boolean;
   editadaEm?: Timestamp | null;
+  fotoUrl?: string; // vincula a observação à evidência (foto/vídeo) específica de onde ela partiu no feed
 }
 
 export interface OSFinalizacaoResposta {
@@ -1281,6 +1349,37 @@ export const STATUS_OS_COLORS: Record<OSStatusFinal, string> = {
   'CANCELADA':                  'bg-gray-100 text-gray-700',
 };
 
+// ─── Hub de Tarefas do Projeto (M1) ─────────────────────────────────────────
+export type BacklogTarefaStatus = 'backlog' | 'em_os' | 'concluida';
+export type BacklogTarefaOrigem = 'planejada' | 'nao_concluida';
+
+/**
+ * BacklogTarefa — pool de tarefas do projeto, independente de O.S.
+ * Gestor cadastra ao planejar o projeto; distribui em O.S. quando quiser;
+ * técnico pode "pegar" uma avulsa (cria uma O.S. mínima automaticamente);
+ * tarefas marcadas "não concluída" em qualquer O.S. do projeto retornam
+ * aqui automaticamente para redistribuição.
+ */
+export interface BacklogTarefa {
+  id: string;
+  projectId: string;
+  projectName?: string;
+  clientId?: string;
+  clientName?: string;
+  descricao: string;
+  status: BacklogTarefaStatus;
+  origem: BacklogTarefaOrigem;
+  osOrigemId?: string;        // se origem = nao_concluida: de qual O.S. veio
+  osDestinoId?: string;       // se status = em_os/concluida: para qual O.S. foi
+  motivoNaoConclusao?: string;
+  executorId?: string;
+  executorNome?: string;
+  concluidaEm?: Timestamp;
+  criadoEm: Timestamp;
+  criadoPor?: string;
+  criadoPorNome?: string;
+}
+
 export interface OSKpiEntry {
   descricaoTarefa: string;
   tipoServico?: string;
@@ -1332,6 +1431,8 @@ const _BASE_COLLECTIONS = {
   RECEIVABLES: 'receivables',
   // Sprint Veículos
   VEHICLE_CHECKS: 'vehicle_checks',
+  VEHICLE_FUELINGS: 'vehicle_fuelings',
+  VEHICLES: 'vehicles',
   // Sprint Analytics
   MGR_EVENTS: 'mgr_events',
   // Sprint 38-45 — Módulo O.S. Completo
@@ -1342,6 +1443,10 @@ const _BASE_COLLECTIONS = {
   ORDENS_SERVICO: 'tasks',     // alias (O.S. usa a mesma coleção 'tasks')
   // Sprint 46A — Suporte Primário
   OS_SUPORTE_MSGS: 'os_suporte_msgs',
+  // M4 — Base de Conhecimento de Suporte (dúvidas/soluções reais técnico↔gestor)
+  KNOWLEDGE_BASE: 'knowledge_base',
+  // Módulo Suporte — resumo de conversa por O.S. (aba Suporte do gestor)
+  OS_SUPORTE_THREADS: 'os_suporte_threads',
   // Sprint 46 — Fotos anotadas
   OS_FOTO_SLOTS: 'os_foto_slots',
   // Sprint 47 — Projetos & Orçamentos
@@ -1387,6 +1492,8 @@ const _BASE_COLLECTIONS = {
   PROJECT_ACTIVITIES: 'project_activities',
   // Sprint Projetos v2 — Adendos (subcoleção simulada via coleção raiz)
   PROJECT_ADENDOS: 'project_adendos',
+  // Hub de Tarefas do Projeto (M1) — backlog distribuível em O.S.
+  PROJECT_TASK_BACKLOG: 'project_task_backlog',
   // Sprint RACI — Matriz de Responsabilidades do Flow de Atendimento
   RACI_CONFIG: 'raci_config',
   FORNECEDORES: 'fornecedores',
@@ -1410,6 +1517,10 @@ const _BASE_COLLECTIONS = {
   ACADEMY_PROGRESS: 'academy_progress',
   ACADEMY_EXAM_ATTEMPTS: 'academy_exam_attempts',
   ACADEMY_EXTERNAL_BADGES: 'academy_external_badges',
+
+  // Fundação F-A — Central de Notificações (in-app + som + push FCM)
+  NOTIFICATIONS: 'notifications',
+  PUSH_TOKENS: 'push_tokens',
 
 } as const;
 
@@ -1476,11 +1587,58 @@ const _prefixedCollections = Object.fromEntries(
 
 export const CollectionName: CollectionNameType = Object.freeze(_prefixedCollections);
 
+// ─── Fundação F-A: Central de Notificações ──────────────────────────────────
+export type NotificacaoTipo =
+  | 'almoco_novo_cardapio'         // novo cardápio do dia liberado
+  | 'almoco_lembrete_fechamento'   // 10 min antes do horário limite, p/ quem não pediu
+  | 'os_duvida'                    // técnico enviou dúvida na O.S. (gestor c/ canViewFeed)
+  | 'os_suporte_resposta'          // gestor respondeu uma dúvida de suporte do técnico
+  | 'os_observacao_gestor'         // gestor adicionou observação numa evidência
+  | 'os_tarefa_nao_concluida'      // tarefa marcada como não concluída
+  | 'veiculo_check_pendente'       // responsável não registrou o veículo após o ponto
+  | 'geral';                       // notificação genérica
+
+export type NotificacaoCanal = 'almoco' | 'duvida' | 'os' | 'veiculo' | 'geral';
+
+export interface Notificacao {
+  id: string;
+  destinatarioId: string;          // uid do usuário-alvo
+  tipo: NotificacaoTipo;
+  canal: NotificacaoCanal;         // usado para agrupar/priorizar e escolher o som
+  titulo: string;
+  corpo: string;
+  lida: boolean;
+  criadoEm: Timestamp;
+  som?: boolean;                   // se true, dispara alerta sonoro no dispositivo
+  prioridade?: 'normal' | 'alta';
+  // Navegação ao tocar
+  rota?: string;                   // ex: /campo/feed, /campo/almoco
+  // Contexto opcional
+  osId?: string;
+  projetoId?: string;
+  autorId?: string;
+  autorNome?: string;
+  data?: Record<string, any>;      // payload extra livre
+}
+
+// Token de push por dispositivo (FCM). Doc id = token.
+export interface PushToken {
+  token: string;
+  userId: string;
+  plataforma: 'android' | 'ios' | 'web';
+  atualizadoEm: Timestamp;
+}
+
 // ─── Sprint 46A: Suporte Primário — Chat in-OS ──────────────────────────────
 export interface OSSuporteMsg {
   id: string;
   osId: string;
   osCode?: string;
+  osTitulo?: string;
+  clienteNome?: string;
+  projectId?: string;         // denormalizado da O.S. — agrega conversas por projeto
+  tarefaId?: string;          // qual tarefa da O.S. gerou a dúvida
+  tarefaDescricao?: string;
   tipoServico?: string;
   texto: string;
   autorId: string;
@@ -1493,6 +1651,47 @@ export interface OSSuporteMsg {
   solicitouHumano?: boolean;
   fotosURLs?: string[];
   audioURL?: string;
+  archived?: boolean;
+  archivedEm?: Timestamp;
+}
+
+/**
+ * OSSuporteThread — resumo de 1 conversa de suporte por O.S., mantido pela
+ * Cloud Function atualizarThreadSuporte a cada nova OSSuporteMsg. Existe pra
+ * dar uma lista instantânea ao gestor (aba Suporte) sem precisar agregar
+ * todas as mensagens client-side toda vez que a tela abre.
+ */
+export interface OSSuporteThread {
+  id: string; // = osId
+  osCode?: string;
+  osTitulo?: string;
+  clienteNome?: string;
+  projectId?: string;
+  ultimaMsgTexto: string;
+  ultimaMsgAutorNome: string;
+  ultimaMsgEm: Timestamp;
+  naoLidasGestor: number;
+  naoLidasTecnico: number;
+  archived: boolean;
+  archivedEm?: Timestamp;
+}
+
+/**
+ * KnowledgeBaseEntry — base de conhecimento de dúvidas/soluções reais entre
+ * técnico e gestor, tagueada por tipo de serviço. Alimenta a IA de suporte
+ * (histórico já usado no prompt) e serve de dataset para treino/RAG futuro.
+ */
+export interface KnowledgeBaseEntry {
+  id: string;
+  tipoServico?: string;
+  pergunta: string;
+  resposta: string;
+  tags?: string[];
+  origemOsId?: string;
+  origemMsgId?: string;
+  criadoPor: string;
+  criadoPorNome: string;
+  criadoEm: Timestamp;
 }
 
 // ─── Sprint 46: Fotos de Evidência por Tarefa com Anotações ─────────────────

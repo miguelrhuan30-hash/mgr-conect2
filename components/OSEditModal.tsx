@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { gerarNumeroOS } from '../services/osService';
+import { registrarAtividade } from '../services/activityFeedService';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Task, CollectionName, OSEdicao, PriorityLevel, WorkflowStatus,
@@ -333,6 +334,33 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
 
       await updateDoc(doc(db, CollectionName.TASKS, task.id), patch);
 
+      const autorNome = (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor';
+      const osBase = {
+        autorId:     currentUser.uid,
+        autorNome,
+        osId:        task.id,
+        osNumero:    (task as any).numeroOS,
+        osTitulo:    patch.title ?? task.title,
+        clienteNome: clientName || task.clientName,
+        meta:        { ambiente: 'web' },
+      };
+      if (patch.status && patch.status !== task.status) {
+        const label = STATUS_LIST.find(s => s.value === patch.status)?.label ?? patch.status;
+        registrarAtividade({ ...osBase, tipo: 'os_status_mudou',
+          titulo: `Status alterado → ${label}`,
+          descricao: patch.title ?? task.title,
+        });
+      } else if ('assignedTo' in patch && patch.assignedTo !== ((task as any).assignedTo)) {
+        registrarAtividade({ ...osBase, tipo: 'os_atribuida',
+          titulo: patch.assignedTo ? `O.S. atribuída a ${patch.assigneeName}` : 'O.S. sem responsável',
+          descricao: patch.title ?? task.title,
+        });
+      } else {
+        registrarAtividade({ ...osBase, tipo: 'os_editada',
+          titulo: `O.S. editada: ${patch.title ?? task.title}`,
+        });
+      }
+
       const updated: Task = {
         ...task,
         ...patch,
@@ -358,6 +386,14 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
         archivedAt: serverTimestamp(),
         archivedBy: currentUser.uid,
         updatedAt: serverTimestamp(),
+      });
+      registrarAtividade({
+        tipo: 'os_arquivada',
+        autorId: currentUser.uid,
+        autorNome: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor',
+        titulo: `O.S. arquivada: ${task.title}`,
+        osId: task.id, osNumero: (task as any).numeroOS, osTitulo: task.title,
+        clienteNome: task.clientName, meta: { ambiente: 'web' },
       });
       onSaved({ ...task, archived: true } as unknown as Task);
     } catch (e: any) {
@@ -393,6 +429,14 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
     if (!window.confirm('Confirme mais uma vez: EXCLUIR PERMANENTEMENTE esta O.S.?')) return;
     setDeleting(true);
     try {
+      registrarAtividade({
+        tipo: 'os_excluida',
+        autorId: currentUser.uid,
+        autorNome: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor',
+        titulo: `O.S. excluída: ${task.title}`,
+        osId: task.id, osNumero: (task as any).numeroOS, osTitulo: task.title,
+        clienteNome: task.clientName, meta: { ambiente: 'web' },
+      });
       await deleteDoc(doc(db, CollectionName.TASKS, task.id));
       onSaved({ ...task, id: '__deleted__' } as unknown as Task);
     } catch (e: any) {
@@ -462,6 +506,17 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
         reagendamentoMotivo: motivo,
         reagendamentoPara: novaRef.id,
         updatedAt: serverTimestamp(),
+      });
+
+      registrarAtividade({
+        tipo: 'os_reagendada',
+        autorId: currentUser.uid,
+        autorNome: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor',
+        titulo: `O.S. reagendada para ${new Date(reagendamentoData).toLocaleDateString('pt-BR')}`,
+        descricao: motivo || undefined,
+        osId: task.id, osNumero: (task as any).numeroOS, osTitulo: task.title,
+        clienteNome: clientName || task.clientName,
+        meta: { ambiente: 'web', novaOsId: novaRef.id, motivo },
       });
 
       onSaved({ ...task, status: 'completed', statusOS: 'REAGENDAR' } as unknown as Task);
@@ -681,14 +736,14 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
                       }}
                         className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-brand-200 pr-8">
                         <option value="">Nenhum responsável</option>
-                        {users.map(u => <option key={u.id || u.uid} value={u.id || u.uid}>{u.displayName || u.name}</option>)}
+                        {users.filter(u => u.ativo !== false || u.id === assigneeId || u.uid === assigneeId).map(u => <option key={u.id || u.uid} value={u.id || u.uid}>{u.displayName || u.name}</option>)}
                       </select>
                       <ChevronDown size={13} className="absolute right-2.5 top-[calc(50%+8px)] -translate-y-1/2 text-gray-400 pointer-events-none" />
                     </div>
                     <div>
                       <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1.5">Colaboradores Adicionais</label>
                       <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                        {users.map(u => (
+                        {users.filter(u => u.ativo !== false || assignedUsers.includes(u.id || u.uid)).map(u => (
                           <label key={u.id || u.uid} className={`
                             flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs cursor-pointer transition-colors
                             ${assignedUsers.includes(u.id || u.uid) ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}

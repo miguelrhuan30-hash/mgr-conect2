@@ -28,6 +28,7 @@ import {
   Trophy, Brain, Kanban, Wrench, Receipt, BarChart3, Car, Target,
   CheckSquare, CalendarDays, Award, ClipboardCheck, CheckCircle, XCircle,
   MinusCircle, BadgeCheck, ShieldAlert, KeyRound, Bell, EyeOff,
+  UserPlus, Archive, RotateCcw, UserX,
 } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -117,6 +118,10 @@ const USER_MODULES: UM[] = [
     actions: [
       { key: 'canViewBI',    label: 'BI / Dashboard' },
       { key: 'canViewIntel', label: 'Inteligência MGR 🧠', desc: 'Acesso ao hub de análise estratégica' },
+    ] },
+  { id: 'feed', label: 'Feed de Atividades', color: 'bg-teal-50', txtColor: 'text-teal-700',
+    actions: [
+      { key: 'canViewFeed', label: 'Ver Feed da Equipe', desc: 'Exibe a aba Feed no app campo com todas as atividades da equipe em tempo real' },
     ] },
   { id: 'admin', label: 'Administração', color: 'bg-red-50', txtColor: 'text-red-700',
     actions: [
@@ -1212,6 +1217,139 @@ const EmployeeDetailPanel: React.FC<{
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   MODAL: NOVO COLABORADOR — Admin cria conta diretamente (sem autocadastro)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const NewEmployeeModal: React.FC<{
+  sectors: Sector[];
+  onClose: () => void;
+  onCreated: () => void;
+}> = ({ sectors, onClose, onCreated }) => {
+  const [nomeCompleto, setNomeCompleto] = useState('');
+  const [email, setEmail] = useState('');
+  const [cargo, setCargo] = useState('');
+  const [sectorId, setSectorId] = useState('');
+  const [tempPassword, setTempPassword] = useState('');
+  const [confirmTempPassword, setConfirmTempPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleCreate = async () => {
+    setError('');
+    if (!nomeCompleto.trim()) { setError('Informe o nome completo.'); return; }
+    if (!email.trim() || !email.includes('@')) { setError('Informe um e-mail válido.'); return; }
+    if (tempPassword.length < 8) { setError('A senha temporária deve ter pelo menos 8 caracteres.'); return; }
+    if (tempPassword !== confirmTempPassword) { setError('As senhas não coincidem.'); return; }
+
+    setCreating(true);
+    try {
+      const sector = sectors.find(s => s.id === sectorId);
+      const createFn = httpsCallable(functions, 'adminCreateUser');
+      await createFn({
+        email: email.trim(),
+        password: tempPassword,
+        nomeCompleto: nomeCompleto.trim(),
+        cargo: cargo.trim() || null,
+        sectorId: sectorId || null,
+        sectorName: sector?.name || null,
+        permissions: sector?.defaultPermissions || null,
+      });
+      setSuccess(true);
+      setTimeout(() => onCreated(), 1200);
+    } catch (err: any) {
+      const msg = err?.message || 'Erro ao criar colaborador.';
+      setError(msg.replace('FirebaseError: ', '').replace('functions/', ''));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+          <h2 className="text-base font-bold text-gray-900 flex items-center gap-2"><UserPlus size={18} className="text-brand-600" /> Novo Colaborador</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400"><X size={18} /></button>
+        </div>
+
+        {success ? (
+          <div className="p-6 flex flex-col items-center gap-2 text-center">
+            <CheckCircle size={32} className="text-emerald-500" />
+            <p className="text-sm font-bold text-gray-800">Colaborador criado com sucesso!</p>
+            <p className="text-xs text-gray-500">A conta já está ativa. Informe a senha temporária por outro canal.</p>
+          </div>
+        ) : (
+          <div className="p-5 space-y-3">
+            <div>
+              <label className="text-xs font-bold text-gray-600 block mb-1">Nome Completo *</label>
+              <input value={nomeCompleto} onChange={e => setNomeCompleto(e.target.value)} placeholder="Ex: João da Silva"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-600 block mb-1">E-mail *</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="colaborador@mgr.com"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">Cargo / Função</label>
+                <input value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico de Campo"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">Setor</label>
+                <select value={sectorId} onChange={e => setSectorId(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm">
+                  <option value="">Selecione...</option>
+                  {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="pt-2 border-t border-gray-100">
+              <label className="text-xs font-bold text-gray-600 block mb-1">Senha temporária * <span className="font-normal text-gray-400">(mín. 8 caracteres)</span></label>
+              <div className="relative">
+                <input type={showPwd ? 'text' : 'password'} value={tempPassword} onChange={e => setTempPassword(e.target.value)}
+                  placeholder="••••••••" className="w-full pr-10 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <button type="button" onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-600 block mb-1">Confirmar senha</label>
+              <input type={showPwd ? 'text' : 'password'} value={confirmTempPassword} onChange={e => setConfirmTempPassword(e.target.value)}
+                placeholder="••••••••" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                <AlertTriangle size={13} className="flex-shrink-0" /> {error}
+              </div>
+            )}
+
+            <p className="text-[10px] text-gray-400">
+              O colaborador poderá acessar imediatamente com o e-mail e a senha temporária. Ele será solicitado a trocar a senha no primeiro acesso.
+            </p>
+          </div>
+        )}
+
+        {!success && (
+          <div className="px-5 py-3 border-t border-gray-200 bg-white flex justify-end gap-2">
+            <button onClick={onClose} className="px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+            <button onClick={handleCreate} disabled={creating}
+              className="px-5 py-2 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+              {creating ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />} Criar Colaborador
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MAIN USERS COMPONENT
    ═══════════════════════════════════════════════════════════════════════════ */
 const Users: React.FC = () => {
@@ -1228,9 +1366,13 @@ const Users: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [pendingResets, setPendingResets] = useState<PasswordResetRequest[]>([]);
   const [resolvingReset, setResolvingReset] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [teamTab, setTeamTab] = useState<'ativos' | 'arquivados'>('ativos');
+  const [togglingActive, setTogglingActive] = useState<string | null>(null);
 
   const isAdmin = userProfile?.role === 'admin';
   const canResetPasswords = isAdmin || !!userProfile?.permissions?.canResetUserPasswords;
+  const masterEmail = (import.meta.env.VITE_MASTER_EMAIL || '').toLowerCase();
 
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
@@ -1282,9 +1424,31 @@ const Users: React.FC = () => {
     await updateDoc(doc(db, CollectionName.USERS, uid), { role: newRole });
   };
 
+  const handleToggleActive = async (u: UserProfile, ativo: boolean) => {
+    const label = ativo ? 'reativar' : 'desativar';
+    const confirmMsg = ativo
+      ? `Reativar ${u.nomeCompleto || u.displayName}? O colaborador volta a ter acesso ao sistema.`
+      : `Desativar ${u.nomeCompleto || u.displayName}?\n\nEle perde o acesso ao sistema e some das novas atividades, mas todo o histórico (documentos, ocorrências, O.S., ponto) é mantido e o colaborador vai para "Equipe Arquivada".`;
+    if (!window.confirm(confirmMsg)) return;
+    setTogglingActive(u.uid);
+    try {
+      const fn = httpsCallable(functions, 'adminSetUserActive');
+      await fn({ targetUid: u.uid, ativo });
+    } catch (e: any) {
+      alert(e?.message?.replace('FirebaseError: ', '').replace('functions/', '') || `Erro ao ${label} colaborador.`);
+    } finally {
+      setTogglingActive(null);
+    }
+  };
+
+  const activeCount = users.filter(u => u.ativo !== false).length;
+  const archivedCount = users.filter(u => u.ativo === false).length;
+
   const filteredUsers = users.filter(u => {
     const name = (u.nomeCompleto || u.displayName || '').toLowerCase();
-    return name.includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = name.includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
+    const matchesTab = teamTab === 'ativos' ? u.ativo !== false : u.ativo === false;
+    return matchesSearch && matchesTab;
   });
 
   if (!isAdmin) return (
@@ -1301,6 +1465,22 @@ const Users: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><UsersIcon className="w-6 h-6 text-brand-600" /> Gestão de Equipe & RH</h1>
           <p className="text-sm text-gray-500">Gerencie colaboradores, jornadas, permissões e documentos</p>
         </div>
+        <button onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 shadow-sm flex-shrink-0">
+          <UserPlus size={16} /> Novo Colaborador
+        </button>
+      </div>
+
+      {/* Tabs: Ativos / Arquivados */}
+      <div className="flex bg-gray-100 rounded-xl p-1 max-w-sm">
+        <button onClick={() => setTeamTab('ativos')}
+          className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg font-bold ${teamTab === 'ativos' ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500'}`}>
+          Ativos <span className="text-[10px] opacity-70">({activeCount})</span>
+        </button>
+        <button onClick={() => setTeamTab('arquivados')}
+          className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg font-bold ${teamTab === 'arquivados' ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500'}`}>
+          <Archive size={12} /> Arquivados <span className="text-[10px] opacity-70">({archivedCount})</span>
+        </button>
       </div>
 
       {/* ── Banner: pedidos de redefinição de senha pendentes ── */}
@@ -1366,6 +1546,10 @@ const Users: React.FC = () => {
       {/* User list */}
       {loading ? (
         <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-brand-600" /></div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="text-center py-16 text-sm text-gray-400">
+          {teamTab === 'arquivados' ? 'Nenhum colaborador arquivado.' : 'Nenhum colaborador encontrado.'}
+        </div>
       ) : (
         <div className="space-y-2">
           {filteredUsers.map(user => {
@@ -1376,20 +1560,28 @@ const Users: React.FC = () => {
             const userDocs = documents.filter(d => d.userId === user.uid);
             const userCerts = certifications.filter(c => c.colaboradorId === user.uid);
             const certVencendo = userCerts.filter(c => c.status === 'vencendo' || c.status === 'vencida').length;
+            const isArchived = user.ativo === false;
+            const isMaster = user.email?.toLowerCase() === masterEmail;
+            const isSelf = user.uid === userProfile?.uid;
             return (
-              <div key={user.uid} className="bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-4 hover:shadow-sm hover:border-brand-200 transition-all">
+              <div key={user.uid} className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${
+                isArchived ? 'border-gray-200 opacity-60' : 'border-gray-200 hover:shadow-sm hover:border-brand-200'
+              }`}>
                 {/* Avatar */}
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 relative">
                   {avatarUrl ? (
-                    <img src={avatarUrl} alt="" className="w-12 h-12 rounded-full object-cover border border-gray-200" />
+                    <img src={avatarUrl} alt="" className={`w-12 h-12 rounded-full object-cover border border-gray-200 ${isArchived ? 'grayscale' : ''}`} />
                   ) : (
-                    <div className="w-12 h-12 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-lg">{initial}</div>
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${isArchived ? 'bg-gray-100 text-gray-500' : 'bg-brand-100 text-brand-700'}`}>{initial}</div>
                   )}
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-gray-900 truncate">{name}</h3>
+                  <h3 className="text-sm font-bold text-gray-900 truncate flex items-center gap-1.5">
+                    {name}
+                    {isArchived && <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1"><Archive size={9} /> Arquivado</span>}
+                  </h3>
                   <p className="text-xs text-gray-500 truncate">{user.email}</p>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     {user.sectorName && <span className="text-[9px] bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded-full font-bold">{user.sectorName}</span>}
@@ -1401,19 +1593,38 @@ const Users: React.FC = () => {
                         {certVencendo > 0 ? `⚠ ${certVencendo} cert. venc.` : `${userCerts.length} cert.`}
                       </span>
                     )}
+                    {isArchived && user.desligadoEm && (
+                      <span className="text-[9px] text-gray-400">
+                        desligado em {(user.desligadoEm as Timestamp).toDate?.().toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 {/* Role select */}
                 <select value={user.role} onChange={e => handleRoleChange(user.uid, e.target.value as UserRole)}
-                  disabled={user.email?.toLowerCase() === import.meta.env.VITE_MASTER_EMAIL?.toLowerCase()}
-                  className="text-[10px] font-bold px-2 py-1 rounded-full border bg-white text-gray-700 cursor-pointer">
+                  disabled={isMaster || isArchived}
+                  className="text-[10px] font-bold px-2 py-1 rounded-full border bg-white text-gray-700 cursor-pointer disabled:opacity-50">
                   <option value="pending">Pendente</option>
                   <option value="employee">Colaborador</option>
                   <option value="technician">Técnico</option>
                   <option value="manager">Gerente</option>
                   <option value="admin">Admin</option>
                 </select>
+
+                {/* Ativar/Desativar */}
+                {!isMaster && !isSelf && (
+                  <button
+                    onClick={() => handleToggleActive(user, isArchived)}
+                    disabled={togglingActive === user.uid}
+                    title={isArchived ? 'Reativar colaborador' : 'Desativar colaborador'}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-sm disabled:opacity-50 ${
+                      isArchived ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+                    }`}>
+                    {togglingActive === user.uid ? <Loader2 size={13} className="animate-spin" /> : isArchived ? <RotateCcw size={13} /> : <UserX size={13} />}
+                    {isArchived ? 'Reativar' : 'Desativar'}
+                  </button>
+                )}
 
                 {/* Edit button */}
                 <button onClick={() => setSelectedUser(user)}
@@ -1434,6 +1645,15 @@ const Users: React.FC = () => {
           certifications={certifications} vistorias={vistorias}
           onClose={() => setSelectedUser(null)}
           onSaved={() => setSelectedUser(null)} />
+      )}
+
+      {/* Modal: Novo Colaborador */}
+      {showCreateModal && (
+        <NewEmployeeModal
+          sectors={sectors}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={() => setShowCreateModal(false)}
+        />
       )}
     </div>
   );

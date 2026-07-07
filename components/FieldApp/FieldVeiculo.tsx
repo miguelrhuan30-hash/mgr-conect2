@@ -1,13 +1,93 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDoc, doc, query, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { CollectionName } from '../../types';
-import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X, Check } from 'lucide-react';
+import { CollectionName, TipoCombustivel, Vehicle } from '../../types';
+import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X, Check, Fuel, DollarSign, ChevronDown } from 'lucide-react';
 import { SlotConfig, FOTO_SLOTS_DEFAULT } from '../VehicleCheckConfig';
 
 type FotoKey = string;
+type Aba = 'abertura' | 'abastecimento';
+
+/** Frota cadastrada (ativa) — usada para selecionar a placa em vez de digitar. */
+function useVeiculosAtivos() {
+  const [veiculos, setVeiculos] = useState<Vehicle[]>([]);
+  const [loading, setLoading]   = useState(true);
+  useEffect(() => {
+    getDocs(query(collection(db, CollectionName.VEHICLES), where('ativo', '==', true)))
+      .then(snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Vehicle));
+        list.sort((a, b) => a.placa.localeCompare(b.placa));
+        setVeiculos(list);
+      })
+      .catch(() => setVeiculos([]))
+      .finally(() => setLoading(false));
+  }, []);
+  return { veiculos, loadingVeiculos: loading };
+}
+
+/** Campo de placa: seletor da frota cadastrada, com fallback para digitar
+ * manualmente caso nenhum veículo esteja cadastrado ainda. */
+function CampoPlaca({
+  placa, onChange, accentClass, veiculos, loadingVeiculos,
+}: {
+  placa: string; onChange: (v: string) => void; accentClass: string;
+  veiculos: Vehicle[]; loadingVeiculos: boolean;
+}) {
+  const [manual, setManual] = useState(false);
+
+  if (loadingVeiculos) {
+    return (
+      <div className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 flex items-center gap-2 text-gray-500 text-sm">
+        <Loader2 className="w-4 h-4 animate-spin" /> Carregando frota...
+      </div>
+    );
+  }
+
+  if (veiculos.length === 0 || manual) {
+    return (
+      <div className="space-y-1.5">
+        <input
+          type="text" maxLength={8} placeholder="ABC-1234 ou ABC1D23"
+          value={placa} onChange={e => onChange(aplicarMascara(e.target.value))}
+          className={`w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-base font-mono uppercase text-white placeholder-gray-600 focus:outline-none ${accentClass}`}
+        />
+        {veiculos.length > 0 && (
+          <button onClick={() => setManual(false)} className="text-[11px] text-gray-500 underline">
+            Selecionar da frota cadastrada
+          </button>
+        )}
+        {veiculos.length === 0 && (
+          <p className="text-[11px] text-gray-600">Nenhum veículo cadastrado na frota ainda — peça ao gestor para cadastrar em Frota.</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="relative">
+        <select
+          value={placa}
+          onChange={e => onChange(e.target.value)}
+          className={`w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-base font-mono uppercase text-white appearance-none focus:outline-none ${accentClass}`}
+        >
+          <option value="">Selecione o veículo...</option>
+          {veiculos.map(v => (
+            <option key={v.id} value={v.placa}>
+              {v.placa}{v.modelo ? ` — ${v.modelo}` : ''}{v.responsavelNome ? ` (${v.responsavelNome})` : ''}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+      </div>
+      <button onClick={() => setManual(true)} className="text-[11px] text-gray-500 underline">
+        Digitar placa manualmente
+      </button>
+    </div>
+  );
+}
 
 function aplicarMascara(valor: string): string {
   const v = valor.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -48,8 +128,10 @@ async function uploadWithRetry(storageRef: ReturnType<typeof ref>, blob: Blob): 
   try { return await attempt(); } catch { await new Promise(r => setTimeout(r, 1000)); return await attempt(); }
 }
 
-export default function FieldVeiculo() {
+/* ════════════════════ Aba: Abertura de Veículo ════════════════════ */
+function AberturaTab() {
   const { currentUser, userProfile } = useAuth();
+  const { veiculos, loadingVeiculos } = useVeiculosAtivos();
 
   const [fotoSlots, setFotoSlots]   = useState<SlotConfig[]>(FOTO_SLOTS_DEFAULT);
   const [loadingConfig, setLoadingConfig] = useState(true);
@@ -119,7 +201,7 @@ export default function FieldVeiculo() {
       setProgress('Salvando registro...');
       await addDoc(collection(db, CollectionName.VEHICLE_CHECKS), {
         userId: currentUser.uid,
-        userName: userProfile?.displayName || currentUser.email || 'Colaborador',
+        userName: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Colaborador',
         userSector: userProfile?.sectorName || '',
         placa: placa.toUpperCase(),
         kmInicial: Number(kmInicial),
@@ -159,7 +241,6 @@ export default function FieldVeiculo() {
 
   return (
     <>
-      {/* Overlay de envio */}
       {saving && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl px-8 py-7 flex flex-col items-center gap-4 max-w-xs w-full mx-4">
@@ -176,7 +257,6 @@ export default function FieldVeiculo() {
       )}
 
       <div className="overflow-y-auto h-full px-4 py-5 space-y-5">
-        {/* Header */}
         <div>
           <h2 className="text-lg font-black text-white flex items-center gap-2">
             <Car className="w-5 h-5 text-emerald-400" /> Abertura de Veículo
@@ -184,17 +264,14 @@ export default function FieldVeiculo() {
           <p className="text-xs text-gray-500 mt-0.5">Preencha antes de iniciar o deslocamento</p>
         </div>
 
-        {/* Placa */}
         <div>
           <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">Placa do veículo *</label>
-          <input
-            type="text" maxLength={8} placeholder="ABC-1234 ou ABC1D23"
-            value={placa} onChange={e => setPlaca(aplicarMascara(e.target.value))}
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-base font-mono uppercase text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500"
+          <CampoPlaca
+            placa={placa} onChange={setPlaca} accentClass="focus:border-emerald-500"
+            veiculos={veiculos} loadingVeiculos={loadingVeiculos}
           />
         </div>
 
-        {/* KM */}
         <div>
           <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
             <Gauge className="w-3.5 h-3.5" /> KM inicial *
@@ -206,7 +283,6 @@ export default function FieldVeiculo() {
           />
         </div>
 
-        {/* Fotos */}
         <div>
           <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
             Fotos * <span className="text-gray-600 font-normal normal-case">({Object.keys(fotos).length}/{fotoSlots.filter(s => s.required).length} obrigatórias)</span>
@@ -249,14 +325,12 @@ export default function FieldVeiculo() {
           </div>
         </div>
 
-        {/* Erro */}
         {error && (
           <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-3">
             <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
           </div>
         )}
 
-        {/* Checklist */}
         <div className="text-xs text-gray-600 space-y-1.5 border-t border-gray-800 pt-4">
           {[
             { ok: placaValida, label: 'Placa informada' },
@@ -270,14 +344,261 @@ export default function FieldVeiculo() {
           ))}
         </div>
 
-        {/* Botão */}
         <button onClick={handleSalvar} disabled={!podeSalvar}
           className="w-full py-4 rounded-xl text-sm font-bold transition-all disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed bg-emerald-600 text-white active:bg-emerald-700 flex items-center justify-center gap-2">
           <CheckCircle className="w-4 h-4" /> Confirmar abertura de veículo
         </button>
       </div>
+    </>
+  );
+}
+
+/* ════════════════════ Aba: Abastecimento ════════════════════
+ * KM aqui é dado SECUNDÁRIO: serve para cruzar com os KM das aberturas
+ * (vehicle_checks) e montar a timeline abertura→abastecimento→abertura,
+ * de onde se calcula litros/KM e separa deslocamento geral do por O.S.
+ */
+const COMBUSTIVEIS: { value: TipoCombustivel; label: string }[] = [
+  { value: 'gasolina', label: 'Gasolina' },
+  { value: 'etanol',   label: 'Etanol' },
+  { value: 'diesel',   label: 'Diesel' },
+  { value: 'gnv',      label: 'GNV' },
+  { value: 'flex',     label: 'Flex (misto)' },
+];
+
+function AbastecimentoTab() {
+  const { currentUser, userProfile } = useAuth();
+  const { veiculos, loadingVeiculos } = useVeiculosAtivos();
+
+  const [placa, setPlaca]                 = useState('');
+  const [km, setKm]                       = useState('');
+  const [litros, setLitros]               = useState('');
+  const [valorTotal, setValorTotal]       = useState('');
+  const [tipoCombustivel, setTipoCombustivel] = useState<TipoCombustivel>('gasolina');
+  const [comprovante, setComprovante]     = useState<File | null>(null);
+  const [preview, setPreview]             = useState<string | null>(null);
+  const [saving, setSaving]               = useState(false);
+  const [saved, setSaved]                 = useState(false);
+  const [error, setError]                 = useState<string | null>(null);
+  const [progress, setProgress]           = useState('');
+
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleFoto = (file: File) => {
+    setComprovante(file);
+    setPreview(URL.createObjectURL(file));
+  };
+  const removerFoto = () => { setComprovante(null); setPreview(null); };
+
+  const placaValida  = placa.length >= 8;
+  const kmValido      = km !== '' && Number(km) >= 0;
+  const litrosValido  = litros !== '' && Number(litros) > 0;
+  const valorValido   = valorTotal !== '' && Number(valorTotal) > 0;
+  const podeSalvar    = placaValida && kmValido && litrosValido && valorValido && !saving;
+
+  const handleSalvar = async () => {
+    if (!currentUser || !podeSalvar) return;
+    setSaving(true); setError(null); setProgress('Salvando registro...');
+    try {
+      let comprovanteUrl: string | undefined;
+      if (comprovante) {
+        setProgress('Enviando comprovante...');
+        let blob: Blob = comprovante;
+        try { blob = await compressImage(comprovante); } catch { /* usa original */ }
+        const storageRef = ref(storage, `vehicle_fuelings/${currentUser.uid}/${Date.now()}.jpg`);
+        comprovanteUrl = await uploadWithRetry(storageRef, blob);
+      }
+      setProgress('Salvando registro...');
+      await addDoc(collection(db, CollectionName.VEHICLE_FUELINGS), {
+        userId: currentUser.uid,
+        userName: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Colaborador',
+        placa: placa.toUpperCase(),
+        km: Number(km),
+        litros: Number(litros),
+        valorTotal: Number(valorTotal),
+        tipoCombustivel,
+        ...(comprovanteUrl ? { comprovanteUrl } : {}),
+        timestamp: serverTimestamp(),
+        origem: 'field_app',
+      });
+      setSaved(true);
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao salvar. Verifique a conexão e tente novamente.');
+    } finally {
+      setSaving(false); setProgress('');
+    }
+  };
+
+  if (saved) return (
+    <div className="flex flex-col items-center justify-center gap-5 h-full text-center px-6">
+      <div className="w-20 h-20 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+        <CheckCircle className="w-10 h-10 text-amber-400" />
+      </div>
+      <div>
+        <h2 className="text-xl font-black text-white">Abastecimento registrado!</h2>
+        <p className="text-gray-400 text-sm mt-1">Placa {placa} · {litros}L · KM {km}</p>
+      </div>
+      <button onClick={() => {
+        setSaved(false); setPlaca(''); setKm(''); setLitros(''); setValorTotal('');
+        setTipoCombustivel('gasolina'); setComprovante(null); setPreview(null);
+      }}
+        className="px-6 py-3 bg-gray-800 text-gray-300 rounded-xl text-sm font-semibold">
+        Registrar outro abastecimento
+      </button>
+    </div>
+  );
+
+  return (
+    <>
+      {saving && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl px-8 py-7 flex flex-col items-center gap-4 max-w-xs w-full mx-4">
+            <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
+            <div className="text-center">
+              <p className="font-semibold text-white text-base">{progress || 'Enviando...'}</p>
+              <p className="text-sm text-gray-400 mt-1">Aguarde, não saia desta tela</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-y-auto h-full px-4 py-5 space-y-5">
+        <div>
+          <h2 className="text-lg font-black text-white flex items-center gap-2">
+            <Fuel className="w-5 h-5 text-amber-400" /> Abastecimento
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            O KM ajuda a calcular a quilometragem entre aberturas — informe o odômetro no momento do abastecimento
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">Placa do veículo *</label>
+          <CampoPlaca
+            placa={placa} onChange={setPlaca} accentClass="focus:border-amber-500"
+            veiculos={veiculos} loadingVeiculos={loadingVeiculos}
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+            <Gauge className="w-3.5 h-3.5" /> KM no momento do abastecimento *
+          </label>
+          <input
+            type="number" min={0} placeholder="Ex: 54580"
+            value={km} onChange={e => setKm(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-base text-white placeholder-gray-600 focus:outline-none focus:border-amber-500"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">Litros *</label>
+            <input
+              type="number" min={0} step="0.01" placeholder="Ex: 35.5"
+              value={litros} onChange={e => setLitros(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-base text-white placeholder-gray-600 focus:outline-none focus:border-amber-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+              <DollarSign className="w-3.5 h-3.5" /> Valor total (R$) *
+            </label>
+            <input
+              type="number" min={0} step="0.01" placeholder="Ex: 210.00"
+              value={valorTotal} onChange={e => setValorTotal(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-base text-white placeholder-gray-600 focus:outline-none focus:border-amber-500"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">Tipo de combustível *</label>
+          <div className="grid grid-cols-3 gap-2">
+            {COMBUSTIVEIS.map(c => (
+              <button
+                key={c.value}
+                onClick={() => setTipoCombustivel(c.value)}
+                className={`py-2.5 rounded-xl text-xs font-bold border transition-colors ${
+                  tipoCombustivel === c.value
+                    ? 'bg-amber-500 border-amber-500 text-gray-900'
+                    : 'bg-gray-800 border-gray-700 text-gray-400 active:bg-gray-700'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
+            Comprovante <span className="text-gray-600 font-normal normal-case">(opcional)</span>
+          </label>
+          {preview ? (
+            <div className="relative rounded-xl overflow-hidden border border-gray-700 aspect-video bg-gray-800 max-w-xs">
+              <img src={preview} alt="Comprovante" className="w-full h-full object-cover" />
+              <button onClick={removerFoto} className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => inputRef.current?.click()}
+              className="w-full max-w-xs aspect-video rounded-xl border-2 border-dashed border-gray-700 flex flex-col items-center justify-center gap-1.5 bg-gray-800/60 active:bg-gray-800">
+              <Camera className="w-6 h-6 text-gray-500" />
+              <span className="text-xs font-medium text-gray-400">Foto da nota/painel</span>
+            </button>
+          )}
+          <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFoto(f); e.target.value = ''; }}
+          />
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-3">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+          </div>
+        )}
+
+        <button onClick={handleSalvar} disabled={!podeSalvar}
+          className="w-full py-4 rounded-xl text-sm font-bold transition-all disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed bg-amber-500 text-gray-900 active:bg-amber-600 flex items-center justify-center gap-2">
+          <CheckCircle className="w-4 h-4" /> Confirmar abastecimento
+        </button>
+      </div>
+    </>
+  );
+}
+
+/* ════════════════════ Container com abas ════════════════════ */
+export default function FieldVeiculo() {
+  const [aba, setAba] = useState<Aba>('abertura');
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex border-b border-gray-800 bg-gray-900 flex-shrink-0">
+        <button
+          onClick={() => setAba('abertura')}
+          className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
+            aba === 'abertura' ? 'text-emerald-400 border-b-2 border-emerald-500' : 'text-gray-500 border-b-2 border-transparent'
+          }`}
+        >
+          <Car size={14} /> Abertura
+        </button>
+        <button
+          onClick={() => setAba('abastecimento')}
+          className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
+            aba === 'abastecimento' ? 'text-amber-400 border-b-2 border-amber-500' : 'text-gray-500 border-b-2 border-transparent'
+          }`}
+        >
+          <Fuel size={14} /> Abastecimento
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0">
+        {aba === 'abertura' ? <AberturaTab /> : <AbastecimentoTab />}
+      </div>
 
       <style>{`@keyframes progress { 0%{width:0%;margin-left:0} 50%{width:70%;margin-left:15%} 100%{width:0%;margin-left:100%} }`}</style>
-    </>
+    </div>
   );
 }

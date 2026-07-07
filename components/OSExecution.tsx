@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   doc, getDoc, updateDoc, serverTimestamp, arrayUnion, Timestamp,
-  collection, getDocs, addDoc, query, where,
+  collection, getDocs, addDoc, query, where, onSnapshot,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -137,6 +137,18 @@ const OSExecution: React.FC = () => {
   // Sprint 46A — Suporte Primário Chat
   const [showSuporteChat, setShowSuporteChat] = useState(false);
   const [naoLidasSuporteCount, setNaoLidasSuporteCount] = useState(0);
+
+  // Contagem de mensagens de suporte não lidas pelo gestor nesta O.S.
+  useEffect(() => {
+    if (!taskId) return;
+    const q = query(
+      collection(db, CollectionName.OS_SUPORTE_MSGS),
+      where('osId', '==', taskId),
+      where('leitoPorGestor', '==', false),
+    );
+    const unsub = onSnapshot(q, snap => setNaoLidasSuporteCount(snap.size), () => {});
+    return unsub;
+  }, [taskId]);
 
   const [adversidades, setAdversidades] = useState('');
   const [evidencias,   setEvidencias]   = useState<string[]>([]);
