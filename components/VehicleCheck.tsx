@@ -5,6 +5,7 @@ import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { CollectionName, Vehicle } from '../types';
 import { Analytics } from '../utils/mgr-analytics';
+import { registrarAtividade } from '../services/activityFeedService';
 import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X, Check, ChevronDown } from 'lucide-react';
 import { SlotConfig, FOTO_SLOTS_DEFAULT } from './VehicleCheckConfig';
 
@@ -293,6 +294,15 @@ const VehicleCheck: React.FC<VehicleCheckProps> = ({ timeEntryId, onComplete, on
         entityId: docRef.id,
         entityType: 'vehicle_check',
         payload: { placa: placa.toUpperCase(), kmInicial: Number(kmInicial), timeEntryId: timeEntryId ?? null },
+      });
+
+      registrarAtividade({
+        tipo: 'veiculo_aberto',
+        autorId: currentUser.uid,
+        autorNome: userProfile?.displayName || currentUser.email || 'Colaborador',
+        titulo: `Abertura de veículo: ${placa.toUpperCase()}`,
+        descricao: `KM inicial: ${Number(kmInicial).toLocaleString('pt-BR')}`,
+        meta: { placa: placa.toUpperCase(), kmInicial: Number(kmInicial), ambiente: 'web' },
       });
 
       setSaved(true);

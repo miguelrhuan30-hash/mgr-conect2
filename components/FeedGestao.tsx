@@ -6,24 +6,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   collection, query, orderBy, limit, onSnapshot,
-  addDoc, updateDoc, doc, increment, Timestamp, getDocs, where, writeBatch,
+  addDoc, updateDoc, doc, getDoc, Timestamp, getDocs, where, writeBatch,
   arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { CollectionName, OSObservacao, WorkflowStatus } from '../types';
+import { CollectionName, OSObservacao, WorkflowStatus, Task, OSSuporteThread } from '../types';
 import { gerarNumeroOS } from '../services/osService';
 import { notificarVarios } from '../services/notificationService';
 import OSViewModal from './OSViewModal';
+import OSSuporteChat from './OSSuporteChat';
 import {
   Activity, LogIn, LogOut, UtensilsCrossed, ClipboardList, Play,
   CheckCircle2, CheckSquare, Camera, Car, HelpCircle, MapPin, Send,
-  MessageSquare, ChevronDown, ChevronUp, Loader2, Filter, RefreshCcw,
+  Headphones, Loader2, Filter, RefreshCcw,
   Video, Trash2, Plus as PlusIcon, Pencil, UserCog, Archive, Calendar,
   XCircle, MessageCircle, PlusCircle, ExternalLink,
 } from 'lucide-react';
 import {
-  ACTIVITY_FEED_COLLECTION, FeedAtividade, FeedResposta, ActivityTipo, registrarAtividade,
+  ACTIVITY_FEED_COLLECTION, FeedAtividade, ActivityTipo, registrarAtividade,
 } from '../services/activityFeedService';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
@@ -59,6 +60,7 @@ const TIPO_CFG: Record<ActivityTipo, {
   foto_tarefa:         { label: 'Foto Tarefa',     icon: <Camera size={14} />,         border: 'border-l-purple-400',  badge: 'bg-purple-100 text-purple-700',   avatarBg: 'bg-purple-100 text-purple-700'   },
   veiculo_aberto:      { label: 'Veículo',         icon: <Car size={14} />,            border: 'border-l-sky-400',     badge: 'bg-sky-100 text-sky-700',         avatarBg: 'bg-sky-100 text-sky-700'         },
   veiculo_fechado:     { label: 'Veículo',         icon: <Car size={14} />,            border: 'border-l-gray-400',    badge: 'bg-gray-100 text-gray-600',       avatarBg: 'bg-gray-100 text-gray-600'       },
+  almoco_pedido:       { label: 'Pedido de Marmita', icon: <UtensilsCrossed size={14} />, border: 'border-l-amber-400', badge: 'bg-amber-100 text-amber-700',     avatarBg: 'bg-amber-100 text-amber-700'     },
   duvida_os:            { label: 'Dúvida Técnica',  icon: <HelpCircle size={14} />,     border: 'border-l-orange-500',  badge: 'bg-orange-100 text-orange-700',   avatarBg: 'bg-orange-100 text-orange-700'   },
   foto_apagada:         { label: 'Foto Apagada',    icon: <Trash2 size={14} />,         border: 'border-l-red-500',     badge: 'bg-red-100 text-red-700',         avatarBg: 'bg-red-100 text-red-700'         },
   tarefa_criada_tecnico:{ label: 'Nova Tarefa',     icon: <PlusIcon size={14} />,       border: 'border-l-cyan-400',    badge: 'bg-cyan-100 text-cyan-700',       avatarBg: 'bg-cyan-100 text-cyan-700'       },
@@ -94,116 +96,24 @@ const matchFiltro = (tipo: ActivityTipo, filtro: FiltroTipo): boolean => {
   return true;
 };
 
-/* ─── Thread de dúvida ──────────────────────────────────────────────────── */
-function DuvidaThread({ atividade }: { atividade: FeedAtividade }) {
-  const { currentUser, userProfile } = useAuth();
-  const [aberto, setAberto]         = useState(false);
-  const [respostas, setRespostas]   = useState<FeedResposta[]>([]);
-  const [loading, setLoading]       = useState(false);
-  const [texto, setTexto]           = useState('');
-  const [sending, setSending]       = useState(false);
-  const unsubRef                    = useRef<(() => void) | null>(null);
+/* ─── Status ao vivo de uma dúvida — reflete os_suporte_threads da O.S. ──── */
+function DuvidaStatusBadge({ osId }: { osId: string }) {
+  const [thread, setThread] = useState<OSSuporteThread | null>(null);
 
-  const toggleThread = () => {
-    if (aberto) {
-      setAberto(false);
-      unsubRef.current?.();
-      unsubRef.current = null;
-      return;
-    }
-    setAberto(true);
-    setLoading(true);
-    const q = query(
-      collection(db, ACTIVITY_FEED_COLLECTION, atividade.id, 'respostas'),
-      orderBy('criadoEm', 'asc'),
-    );
-    unsubRef.current = onSnapshot(q, snap => {
-      setRespostas(snap.docs.map(d => ({ id: d.id, ...d.data() } as FeedResposta)));
-      setLoading(false);
-    }, () => setLoading(false));
-  };
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, CollectionName.OS_SUPORTE_THREADS, osId), snap => {
+      setThread(snap.exists() ? ({ id: snap.id, ...snap.data() } as OSSuporteThread) : null);
+    }, () => {});
+    return unsub;
+  }, [osId]);
 
-  useEffect(() => () => { unsubRef.current?.(); }, []);
-
-  const enviarResposta = async () => {
-    if (!texto.trim() || !currentUser) return;
-    setSending(true);
-    try {
-      const autorNome = (userProfile as any)?.nomeCompleto || (userProfile as any)?.displayName || 'Gestor';
-      await addDoc(collection(db, ACTIVITY_FEED_COLLECTION, atividade.id, 'respostas'), {
-        autorId:   currentUser.uid,
-        autorNome,
-        texto:     texto.trim(),
-        criadoEm:  Timestamp.now(),
-      });
-      await updateDoc(doc(db, ACTIVITY_FEED_COLLECTION, atividade.id), {
-        respondida:    true,
-        respostasCount: increment(1),
-      });
-      setTexto('');
-    } catch (e) {
-      console.error('[FeedGestao] enviarResposta:', e);
-    } finally {
-      setSending(false);
-    }
-  };
+  if (!thread) return null;
+  const pendente = thread.naoLidasGestor > 0;
 
   return (
-    <div className="mt-3 border-t border-gray-100 pt-3">
-      <button
-        onClick={toggleThread}
-        className="flex items-center gap-2 text-sm text-gray-500 hover:text-orange-600 transition-colors"
-      >
-        <MessageSquare size={14} />
-        {(atividade.respostasCount ?? 0) > 0
-          ? `${atividade.respostasCount} resposta${(atividade.respostasCount ?? 0) > 1 ? 's' : ''}`
-          : 'Responder dúvida'}
-        {aberto ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-      </button>
-
-      {aberto && (
-        <div className="mt-3 space-y-3">
-          {loading && (
-            <div className="flex justify-center py-2">
-              <Loader2 size={16} className="animate-spin text-gray-400" />
-            </div>
-          )}
-          {respostas.map(r => (
-            <div key={r.id} className="flex gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 text-[10px] font-black">
-                {initials(r.autorNome)}
-              </div>
-              <div className="flex-1 bg-blue-50 rounded-xl px-3 py-2">
-                <p className="text-[10px] font-bold text-blue-700">{r.autorNome}</p>
-                <p className="text-sm text-gray-800 mt-0.5">{r.texto}</p>
-                <p className="text-[9px] text-gray-400 mt-1">{timeAgo(r.criadoEm)}</p>
-              </div>
-            </div>
-          ))}
-          {respostas.length === 0 && !loading && (
-            <p className="text-xs text-gray-400 text-center py-1">Nenhuma resposta ainda</p>
-          )}
-
-          {/* Input de resposta */}
-          <div className="flex gap-2 mt-2">
-            <input
-              value={texto}
-              onChange={e => setTexto(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && enviarResposta()}
-              placeholder="Responder dúvida..."
-              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-orange-400 bg-white"
-            />
-            <button
-              onClick={enviarResposta}
-              disabled={sending || !texto.trim()}
-              className="p-2.5 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-colors disabled:opacity-50"
-            >
-              {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    <span className={`text-[10px] font-bold ${pendente ? 'text-orange-600' : 'text-green-600'}`}>
+      {pendente ? `⏳ Aguardando resposta (${thread.naoLidasGestor})` : '✓ Visto pelo gestor'}
+    </span>
   );
 }
 
@@ -221,6 +131,20 @@ function ActivityCard({ atividade }: { atividade: FeedAtividade }) {
   const [textoObs, setTextoObs]       = useState('');
   const [enviandoObs, setEnviandoObs] = useState(false);
   const [obsEnviada, setObsEnviada]   = useState(false);
+
+  const [taskSuporte, setTaskSuporte] = useState<Task | null>(null);
+  const [abrindoSuporte, setAbrindoSuporte] = useState(false);
+
+  const abrirSuporte = async () => {
+    if (!atividade.osId || abrindoSuporte) return;
+    setAbrindoSuporte(true);
+    try {
+      const snap = await getDoc(doc(db, CollectionName.TASKS, atividade.osId));
+      if (snap.exists()) setTaskSuporte({ id: snap.id, ...snap.data() } as Task);
+    } finally {
+      setAbrindoSuporte(false);
+    }
+  };
 
   const criarOSDaTarefa = async () => {
     if (!currentUser || !atividade.osId) return;
@@ -410,16 +334,19 @@ function ActivityCard({ atividade }: { atividade: FeedAtividade }) {
             </div>
           )}
 
-          {/* Thread para dúvidas */}
-          {atividade.tipo === 'duvida_os' && (
-            <div className={`mt-2 px-3 py-2 rounded-xl border ${atividade.respondida ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
-              <span className={`text-[10px] font-bold ${atividade.respondida ? 'text-green-600' : 'text-orange-600'}`}>
-                {atividade.respondida ? '✓ Respondida' : '⏳ Aguardando resposta do gestor'}
-              </span>
+          {/* Dúvida técnica — clicar abre o Suporte de verdade (mesmo chat que o técnico vê) */}
+          {atividade.tipo === 'duvida_os' && atividade.osId && (
+            <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+              <DuvidaStatusBadge osId={atividade.osId} />
+              <button
+                onClick={abrirSuporte}
+                disabled={abrindoSuporte}
+                className="flex items-center gap-1.5 text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-100 disabled:opacity-50"
+              >
+                {abrindoSuporte ? <Loader2 size={13} className="animate-spin" /> : <Headphones size={13} />}
+                Responder no Suporte
+              </button>
             </div>
-          )}
-          {atividade.tipo === 'duvida_os' && (
-            <DuvidaThread atividade={atividade} />
           )}
 
           {/* Ação: criar O.S. a partir de tarefa não concluída */}
@@ -489,6 +416,11 @@ function ActivityCard({ atividade }: { atividade: FeedAtividade }) {
       {verOSId && (
         <OSViewModal taskId={verOSId} onClose={() => setVerOSId(null)} />
       )}
+
+      {/* Suporte da O.S., aberto ao clicar em "Responder no Suporte" */}
+      {taskSuporte && (
+        <OSSuporteChat task={taskSuporte} onClose={() => setTaskSuporte(null)} />
+      )}
     </div>
   );
 }
@@ -504,6 +436,17 @@ export default function FeedGestao() {
   const [windowDays, setWindowDays]     = useState(7);
   const [hasMore, setHasMore]           = useState(true);
   const [loadingMore, setLoadingMore]   = useState(false);
+  const [duvidaAberta, setDuvidaAberta] = useState(0);
+
+  /* ── Contagem de dúvidas de suporte aguardando resposta (live) ── */
+  useEffect(() => {
+    const q = query(
+      collection(db, CollectionName.OS_SUPORTE_THREADS),
+      where('naoLidasGestor', '>', 0),
+      where('archived', '==', false),
+    );
+    return onSnapshot(q, snap => setDuvidaAberta(snap.size), () => {});
+  }, []);
 
   /* ── Migração única: corrige autorNome com email → nome real ─ */
   useEffect(() => {
@@ -676,7 +619,6 @@ export default function FeedGestao() {
     videos:  todasAtividades.filter(a => matchFiltro(a.tipo, 'videos')).length,
   };
 
-  const duvidaAberta = todasAtividades.filter(a => a.tipo === 'duvida_os' && !a.respondida).length;
   const periodoLabel = windowDays <= 7 ? 'últimos 7 dias' : `últimos ${windowDays} dias`;
 
   return (

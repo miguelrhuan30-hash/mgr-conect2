@@ -4,6 +4,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { CollectionName, TipoCombustivel, Vehicle } from '../../types';
+import { registrarAtividade } from '../../services/activityFeedService';
 import { Camera, CheckCircle, AlertCircle, Car, Gauge, Loader2, X, Check, Fuel, DollarSign, ChevronDown } from 'lucide-react';
 import { SlotConfig, FOTO_SLOTS_DEFAULT } from '../VehicleCheckConfig';
 
@@ -208,6 +209,14 @@ function AberturaTab() {
         timestamp: serverTimestamp(),
         fotos: urls,
         origem: 'field_app',
+      });
+      registrarAtividade({
+        tipo: 'veiculo_aberto',
+        autorId: currentUser.uid,
+        autorNome: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Colaborador',
+        titulo: `Abertura de veículo: ${placa.toUpperCase()}`,
+        descricao: `KM inicial: ${Number(kmInicial).toLocaleString('pt-BR')}`,
+        meta: { placa: placa.toUpperCase(), kmInicial: Number(kmInicial), ambiente: 'field_app' },
       });
       setSaved(true);
     } catch (err: any) {

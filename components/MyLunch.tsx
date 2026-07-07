@@ -9,6 +9,7 @@ import {
   CollectionName, LunchMenu, LunchMenuMode, LunchChoice, LunchDayChoice,
   LunchLocation, LunchLocationType, LunchConfig, MarmitaSize,
 } from '../types';
+import { registrarAtividade } from '../services/activityFeedService';
 import {
   UtensilsCrossed, CheckCircle2, MapPin, Building2, Plane,
   AlertTriangle, Pencil, Send, ArrowRight, Clock,
@@ -193,6 +194,14 @@ const MyLunch: React.FC = () => {
         enviadoEm: Timestamp.now(), atualizadoEm: Timestamp.now(),
       });
       migrateOldDoc(docId);
+      registrarAtividade({
+        tipo: 'almoco_pedido',
+        autorId: currentUser.uid,
+        autorNome: userProfile?.nomeCompleto || userProfile?.displayName || 'Colaborador',
+        titulo: 'Pedido de marmita — hoje',
+        descricao: [...sel.misturas.map(id => meatOpts.find(p => p.id === id)?.nome), ...sel.guarnicoes.map(id => sideOpts.find(p => p.id === id)?.nome)].filter(Boolean).join(', ') || undefined,
+        meta: { ambiente: 'web', dia: todayKey },
+      });
     } catch { alert('Erro ao salvar. Tente novamente.'); }
     finally { setSubmittingToday(false); }
   };
@@ -212,6 +221,13 @@ const MyLunch: React.FC = () => {
         ...baseChoiceDoc(), escolhas, enviadoEm: Timestamp.now(), atualizadoEm: Timestamp.now(),
       });
       migrateOldDoc(docId);
+      registrarAtividade({
+        tipo: 'almoco_pedido',
+        autorId: currentUser.uid,
+        autorNome: userProfile?.nomeCompleto || userProfile?.displayName || 'Colaborador',
+        titulo: 'Pedido de marmita — semana toda',
+        meta: { ambiente: 'web' },
+      });
       setShowWeekForm(false);
     } catch { alert('Erro ao salvar. Tente novamente.'); }
     finally { setSubmittingWeek(false); }
@@ -263,6 +279,16 @@ const MyLunch: React.FC = () => {
         atualizadoEm: Timestamp.now(),
       });
       migrateOldDoc(docId);
+      if (hasAny) {
+        registrarAtividade({
+          tipo: 'almoco_pedido',
+          autorId: currentUser.uid,
+          autorNome: userProfile?.nomeCompleto || userProfile?.displayName || 'Colaborador',
+          titulo: `Pedido de marmita — ${DAY_LABELS[editingDay]}`,
+          descricao: [...dc.misturas.map(m => m.nome), ...dc.guarnicoes.map(g => g.nome)].join(', ') || undefined,
+          meta: { ambiente: 'web', dia: editingDay },
+        });
+      }
       setEditingDay(null);
     } catch { alert('Erro ao salvar.'); }
     finally { setSavingEdit(false); }

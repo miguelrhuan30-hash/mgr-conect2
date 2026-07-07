@@ -17,6 +17,7 @@
     { "collectionGroup": "tasks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "assignedTo", "order": "ASCENDING" }, { "fieldPath": "workflowStatus", "order": "ASCENDING" } ] },
 
     { "collectionGroup": "os_suporte_threads", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "archived", "order": "ASCENDING" }, { "fieldPath": "ultimaMsgEm", "order": "DESCENDING" } ] },
+    { "collectionGroup": "os_suporte_threads", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "archived", "order": "ASCENDING" }, { "fieldPath": "naoLidasGestor", "order": "ASCENDING" } ] },
 
     { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "placa", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" } ] },
     { "collectionGroup": "vehicle_checks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "timestamp", "order": "ASCENDING" }, { "fieldPath": "placa", "order": "ASCENDING" } ] },

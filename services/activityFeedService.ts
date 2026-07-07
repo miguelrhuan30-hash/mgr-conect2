@@ -26,6 +26,7 @@ export type ActivityTipo =
   | 'foto_tarefa'
   | 'veiculo_aberto'
   | 'veiculo_fechado'
+  | 'almoco_pedido'
   | 'duvida_os'
   | 'foto_apagada'
   | 'tarefa_criada_tecnico'
