@@ -174,7 +174,12 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
   const fotoRef   = useRef<HTMLInputElement>(null);
   const gestoresRef = useRef<string[] | null>(null);
 
-  const isGestor = ['admin', 'gestor', 'manager', 'developer'].includes(userProfile?.role || '');
+  // Mesmo critério usado em FieldGestaoOS.tsx pra liberar a aba "Gestão de
+  // O.S." — quem já vê o Suporte pela lista do gestor tem que abrir como
+  // gestor aqui também, independente do texto exato do role.
+  const isGestor = ['admin', 'gestor', 'manager', 'developer'].includes(userProfile?.role || '')
+    || !!(userProfile as any)?.permissions?.canManageProjects
+    || !!((userProfile as any)?.permissions?.canEditTasks && (userProfile as any)?.permissions?.canDeleteTasks);
 
   // ── Subscribe to messages ─────────────────────────────────────────────────
   useEffect(() => {
@@ -201,9 +206,12 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
 
   // ── Gate: técnico escolhe tarefa específica ou dúvida geral ANTES de poder
   // compor mensagem — toda vez que abre o Suporte, não só na primeira vez.
-  // Só pula direto pro chat se a O.S. não tiver tarefas pra escolher. ────
+  // Só pula direto pro chat se a O.S. não tiver tarefas pra escolher.
+  // Corrige de volta pra 'chat' explicitamente quando isGestor vira true —
+  // evita ficar preso em 'escolha' se o perfil do usuário carregar com
+  // atraso (isGestor passa por false antes de resolver o valor real). ────
   useEffect(() => {
-    if (isGestor) return;
+    if (isGestor) { setGateStep('chat'); return; }
     setGateStep(tarefasOS.length > 0 ? 'escolha' : 'chat');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGestor]);
