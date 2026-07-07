@@ -1,9 +1,13 @@
 /**
  * SuporteInbox — aba "Suporte" do gestor: lista as conversas de suporte
  * agrupadas por O.S. (não é uma lista de mensagens soltas). O gestor escolhe
- * qual O.S. vai responder. Conversas somem da aba "Abertas" só quando a O.S.
- * é concluída (arquivamento automático via Cloud Function) — nunca são
- * apagadas, ficam disponíveis em "Arquivadas" para consulta futura.
+ * qual O.S. vai responder. Conversas somem da aba "Abertas" quando marcadas
+ * como resolvidas (manual, pelo próprio gestor) ou quando a O.S. é concluída
+ * (arquivamento automático via Cloud Function) — nunca são apagadas, ficam
+ * disponíveis em "Arquivadas" para consulta futura.
+ *
+ * Usado como página web (`/app/suporte`, variant="light") e como aba dentro
+ * de FieldGestaoOS no FieldApp (variant="dark", embedded=true).
  */
 import React, { useEffect, useState } from 'react';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc, Timestamp } from 'firebase/firestore';
@@ -24,7 +28,13 @@ const timeAgo = (ts?: Timestamp): string => {
   return `há ${d}d`;
 };
 
-export default function SuporteInbox() {
+interface SuporteInboxProps {
+  variant?: 'light' | 'dark';
+  embedded?: boolean; // true = sem título/cabeçalho próprio, sem padding de página inteira
+}
+
+export default function SuporteInbox({ variant = 'light', embedded = false }: SuporteInboxProps) {
+  const isDark = variant === 'dark';
   const [aba, setAba] = useState<'abertas' | 'arquivadas'>('abertas');
   const [threads, setThreads] = useState<OSSuporteThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,23 +69,49 @@ export default function SuporteInbox() {
     }
   };
 
+  const theme = isDark
+    ? {
+        card: 'bg-gray-900 border-gray-800 hover:border-purple-700',
+        title: 'text-white',
+        subtitle: 'text-gray-500',
+        osTitulo: 'text-gray-100',
+        lastMsg: 'text-gray-400',
+        lastMsgAutor: 'text-gray-300',
+        time: 'text-gray-500',
+        tabOff: 'bg-gray-900 border-gray-800 text-gray-400',
+        emptyText: 'text-gray-600',
+      }
+    : {
+        card: 'bg-white border-gray-200 hover:border-purple-300 hover:shadow-sm',
+        title: 'text-gray-900',
+        subtitle: 'text-gray-500',
+        osTitulo: 'text-gray-800',
+        lastMsg: 'text-gray-500',
+        lastMsgAutor: 'text-gray-600',
+        time: 'text-gray-400',
+        tabOff: 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50',
+        emptyText: 'text-gray-400',
+      };
+
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center">
-          <Headphones size={20} className="text-purple-600" />
+    <div className={embedded ? 'space-y-4' : 'max-w-3xl mx-auto px-4 py-6 space-y-5'}>
+      {!embedded && (
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center">
+            <Headphones size={20} className="text-purple-600" />
+          </div>
+          <div>
+            <h1 className={`text-lg font-black ${theme.title}`}>Suporte</h1>
+            <p className={`text-xs ${theme.subtitle}`}>Dúvidas dos técnicos, organizadas por O.S.</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-lg font-black text-gray-900">Suporte</h1>
-          <p className="text-xs text-gray-500">Dúvidas dos técnicos, organizadas por O.S.</p>
-        </div>
-      </div>
+      )}
 
       <div className="flex gap-2">
         <button
           onClick={() => setAba('abertas')}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
-            aba === 'abertas' ? 'bg-purple-600 border-purple-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            aba === 'abertas' ? 'bg-purple-600 border-purple-600 text-white' : theme.tabOff
           }`}
         >
           <Inbox size={13} /> Abertas
@@ -83,7 +119,7 @@ export default function SuporteInbox() {
         <button
           onClick={() => setAba('arquivadas')}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
-            aba === 'arquivadas' ? 'bg-purple-600 border-purple-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            aba === 'arquivadas' ? 'bg-purple-600 border-purple-600 text-white' : theme.tabOff
           }`}
         >
           <Archive size={13} /> Arquivadas
@@ -95,7 +131,7 @@ export default function SuporteInbox() {
           <Loader2 size={24} className="animate-spin text-purple-500" />
         </div>
       ) : threads.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 text-sm">
+        <div className={`text-center py-16 text-sm ${theme.emptyText}`}>
           {aba === 'abertas' ? 'Nenhuma conversa de suporte em aberto.' : 'Nenhuma conversa arquivada ainda.'}
         </div>
       ) : (
@@ -105,7 +141,7 @@ export default function SuporteInbox() {
               key={t.id}
               onClick={() => abrirConversa(t.id)}
               disabled={abrindoId === t.id}
-              className="w-full flex items-center gap-3 bg-white border border-gray-200 rounded-2xl px-4 py-3 text-left hover:border-purple-300 hover:shadow-sm transition-all disabled:opacity-60"
+              className={`w-full flex items-center gap-3 border rounded-2xl px-4 py-3 text-left transition-all disabled:opacity-60 ${theme.card}`}
             >
               <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0 relative">
                 <Headphones size={15} className="text-purple-500" />
@@ -118,20 +154,18 @@ export default function SuporteInbox() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-mono font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">{t.osCode}</span>
-                  {t.osTitulo && <span className="text-sm font-semibold text-gray-800 truncate">{t.osTitulo}</span>}
+                  {t.osTitulo && <span className={`text-sm font-semibold truncate ${theme.osTitulo}`}>{t.osTitulo}</span>}
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {t.clienteNome && (
-                    <span className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
-                      <Building2 size={10} /> {t.clienteNome}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 truncate mt-1">
-                  <span className="font-semibold text-gray-600">{t.ultimaMsgAutorNome}:</span> {t.ultimaMsgTexto}
+                {t.clienteNome && (
+                  <span className={`text-[11px] flex items-center gap-1 truncate mt-0.5 ${theme.subtitle}`}>
+                    <Building2 size={10} /> {t.clienteNome}
+                  </span>
+                )}
+                <p className={`text-xs truncate mt-1 ${theme.lastMsg}`}>
+                  <span className={`font-semibold ${theme.lastMsgAutor}`}>{t.ultimaMsgAutorNome}:</span> {t.ultimaMsgTexto}
                 </p>
               </div>
-              <span className="text-[10px] text-gray-400 flex-shrink-0">{timeAgo(t.ultimaMsgEm)}</span>
+              <span className={`text-[10px] flex-shrink-0 ${theme.time}`}>{timeAgo(t.ultimaMsgEm)}</span>
               {abrindoId === t.id && <Loader2 size={14} className="animate-spin text-purple-400 flex-shrink-0" />}
             </button>
           ))}
@@ -139,7 +173,7 @@ export default function SuporteInbox() {
       )}
 
       {taskAberta && (
-        <OSSuporteChat task={taskAberta} onClose={() => setTaskAberta(null)} />
+        <OSSuporteChat task={taskAberta} onClose={() => setTaskAberta(null)} variant={variant} />
       )}
     </div>
   );

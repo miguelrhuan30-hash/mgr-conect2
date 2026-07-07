@@ -62,12 +62,12 @@ const MsgBubble: React.FC<{
             {badge.label}
           </span>
           <span className={`text-[9px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{msg.autorNome} · {ts}</span>
-          {msg.tarefaDescricao && (
-            <span className={`text-[9px] flex items-center gap-0.5 truncate max-w-[120px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-              <ClipboardList size={9} /> {msg.tarefaDescricao}
-            </span>
-          )}
         </div>
+        {msg.tarefaDescricao && (
+          <span className={`text-[11px] font-semibold flex items-center gap-1 leading-snug ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>
+            <ClipboardList size={11} className="flex-shrink-0" /> {msg.tarefaDescricao}
+          </span>
+        )}
         <div className={`rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap shadow-sm
           ${isOwn ? 'bg-purple-600 text-white' : isDark ? 'bg-gray-800 border border-gray-700 text-gray-100' : 'bg-white border border-gray-200 text-gray-800'}`}>
           {msg.texto}
