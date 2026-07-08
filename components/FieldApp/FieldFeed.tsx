@@ -56,6 +56,7 @@ const TIPO_CFG: Record<ActivityTipo, TipoCfg> = {
   veiculo_aberto:      { label: 'Checklist',       icon: <Car size={12} />,             color: 'text-sky-400',     dot: 'bg-sky-500'      },
   veiculo_fechado:     { label: 'Encerramento',    icon: <Car size={12} />,             color: 'text-gray-400',    dot: 'bg-gray-500'     },
   almoco_pedido:       { label: 'Marmita',         icon: <UtensilsCrossed size={12} />, color: 'text-amber-400',   dot: 'bg-amber-500'    },
+  os_pedido_reagendamento: { label: 'Pedido Reagend.', icon: <Calendar size={12} />, color: 'text-red-400', dot: 'bg-red-500' },
   duvida_os:             { label: 'Dúvida',          icon: <HelpCircle size={12} />,      color: 'text-orange-400',  dot: 'bg-orange-500'   },
   foto_apagada:          { label: 'Foto Apagada',   icon: <Trash2 size={12} />,          color: 'text-red-400',     dot: 'bg-red-500'      },
   tarefa_criada_tecnico: { label: 'Nova Tarefa',    icon: <PlusIcon size={12} />,        color: 'text-cyan-400',    dot: 'bg-cyan-500'     },

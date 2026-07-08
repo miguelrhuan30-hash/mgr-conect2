@@ -28,6 +28,7 @@ export type ActivityTipo =
   | 'veiculo_fechado'
   | 'almoco_pedido'
   | 'duvida_os'
+  | 'os_pedido_reagendamento'
   | 'foto_apagada'
   | 'tarefa_criada_tecnico'
   | 'video_gravado';

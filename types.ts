@@ -1593,6 +1593,7 @@ export type NotificacaoTipo =
   | 'almoco_lembrete_fechamento'   // 10 min antes do horário limite, p/ quem não pediu
   | 'os_duvida'                    // técnico enviou dúvida na O.S. (gestor c/ canViewFeed)
   | 'os_suporte_resposta'          // gestor respondeu uma dúvida de suporte do técnico
+  | 'os_pedido_reagendamento'      // técnico pediu reagendamento ao tentar encerrar o ponto
   | 'os_observacao_gestor'         // gestor adicionou observação numa evidência
   | 'os_tarefa_nao_concluida'      // tarefa marcada como não concluída
   | 'veiculo_check_pendente'       // responsável não registrou o veículo após o ponto

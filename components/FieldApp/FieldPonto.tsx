@@ -25,6 +25,8 @@ import { fetchImageAsBase64, sanitizeUserAgent, sanitizeErrorForLog } from '../.
 import { logEvent } from '../../utils/logger';
 import { registrarAtividade, ActivityTipo } from '../../services/activityFeedService';
 import { criarNotificacao } from '../../services/notificationService';
+import { OSField } from './FieldOS';
+import FieldPontoAvisoOS from './FieldPontoAvisoOS';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type ActionType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
@@ -90,6 +92,32 @@ async function verificarChecklistVeiculo(uid: string) {
   }
 }
 
+/** Busca O.S. em andamento (status in-progress) onde o usuário é
+ * responsável ou colaborador — usada pra bloquear o encerramento do
+ * ponto até o técnico dar algum parecer sobre elas. */
+async function buscarOSEmAndamento(uid: string): Promise<OSField[]> {
+  const [snapPrincipal, snapColaborador] = await Promise.all([
+    getDocs(query(
+      collection(db, 'tasks'),
+      where('assignedTo', '==', uid),
+      where('status', '==', 'in-progress'),
+    )),
+    getDocs(query(
+      collection(db, 'tasks'),
+      where('assignedUsers', 'array-contains', uid),
+      where('status', '==', 'in-progress'),
+    )),
+  ]);
+  const seen = new Set<string>();
+  const result: OSField[] = [];
+  [...snapPrincipal.docs, ...snapColaborador.docs].forEach(d => {
+    if (seen.has(d.id)) return;
+    seen.add(d.id);
+    result.push({ id: d.id, ...d.data() } as OSField);
+  });
+  return result;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getDistanceInMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371000;
@@ -119,6 +147,9 @@ export default function FieldPonto() {
   const [processing, setProcessing]     = useState(false);
   const [processMessage, setProcessMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [osBloqueando, setOsBloqueando]     = useState<OSField[]>([]);
+  const [osResolvidas, setOsResolvidas]     = useState<Set<string>>(new Set());
+  const [pendingExit, setPendingExit]       = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [hora, setHora]                 = useState(new Date());
   const [lunchCountdown, setLunchCountdown] = useState<string | null>(null);
@@ -339,6 +370,24 @@ export default function FieldPonto() {
       setErrorMessage('Expediente já encerrado hoje. Novo registro só permitido amanhã.');
       setTimeout(() => setErrorMessage(''), 5000);
       return;
+    }
+
+    // Antes de encerrar o expediente: bloqueia se houver O.S. em andamento
+    // (responsável ou colaborador) ainda sem parecer — precisa encerrar a
+    // O.S. ou pedir reagendamento antes de bater saída.
+    const effectiveTypeCheck: ActionType = forceExit ? 'exit' : nextAction.type;
+    if (effectiveTypeCheck === 'exit') {
+      try {
+        const emAndamento = await buscarOSEmAndamento(currentUser.uid);
+        const pendentes = emAndamento.filter(os => !osResolvidas.has(os.id));
+        if (pendentes.length > 0) {
+          setOsBloqueando(emAndamento);
+          setPendingExit(!!forceExit);
+          return;
+        }
+      } catch {
+        // se a checagem falhar, não bloqueia o ponto — falha aberta
+      }
     }
 
     // Consentimento biométrico
@@ -772,6 +821,21 @@ export default function FieldPonto() {
             ))}
           </div>
         </div>
+      )}
+
+      {osBloqueando.length > 0 && (
+        <FieldPontoAvisoOS
+          osList={osBloqueando}
+          resolvidas={osResolvidas}
+          onResolver={osId => setOsResolvidas(prev => new Set(prev).add(osId))}
+          onClose={() => {
+            const todasResolvidas = osBloqueando.every(os => osResolvidas.has(os.id));
+            const forceExit = pendingExit ?? false;
+            setOsBloqueando([]);
+            setPendingExit(null);
+            if (todasResolvidas) handleRegister(forceExit);
+          }}
+        />
       )}
     </div>
   );

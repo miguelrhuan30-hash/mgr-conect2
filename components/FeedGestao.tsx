@@ -61,6 +61,7 @@ const TIPO_CFG: Record<ActivityTipo, {
   veiculo_aberto:      { label: 'Veículo',         icon: <Car size={14} />,            border: 'border-l-sky-400',     badge: 'bg-sky-100 text-sky-700',         avatarBg: 'bg-sky-100 text-sky-700'         },
   veiculo_fechado:     { label: 'Veículo',         icon: <Car size={14} />,            border: 'border-l-gray-400',    badge: 'bg-gray-100 text-gray-600',       avatarBg: 'bg-gray-100 text-gray-600'       },
   almoco_pedido:       { label: 'Pedido de Marmita', icon: <UtensilsCrossed size={14} />, border: 'border-l-amber-400', badge: 'bg-amber-100 text-amber-700',     avatarBg: 'bg-amber-100 text-amber-700'     },
+  os_pedido_reagendamento: { label: 'Pedido de Reagendamento', icon: <Calendar size={14} />, border: 'border-l-red-400', badge: 'bg-red-100 text-red-700', avatarBg: 'bg-red-100 text-red-700' },
   duvida_os:            { label: 'Dúvida Técnica',  icon: <HelpCircle size={14} />,     border: 'border-l-orange-500',  badge: 'bg-orange-100 text-orange-700',   avatarBg: 'bg-orange-100 text-orange-700'   },
   foto_apagada:         { label: 'Foto Apagada',    icon: <Trash2 size={14} />,         border: 'border-l-red-500',     badge: 'bg-red-100 text-red-700',         avatarBg: 'bg-red-100 text-red-700'         },
   tarefa_criada_tecnico:{ label: 'Nova Tarefa',     icon: <PlusIcon size={14} />,       border: 'border-l-cyan-400',    badge: 'bg-cyan-100 text-cyan-700',       avatarBg: 'bg-cyan-100 text-cyan-700'       },
