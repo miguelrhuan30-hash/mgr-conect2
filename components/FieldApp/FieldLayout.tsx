@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { ClipboardList, MapPin, User, Radio, UtensilsCrossed, Car, Shield, Download, X, AlertTriangle, Clock, CheckCircle2, XCircle, Activity } from 'lucide-react';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { ClipboardList, MapPin, User, Radio, UtensilsCrossed, Car, Shield, Download, X, AlertTriangle, Clock, CheckCircle2, XCircle, Activity, Headphones } from 'lucide-react';
+import { db } from '../../firebase';
+import { CollectionName } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { startFieldServices, stopFieldServices } from '../../services/FieldAppBootstrap';
 import { App } from '@capacitor/app';
@@ -25,6 +28,20 @@ export default function FieldLayout() {
                   || !!(userProfile?.permissions?.canManageProjects)
                   || !!(userProfile?.permissions?.canEditTasks && userProfile?.permissions?.canDeleteTasks);
   const canSeeFeed = isAdmin || !!(userProfile?.permissions?.canViewFeed);
+
+  const [suporteAberto, setSuporteAberto] = useState(0);
+
+  // Contagem de dúvidas de suporte aguardando resposta — badge no ícone
+  useEffect(() => {
+    if (!isAdmin || !currentUser) return;
+    const q = query(
+      collection(db, CollectionName.OS_SUPORTE_THREADS),
+      where('naoLidasGestor', '>', 0),
+      where('archived', '==', false),
+    );
+    const unsub = onSnapshot(q, snap => setSuporteAberto(snap.size), () => {});
+    return unsub;
+  }, [isAdmin, currentUser]);
 
   const [updateInfo, setUpdateInfo]   = useState<ApkVersionInfo | null>(null);
   const [bannerDismissed, setBannerDismissed]   = useState(false);
@@ -77,6 +94,7 @@ export default function FieldLayout() {
   const NAV_BASE = [
     { to: '/campo/os',      icon: ClipboardList,   label: 'O.S.'    },
     ...(canSeeFeed ? [{ to: '/campo/feed', icon: Activity, label: 'Feed' }] : []),
+    ...(isAdmin ? [{ to: '/campo/suporte', icon: Headphones, label: 'Suporte', badge: suporteAberto }] : []),
     { to: '/campo/ponto',   icon: MapPin,          label: 'Ponto'   },
     { to: '/campo/almoco',  icon: UtensilsCrossed, label: 'Almoço'  },
     { to: '/campo/veiculo', icon: Car,             label: 'Veículo' },
@@ -221,7 +239,7 @@ export default function FieldLayout() {
 
       {/* Bottom nav */}
       <nav className="flex bg-gray-900 border-t border-gray-800 safe-area-bottom">
-        {NAV.map(({ to, icon: Icon, label }) => (
+        {NAV.map(({ to, icon: Icon, label, badge }: any) => (
           <NavLink
             key={to}
             to={to}
@@ -231,7 +249,14 @@ export default function FieldLayout() {
               }`
             }
           >
-            <Icon size={22} />
+            <span className="relative">
+              <Icon size={22} />
+              {!!badge && badge > 0 && (
+                <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+            </span>
             <span className="text-[10px] font-semibold tracking-wide">{label}</span>
           </NavLink>
         ))}

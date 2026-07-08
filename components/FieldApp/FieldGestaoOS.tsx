@@ -9,12 +9,11 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, Wrench, User,
-  CalendarDays, ChevronRight, Plus, Shield, Headphones,
+  CalendarDays, ChevronRight, Plus, Shield,
 } from 'lucide-react';
 import { OSField } from './FieldOS';
 import FieldGestaoOSDetail from './FieldGestaoOSDetail';
 import FieldOSPendenciaModal from './FieldOSPendenciaModal';
-import SuporteInbox from '../SuporteInbox';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   'pending':     { label: 'Pendente',     color: 'bg-orange-500/20 text-orange-400 border-orange-500/30',    icon: <AlertCircle size={11} /> },
@@ -33,7 +32,7 @@ const diasEmAberto = (os: OSField): number => {
   return Math.floor((Date.now() - criado.getTime()) / 86400000);
 };
 
-type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas' | 'suporte';
+type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas';
 
 export default function FieldGestaoOS() {
   const { userProfile } = useAuth();
@@ -183,7 +182,6 @@ export default function FieldGestaoOS() {
     { id: 'andamento',  label: 'Em Campo',   count: andamento.length  },
     { id: 'agendadas',  label: 'Agendadas',  count: agendadas.length  },
     { id: 'concluidas', label: 'Concluídas', count: concluidas.length },
-    { id: 'suporte',    label: 'Suporte',    count: 0, icon: <Headphones size={11} /> },
   ];
 
   return (
@@ -244,9 +242,7 @@ export default function FieldGestaoOS() {
 
       {/* List */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {tab === 'suporte' ? (
-          <SuporteInbox variant="dark" embedded />
-        ) : currentList.length === 0 ? (
+        {currentList.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-600">
             <ClipboardList size={40} className="mb-3 opacity-30" />
             <p className="text-sm font-medium">Nenhuma O.S. nesta categoria</p>

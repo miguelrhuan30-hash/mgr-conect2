@@ -181,6 +181,7 @@ const FieldLayout     = lazy(() => import('./components/FieldApp/FieldLayout'));
 const FieldOS         = lazy(() => import('./components/FieldApp/FieldOS'));
 const FieldCalendario = lazy(() => import('./components/FieldApp/FieldCalendario'));
 const FieldGestaoOS   = lazy(() => import('./components/FieldApp/FieldGestaoOS'));
+const FieldSuportePage = lazy(() => import('./components/FieldApp/FieldSuportePage'));
 const FieldFeedPage   = lazy(() => import('./components/FieldApp/FieldFeed'));
 const FieldPonto      = lazy(() => import('./components/FieldApp/FieldPonto'));
 const FieldPerfil        = lazy(() => import('./components/FieldApp/FieldPerfil'));
@@ -587,6 +588,7 @@ const AppContent: React.FC = () => {
           <Route path="os"        element={<FieldOS />} />
           <Route path="feed"      element={<FieldFeedPage />} />
           <Route path="gestao"    element={<FieldGestaoOS />} />
+          <Route path="suporte"   element={<FieldSuportePage />} />
           {/* rotas legadas — redirecionam para a view unificada */}
           <Route path="agenda"    element={<Navigate to="/campo/os" replace />} />
           <Route path="calendario" element={<Navigate to="/campo/os" replace />} />
