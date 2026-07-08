@@ -9,7 +9,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, Wrench, User,
-  CalendarDays, ChevronRight, Plus, Shield,
+  CalendarDays, ChevronRight, ChevronLeft, Plus, Shield,
 } from 'lucide-react';
 import { OSField } from './FieldOS';
 import FieldGestaoOSDetail from './FieldGestaoOSDetail';
@@ -32,7 +32,15 @@ const diasEmAberto = (os: OSField): number => {
   return Math.floor((Date.now() - criado.getTime()) / 86400000);
 };
 
-type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas';
+const PRIORIDADE_DOT: Record<string, string> = {
+  alta: 'bg-red-500', media: 'bg-yellow-500', baixa: 'bg-emerald-500', low: 'bg-gray-600',
+};
+const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const toKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const isSameDay = (a: Date, b: Date) => toKey(a) === toKey(b);
+
+type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas' | 'calendario';
 
 export default function FieldGestaoOS() {
   const { userProfile } = useAuth();
@@ -46,6 +54,10 @@ export default function FieldGestaoOS() {
   const [tab, setTab]               = useState<TabGestao>('pendentes');
   const [selectedOS, setSelectedOS] = useState<OSField | null>(null);
   const [showModal, setShowModal]   = useState(false);
+  const [mesAtual, setMesAtual]     = useState(() => {
+    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
+  });
+  const [diaSel, setDiaSel]         = useState<Date | null>(new Date());
 
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
@@ -92,8 +104,39 @@ export default function FieldGestaoOS() {
     if (tab === 'pendentes') return pendentes;
     if (tab === 'andamento') return andamento;
     if (tab === 'agendadas') return agendadas;
-    return concluidas;
+    if (tab === 'concluidas') return concluidas;
+    return [];
   }, [tab, pendentes, andamento, agendadas, concluidas]);
+
+  // ── Calendário geral — todas as O.S. com data, de todos os técnicos ──────
+  const osPorDia = useMemo(() => {
+    const m: Record<string, OSField[]> = {};
+    allOS.forEach(os => {
+      if (!os.startDate) return;
+      const k = toKey(os.startDate.toDate());
+      if (!m[k]) m[k] = [];
+      m[k].push(os);
+    });
+    return m;
+  }, [allOS]);
+
+  const diasDoMes = useMemo(() => {
+    const days: (Date | null)[] = [];
+    const first = new Date(mesAtual);
+    const last  = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0);
+    for (let i = 0; i < first.getDay(); i++) days.push(null);
+    for (let d = 1; d <= last.getDate(); d++) {
+      days.push(new Date(mesAtual.getFullYear(), mesAtual.getMonth(), d));
+    }
+    return days;
+  }, [mesAtual]);
+
+  const hojeDate = new Date();
+  const osDiaSelecionado = diaSel ? (osPorDia[toKey(diaSel)] ?? []) : [];
+  const navMes = (delta: number) => {
+    setMesAtual(m => new Date(m.getFullYear(), m.getMonth() + delta, 1));
+    setDiaSel(null);
+  };
 
   if (loading) {
     return (
@@ -182,6 +225,7 @@ export default function FieldGestaoOS() {
     { id: 'andamento',  label: 'Em Campo',   count: andamento.length  },
     { id: 'agendadas',  label: 'Agendadas',  count: agendadas.length  },
     { id: 'concluidas', label: 'Concluídas', count: concluidas.length },
+    { id: 'calendario', label: 'Calendário', count: 0, icon: <CalendarDays size={11} /> },
   ];
 
   return (
@@ -240,17 +284,97 @@ export default function FieldGestaoOS() {
         ))}
       </div>
 
-      {/* List */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {currentList.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-gray-600">
-            <ClipboardList size={40} className="mb-3 opacity-30" />
-            <p className="text-sm font-medium">Nenhuma O.S. nesta categoria</p>
+      {/* List / Calendário */}
+      {tab === 'calendario' ? (
+        <div className="flex-1 overflow-y-auto flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 bg-gray-900/60">
+            <button onClick={() => navMes(-1)} className="p-1.5 rounded-lg bg-gray-800 active:bg-gray-700">
+              <ChevronLeft size={16} className="text-gray-400" />
+            </button>
+            <span className="text-sm font-bold text-white capitalize">
+              {mesAtual.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+            </span>
+            <button onClick={() => navMes(1)} className="p-1.5 rounded-lg bg-gray-800 active:bg-gray-700">
+              <ChevronRight size={16} className="text-gray-400" />
+            </button>
           </div>
-        ) : (
-          currentList.map(os => <OSGestaoCard key={os.id} os={os} />)
-        )}
-      </div>
+
+          <div className="grid grid-cols-7 px-2 pb-1">
+            {WEEK_DAYS.map(d => (
+              <div key={d} className="text-center text-[10px] font-bold text-gray-600 py-1">{d}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 px-2 gap-y-1">
+            {diasDoMes.map((dia, i) => {
+              if (!dia) return <div key={`empty-${i}`} />;
+              const k      = toKey(dia);
+              const osD    = osPorDia[k] ?? [];
+              const ehHoje = isSameDay(dia, hojeDate);
+              const ehSel  = diaSel ? isSameDay(dia, diaSel) : false;
+              const temOS  = osD.length > 0;
+              return (
+                <button
+                  key={k}
+                  onClick={() => setDiaSel(ehSel ? null : dia)}
+                  className={`relative flex flex-col items-center py-1.5 rounded-xl transition-colors
+                    ${ehSel  ? 'bg-orange-600'
+                    : ehHoje ? 'bg-gray-800 ring-1 ring-orange-500/50'
+                    : temOS  ? 'bg-gray-800/60 active:bg-gray-800'
+                    :          'active:bg-gray-800/40'}`}
+                >
+                  <span className={`text-xs font-bold ${ehSel ? 'text-white' : ehHoje ? 'text-orange-400' : 'text-gray-300'}`}>
+                    {dia.getDate()}
+                  </span>
+                  {temOS && (
+                    <div className="flex gap-0.5 mt-0.5">
+                      {osD.slice(0, 3).map((os, idx) => (
+                        <div key={idx} className={`w-1.5 h-1.5 rounded-full ${PRIORIDADE_DOT[os.priority ?? 'low'] ?? 'bg-gray-500'}`} />
+                      ))}
+                      {osD.length > 3 && <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="px-4 pt-4 pb-4 space-y-3">
+            {diaSel && (
+              <div className="flex items-center gap-2 mb-1">
+                <CalendarDays size={13} className="text-orange-400" />
+                <span className="text-xs font-bold text-gray-400 capitalize">
+                  {diaSel.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+                </span>
+                {osDiaSelecionado.length > 0 && (
+                  <span className="ml-auto text-[10px] text-gray-500">{osDiaSelecionado.length} O.S.</span>
+                )}
+              </div>
+            )}
+            {diaSel && osDiaSelecionado.length === 0 && (
+              <div className="text-center py-8 text-gray-600">
+                <CalendarDays size={32} className="mx-auto mb-2 opacity-40" />
+                <p className="text-xs">Nenhuma O.S. para este dia</p>
+              </div>
+            )}
+            {osDiaSelecionado.map(os => <OSGestaoCard key={os.id} os={os} />)}
+            {!diaSel && (
+              <p className="text-center text-xs text-gray-600 py-4">Toque em um dia para ver as O.S. agendadas</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          {currentList.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-600">
+              <ClipboardList size={40} className="mb-3 opacity-30" />
+              <p className="text-sm font-medium">Nenhuma O.S. nesta categoria</p>
+            </div>
+          ) : (
+            currentList.map(os => <OSGestaoCard key={os.id} os={os} />)
+          )}
+        </div>
+      )}
     </div>
     </>
   );
