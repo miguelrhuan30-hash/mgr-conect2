@@ -32,8 +32,10 @@ const diasEmAberto = (os: OSField): number => {
   return Math.floor((Date.now() - criado.getTime()) / 86400000);
 };
 
-const PRIORIDADE_DOT: Record<string, string> = {
-  alta: 'bg-red-500', media: 'bg-yellow-500', baixa: 'bg-emerald-500', low: 'bg-gray-600',
+// Bolinhas do calendário seguem a cor do STATUS (mesma paleta de STATUS_CONFIG),
+// não a prioridade — verde concluída, amarelo em andamento, laranja pendente.
+const STATUS_DOT: Record<string, string> = {
+  pending: 'bg-orange-500', 'in-progress': 'bg-yellow-500', completed: 'bg-emerald-500', open: 'bg-blue-500',
 };
 const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const toKey = (d: Date) =>
@@ -89,6 +91,10 @@ export default function FieldGestaoOS() {
     allOS.forEach(os => {
       if (os.status === 'completed')   { concluidas.push(os); return; }
       if (os.status === 'in-progress') { andamento.push(os); return; }
+      // Pendentes = status 'pending', sempre — tenha data marcada ou não.
+      if (os.status === 'pending')     { pendentes.push(os); return; }
+      // Sobra status 'open' (ou sem status): agendada se tiver data futura,
+      // senão cai em pendentes como fallback.
       if (os.startDate && os.startDate.toDate() >= hoje) { agendadas.push(os); return; }
       pendentes.push(os);
     });
@@ -221,11 +227,11 @@ export default function FieldGestaoOS() {
   };
 
   const TABS: { id: TabGestao; label: string; count: number; icon?: React.ReactNode }[] = [
+    { id: 'calendario', label: 'Calendário', count: 0, icon: <CalendarDays size={11} /> },
     { id: 'pendentes',  label: 'Pendentes',  count: pendentes.length  },
     { id: 'andamento',  label: 'Em Campo',   count: andamento.length  },
     { id: 'agendadas',  label: 'Agendadas',  count: agendadas.length  },
     { id: 'concluidas', label: 'Concluídas', count: concluidas.length },
-    { id: 'calendario', label: 'Calendário', count: 0, icon: <CalendarDays size={11} /> },
   ];
 
   return (
@@ -329,7 +335,7 @@ export default function FieldGestaoOS() {
                   {temOS && (
                     <div className="flex gap-0.5 mt-0.5">
                       {osD.slice(0, 3).map((os, idx) => (
-                        <div key={idx} className={`w-1.5 h-1.5 rounded-full ${PRIORIDADE_DOT[os.priority ?? 'low'] ?? 'bg-gray-500'}`} />
+                        <div key={idx} className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[os.status ?? 'open'] ?? 'bg-gray-500'}`} />
                       ))}
                       {osD.length > 3 && <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />}
                     </div>
