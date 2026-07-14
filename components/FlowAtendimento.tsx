@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import {
   doc, getDoc, setDoc, collection, getDocs, onSnapshot, Timestamp,
-  query, where, orderBy, updateDoc, deleteDoc,
+  query, where, orderBy, updateDoc, deleteDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -486,6 +486,133 @@ const FaseRelatorioOSList: React.FC<{
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {tasks.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
         </div>
+      )}
+    </div>
+  );
+};
+
+// ── Ferramenta de manutenção: corrige O.S. concluídas com workflowStatus
+// desatualizado (ex.: marcadas via painel "Mudar status" do FieldApp antes
+// da correção de sincronização). Só diagnostica O.S. presas em fases
+// anteriores à conclusão — nunca mexe em O.S. já em AGUARDANDO_FATURAMENTO/
+// AGUARDANDO_PAGAMENTO/CONCLUIDO, para não reabrir cobrança já processada. ──
+
+const WORKFLOW_EARLY_STATES: WS[] = [
+  WS.TRIAGEM, WS.PRE_ORCAMENTO, WS.VISITA_TECNICA, WS.ORCAMENTO_FINAL,
+  WS.AGUARDANDO_APROVACAO, WS.AGENDADO, WS.EM_EXECUCAO, WS.REVISAO,
+];
+
+interface DiagnosticoItem { task: Task; atual: string; destino: WS; }
+
+const OSDiagnosticoWorkflow: React.FC = () => {
+  const [diagnostico, setDiagnostico] = useState<DiagnosticoItem[] | null>(null);
+  const [rodando, setRodando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [resultado, setResultado] = useState<string | null>(null);
+
+  const rodarDiagnostico = async () => {
+    setRodando(true);
+    setResultado(null);
+    try {
+      const snap = await getDocs(query(collection(db, CollectionName.TASKS), where('status', '==', 'completed')));
+      const itens: DiagnosticoItem[] = [];
+      snap.docs.forEach(d => {
+        const t = { id: d.id, ...d.data() } as Task;
+        if ((t as any).archived === true) return;
+        const ws = t.workflowStatus;
+        const preso = !ws || WORKFLOW_EARLY_STATES.includes(ws);
+        if (!preso) return;
+
+        let destino: WS;
+        if ((t as any).statusOS === 'REAGENDAR') destino = WS.CONCLUIDO;
+        else if ((t as any).faturamentoPeloProjeto === true) destino = WS.CONCLUIDO;
+        else if ((t as any).financial?.statusPagamento === 'confirmado') destino = WS.CONCLUIDO;
+        else if ((t as any).financial && ((t as any).financial.valor != null || (t as any).financial.metodoPagamento)) destino = WS.AGUARDANDO_PAGAMENTO;
+        else destino = WS.AGUARDANDO_FATURAMENTO;
+
+        itens.push({ task: t, atual: ws ? (WORKFLOW_LABELS[ws] || ws) : '(vazio)', destino });
+      });
+      setDiagnostico(itens);
+    } finally {
+      setRodando(false);
+    }
+  };
+
+  const aplicarCorrecao = async () => {
+    if (!diagnostico || diagnostico.length === 0) return;
+    setAplicando(true);
+    try {
+      const CHUNK = 400;
+      for (let i = 0; i < diagnostico.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        diagnostico.slice(i, i + CHUNK).forEach(({ task, destino }) => {
+          const ref = doc(db, CollectionName.TASKS, task.id);
+          const extra: Record<string, any> = {};
+          if (!(task as any).relatorioOSEnvio) extra.relatorioOSEnvio = { status: 'aguardando_relatorio' };
+          batch.update(ref, { workflowStatus: destino, ...extra, updatedAt: Timestamp.now() });
+        });
+        await batch.commit();
+      }
+      setResultado(`${diagnostico.length} O.S. corrigida(s) com sucesso.`);
+      setDiagnostico(null);
+    } catch (e: any) {
+      setResultado(`Erro ao corrigir: ${e.message || e}`);
+    } finally {
+      setAplicando(false);
+    }
+  };
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <p className="text-xs font-extrabold text-amber-800 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5" /> Manutenção — O.S. desincronizadas
+          </p>
+          <p className="text-[10px] text-amber-600 mt-0.5">
+            Diagnostica O.S. já concluídas (status) mas presas numa fase antiga do workflow (ex.: marcadas pelo painel "Mudar status" do FieldApp antes da correção).
+          </p>
+        </div>
+        {diagnostico === null && (
+          <button onClick={rodarDiagnostico} disabled={rodando}
+            className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 disabled:opacity-50 flex-shrink-0">
+            {rodando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertCircle className="w-3.5 h-3.5" />}
+            Diagnosticar
+          </button>
+        )}
+      </div>
+
+      {resultado && <p className="text-xs font-bold text-amber-800">{resultado}</p>}
+
+      {diagnostico !== null && (
+        diagnostico.length === 0 ? (
+          <p className="text-xs text-amber-700">Nenhuma O.S. desincronizada encontrada. Tudo certo ✓</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="max-h-64 overflow-y-auto space-y-1.5 bg-white/60 rounded-xl p-2">
+              {diagnostico.map(({ task, atual, destino }) => (
+                <div key={task.id} className="flex items-center gap-2 text-[10px] px-2 py-1.5 bg-white rounded-lg border border-amber-100">
+                  <span className="font-bold text-gray-500 flex-shrink-0">{(task as any).numeroOS || task.id.slice(0, 8)}</span>
+                  <span className="text-gray-700 truncate flex-1">{task.title}</span>
+                  <span className="text-red-500 flex-shrink-0">{atual}</span>
+                  <ArrowRight className="w-3 h-3 text-gray-300 flex-shrink-0" />
+                  <span className="text-emerald-600 font-bold flex-shrink-0">{WORKFLOW_LABELS[destino]}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setDiagnostico(null)} disabled={aplicando}
+                className="px-3 py-2 border border-amber-300 text-amber-700 rounded-xl text-xs font-bold hover:bg-amber-100 disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={aplicarCorrecao} disabled={aplicando}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 disabled:opacity-50">
+                {aplicando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Corrigir {diagnostico.length} O.S.
+              </button>
+            </div>
+          </div>
+        )
       )}
     </div>
   );
@@ -1222,6 +1349,7 @@ const FlowAtendimento: React.FC = () => {
         {/* Fase 7 — Relatório: hub único com O.S. individuais (avulsa/projeto/contrato) + projetos com relatório final consolidado */}
         {faseSelecionada === 'relatorio' && !loading && (
           <div className="space-y-6">
+            {canEditRaci && <OSDiagnosticoWorkflow />}
             <FaseRelatorioOSList
               tasks={osRelatorioTasks}
               loading={osRelatorioLoading}
