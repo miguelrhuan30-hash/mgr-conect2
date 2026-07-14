@@ -10,8 +10,15 @@ O **MGR-CONECT 2** é uma plataforma Fullstack moderna desenvolvida para gestão
 
 O sistema está hospedado no Google Cloud Run, utilizando uma arquitetura *stateless* e *serverless*.
 
+> ⚠️ **ATENÇÃO — dois projetos GCP parecidos, não confundir:**
+> - **`gen-lang-client-0227796366`** — é onde o **Cloud Run** (`mgr-conect-2`, este app) roda de fato em produção. No Console GCP ele pode aparecer rotulado como "duplicado" — **esse rótulo está errado/desatualizado, ele é o projeto real**. Confirme sempre comparando `gcloud run revisions list --service=mgr-conect-2 --project=gen-lang-client-0227796366 --region=us-west1` com as datas dos commits recentes.
+> - **`mgr-conect2`** — é o projeto **Firebase** (Firestore, Auth, Storage, Cloud Functions, Hosting de `hosting:site` e `hosting:app`). Também tem um Cloud Run `mgr-conect-2` cadastrado, mas **parado desde março/2026** — não é esse que serve produção. `.firebaserc` aponta pra cá (correto, é o projeto Firebase certo), mas isso não significa que o Cloud Run também está aqui.
+>
+> Antes de mudar qualquer `--project` em `cloudbuild.yaml` ou em comandos `gcloud run`, **verifique o histórico de revisões, não confie só no nome/label do projeto no Console.**
+
 ### Dados do Deploy
-*   **Projeto GCP:** `mgr-conect2`
+*   **Projeto GCP (Cloud Run):** `gen-lang-client-0227796366`
+*   **Projeto Firebase (Firestore/Auth/Functions/Hosting):** `mgr-conect2`
 *   **Região:** `us-west1`
 *   **URL de Produção:** [https://mgr-conect-2-615090802090.us-west1.run.app](https://mgr-conect-2-615090802090.us-west1.run.app)
 

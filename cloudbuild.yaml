@@ -1,3 +1,10 @@
+# ⚠️ NÃO troque `gen-lang-client-0227796366` por `mgr-conect2` abaixo — mesmo que o
+# Console GCP mostre esse projeto rotulado como "duplicado", é onde o Cloud Run
+# (mgr-conect-2) roda de fato em produção. `mgr-conect2` é só o projeto Firebase
+# (Firestore/Auth/Functions/Hosting) — o Cloud Run dele está parado desde março/2026.
+# Antes de mudar qualquer `--project` aqui, confirme com:
+#   gcloud run revisions list --service=mgr-conect-2 --project=<ID> --region=us-west1
+# e compare as datas das revisões mais recentes com `git log`. Ver README.md § 1.
 steps:
   # 1 — Build Docker image with Vite build args
   - name: 'gcr.io/cloud-builders/docker'
