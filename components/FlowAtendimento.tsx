@@ -493,14 +493,10 @@ const FaseRelatorioOSList: React.FC<{
 
 // ── Ferramenta de manutenção: corrige O.S. concluídas com workflowStatus
 // desatualizado (ex.: marcadas via painel "Mudar status" do FieldApp antes
-// da correção de sincronização). Só diagnostica O.S. presas em fases
-// anteriores à conclusão — nunca mexe em O.S. já em AGUARDANDO_FATURAMENTO/
-// AGUARDANDO_PAGAMENTO/CONCLUIDO, para não reabrir cobrança já processada. ──
-
-const WORKFLOW_EARLY_STATES: WS[] = [
-  WS.TRIAGEM, WS.PRE_ORCAMENTO, WS.VISITA_TECNICA, WS.ORCAMENTO_FINAL,
-  WS.AGUARDANDO_APROVACAO, WS.AGENDADO, WS.EM_EXECUCAO, WS.REVISAO,
-];
+// da correção de sincronização). Sistema ainda em fase de testes, sem O.S.
+// em faturamento/pagamento real — destino é sempre CONCLUIDO; a granularidade
+// de faturamento (AGUARDANDO_FATURAMENTO/AGUARDANDO_PAGAMENTO) fica para
+// quando esse fluxo for desenhado e testado à parte. ──────────────────────
 
 interface DiagnosticoItem { task: Task; atual: string; destino: WS; }
 
@@ -520,17 +516,9 @@ const OSDiagnosticoWorkflow: React.FC = () => {
         const t = { id: d.id, ...d.data() } as Task;
         if ((t as any).archived === true) return;
         const ws = t.workflowStatus;
-        const preso = !ws || WORKFLOW_EARLY_STATES.includes(ws);
-        if (!preso) return;
+        if (ws === WS.CONCLUIDO) return; // já correto
 
-        let destino: WS;
-        if ((t as any).statusOS === 'REAGENDAR') destino = WS.CONCLUIDO;
-        else if ((t as any).faturamentoPeloProjeto === true) destino = WS.CONCLUIDO;
-        else if ((t as any).financial?.statusPagamento === 'confirmado') destino = WS.CONCLUIDO;
-        else if ((t as any).financial && ((t as any).financial.valor != null || (t as any).financial.metodoPagamento)) destino = WS.AGUARDANDO_PAGAMENTO;
-        else destino = WS.AGUARDANDO_FATURAMENTO;
-
-        itens.push({ task: t, atual: ws ? (WORKFLOW_LABELS[ws] || ws) : '(vazio)', destino });
+        itens.push({ task: t, atual: ws ? (WORKFLOW_LABELS[ws] || ws) : '(vazio)', destino: WS.CONCLUIDO });
       });
       setDiagnostico(itens);
     } finally {
