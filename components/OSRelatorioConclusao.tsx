@@ -32,12 +32,18 @@ const fmtDateTime = (ts: any): string => {
 };
 interface FotoComComentario { url: string; comentario?: string; }
 
-// Evidências ficam em dois formatos ao longo do histórico do app (fotosEvidencia,
-// mais novo, com slot; fotos, legado, um Record por id) — junta os dois.
+// Evidências de tarefa vêm de até 3 formatos, dependendo de onde a O.S. foi
+// executada: web novo (fotosEvidencia, com slot), web legado (fotos, Record) e
+// FieldApp — técnico em campo (fotosApp + observacaoApp, fase atual da tarefa;
+// fasesAnteriores guarda fotos de execuções anteriores quando a tarefa foi refeita).
 const getFotosDaTarefa = (t: OSItemTarefa): FotoComComentario[] => {
   const doSlots = (t.fotosEvidencia || []).map(f => ({ url: f.url, comentario: f.descricaoGeral || undefined }));
   const doLegado = t.fotos ? Object.values(t.fotos).map(f => ({ url: f.url, comentario: f.comentarioTecnico || undefined })) : [];
-  return [...doSlots, ...doLegado];
+  const doAppAtual = (t.fotosApp || []).map(url => ({ url, comentario: t.observacaoApp || undefined }));
+  const doAppAnterior = (t.fasesAnteriores || []).flatMap(fase =>
+    (fase.fotos || []).map(url => ({ url, comentario: fase.observacao || undefined }))
+  );
+  return [...doSlots, ...doLegado, ...doAppAtual, ...doAppAnterior];
 };
 
 // ── Geração de PDF/Print com layout MGR (mesmo padrão de ProjectRelatorio.gerarPDF) ──
@@ -66,7 +72,7 @@ const gerarPDF = (task: Task) => {
     <h2>Itens Executados (${tarefas.length})</h2>
     ${tarefas.map(t => {
       const fotos = getFotosDaTarefa(t);
-      const comentarios = fotos.filter(f => f.comentario);
+      const comentarios = [...new Set(fotos.map(f => f.comentario).filter(Boolean))];
       return `
       <div style="margin-bottom:10px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa">
         <div style="display:flex;align-items:center;gap:8px">
@@ -75,7 +81,7 @@ const gerarPDF = (task: Task) => {
           </div>
           <span style="font-size:12px;font-weight:600;color:#374151">${t.descricao}</span>
         </div>
-        ${comentarios.map(f => `<p style="font-size:11px;color:#6b7280;margin:4px 0 0 24px;font-style:italic">"${f.comentario}"</p>`).join('')}
+        ${comentarios.map(c => `<p style="font-size:11px;color:#6b7280;margin:4px 0 0 24px;font-style:italic">"${c}"</p>`).join('')}
         ${fotos.length > 0 ? `<div class="fotos" style="margin:6px 0 0 24px">${fotosHTML(fotos.map(f => f.url))}</div>` : ''}
       </div>`;
     }).join('')}
@@ -245,6 +251,7 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
               <div className="space-y-2">
                 {tarefas.map(t => {
                   const fotos = getFotosDaTarefa(t);
+                  const comentarios = [...new Set(fotos.map(f => f.comentario).filter(Boolean))];
                   return (
                     <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-xl p-3">
                       <div className="flex items-center gap-2">
@@ -253,8 +260,8 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
                           : <div className="w-3.5 h-3.5 rounded border border-gray-300 flex-shrink-0" />}
                         <span className="text-sm font-semibold text-gray-800">{t.descricao}</span>
                       </div>
-                      {fotos.filter(f => f.comentario).map((f, i) => (
-                        <p key={i} className="text-xs text-gray-500 italic mt-1 ml-5">"{f.comentario}"</p>
+                      {comentarios.map((c, i) => (
+                        <p key={i} className="text-xs text-gray-500 italic mt-1 ml-5">"{c}"</p>
                       ))}
                       {fotos.length > 0 && (
                         <div className="grid grid-cols-4 gap-1.5 mt-2 ml-5">

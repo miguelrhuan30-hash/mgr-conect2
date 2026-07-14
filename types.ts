@@ -1251,6 +1251,10 @@ export interface OSItemTarefa {
   // Sprint 46 — configuração de slots de fotos por tarefa
   fotoSlots?: FotoSlotConfig[];      // slots configurados pelo gestor
   fotosEvidencia?: FotoEvidencia[];  // fotos tiradas pelo técnico
+  // FieldApp (fluxo do técnico em campo, FieldOSDetail) — fase ATUAL da tarefa
+  fotosApp?: string[];
+  observacaoApp?: string;
+  fasesAnteriores?: Array<{ status: string; fotos: string[]; observacao: string; finalizadaEm: any }>;
 }
 
 export interface OSCheckin {
