@@ -773,7 +773,8 @@ const FlowAtendimento: React.FC = () => {
   const [editingOSTask, setEditingOSTask] = useState<Task | null>(null);
 
   useEffect(() => {
-    if (faseSelecionada !== 'os' && faseSelecionada !== 'execucao') return;
+    // Carrega desde o início (não só ao entrar na fase) para que os badges de
+    // contagem por fase já apareçam corretos no primeiro carregamento da tela.
     setOsTasksLoading(true);
     // Busca TODAS as tasks — filtra archived e concluídas no client-side
     // (campo 'archived' não existe na maioria dos docs, != exclui docs sem o campo)
@@ -790,7 +791,7 @@ const FlowAtendimento: React.FC = () => {
       setOsTasksLoading(false);
     }, () => setOsTasksLoading(false));
     return () => unsub();
-  }, [faseSelecionada]);
+  }, []);
 
   // ── Fase 7 (Relatório) — TODAS as O.S. concluídas (avulsa + projeto + contrato) ──
   const [osRelatorioTasks, setOsRelatorioTasks] = useState<Task[]>([]);
@@ -798,7 +799,8 @@ const FlowAtendimento: React.FC = () => {
   const [relatorioOSTask, setRelatorioOSTask] = useState<Task | null>(null);
 
   useEffect(() => {
-    if (faseSelecionada !== 'relatorio') return;
+    // Carrega desde o início (mesmo motivo do efeito de allOSTasks acima) —
+    // sem isso o badge da fase Relatório fica zerado até o usuário clicar nela.
     setOsRelatorioLoading(true);
     const q3 = query(collection(db, CollectionName.TASKS), where('status', '==', 'completed'));
     const unsub = onSnapshot(q3, snap => {
@@ -814,7 +816,7 @@ const FlowAtendimento: React.FC = () => {
       setOsRelatorioLoading(false);
     }, () => setOsRelatorioLoading(false));
     return () => unsub();
-  }, [faseSelecionada]);
+  }, []);
 
   // ── Filtros de Concluídos ────────────────────────────────────────────────────
   const [concFilterMes, setConcFilterMes] = useState<string>('');       // 'YYYY-MM'
