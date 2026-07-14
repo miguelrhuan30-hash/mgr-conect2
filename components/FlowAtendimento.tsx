@@ -19,7 +19,7 @@ import {
   Loader2, Building2, Calendar, DollarSign,
   ArrowRight, Briefcase, AlertCircle, LayoutGrid,
   Settings, Check, Users, Pencil, Printer, Eye,
-  FolderOpen, Zap, ClipboardList, Trash2, ExternalLink,
+  FolderOpen, Zap, ClipboardList, Trash2, ExternalLink, Hash,
 } from 'lucide-react';
 import {
   doc, getDoc, setDoc, collection, getDocs, onSnapshot, Timestamp,
@@ -37,6 +37,7 @@ import ProjectContrato from './ProjectContrato';
 import FunilConversao from './FunilConversao';
 import { Suspense, lazy } from 'react';
 const OSEditModal = lazy(() => import('./OSEditModal'));
+const OSRelatorioConclusao = lazy(() => import('./OSRelatorioConclusao'));
 import {
   ProjectV2, ProjectPhase, Sector,
   PROJECT_PHASE_LABELS, PROJECT_PHASE_COLORS,
@@ -419,6 +420,77 @@ const OSTaskCard: React.FC<{
   );
 };
 
+// ── Fase 7 — Relatório de conclusão por O.S. (avulsa + projeto + contrato) ───
+
+const OSRelatorioCard: React.FC<{ task: Task; onOpen: (task: Task) => void }> = ({ task, onOpen }) => {
+  const hasProject = !!(task as any).projectId;
+  const enviado = (task as any).relatorioOSEnvio?.status === 'relatorio_enviado';
+
+  return (
+    <button
+      onClick={() => onOpen(task)}
+      className="w-full text-left bg-white rounded-2xl border border-gray-200 p-4 hover:border-pink-300 hover:shadow-md transition-all"
+    >
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${enviado ? 'bg-emerald-50 text-emerald-600' : 'bg-pink-50 text-pink-600'}`}>
+          <FileText className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-[10px] font-extrabold text-gray-500 flex items-center gap-0.5">
+              <Hash className="w-2.5 h-2.5" />{(task as any).numeroOS || task.code || task.id.slice(0, 8)}
+            </span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200">
+              {hasProject ? 'Projeto' : 'Avulsa'}
+            </span>
+            {enviado ? (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-700 border-emerald-200 flex items-center gap-0.5">
+                <Check className="w-2.5 h-2.5" /> Relatório enviado
+              </span>
+            ) : (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-orange-100 text-orange-700 border-orange-200">
+                Aguardando relatório
+              </span>
+            )}
+          </div>
+          <h4 className="text-sm font-bold text-gray-900 truncate">{task.title}</h4>
+          <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400 flex-wrap">
+            {task.clientName && <span className="flex items-center gap-0.5"><Building2 className="w-3 h-3" />{task.clientName}</span>}
+            {task.assigneeName && <span className="flex items-center gap-0.5"><Users className="w-3 h-3" />{task.assigneeName}</span>}
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 mt-2" />
+      </div>
+    </button>
+  );
+};
+
+const FaseRelatorioOSList: React.FC<{
+  tasks: Task[];
+  loading: boolean;
+  onOpen: (task: Task) => void;
+}> = ({ tasks, loading, onOpen }) => {
+  if (loading) {
+    return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-brand-600" /></div>;
+  }
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+        <FileText className="w-3.5 h-3.5" /> Relatórios de Conclusão por O.S. ({tasks.length})
+      </p>
+      {tasks.length === 0 ? (
+        <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+          <p className="text-xs text-gray-400">Nenhuma O.S. concluída aguardando relatório.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {tasks.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const FaseOSList: React.FC<{
   fase: FlowFase;
   projects: ProjectV2[];
@@ -602,6 +674,30 @@ const FlowAtendimento: React.FC = () => {
       setAllOSTasks(tasks);
       setOsTasksLoading(false);
     }, () => setOsTasksLoading(false));
+    return () => unsub();
+  }, [faseSelecionada]);
+
+  // ── Fase 7 (Relatório) — TODAS as O.S. concluídas (avulsa + projeto + contrato) ──
+  const [osRelatorioTasks, setOsRelatorioTasks] = useState<Task[]>([]);
+  const [osRelatorioLoading, setOsRelatorioLoading] = useState(false);
+  const [relatorioOSTask, setRelatorioOSTask] = useState<Task | null>(null);
+
+  useEffect(() => {
+    if (faseSelecionada !== 'relatorio') return;
+    setOsRelatorioLoading(true);
+    const q3 = query(collection(db, CollectionName.TASKS), where('status', '==', 'completed'));
+    const unsub = onSnapshot(q3, snap => {
+      const tasks = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Task))
+        .filter(t => !((t as any).archived === true))
+        .sort((a, b) => {
+          const aT = (a as any).relatorioFinal?.finalizadoEm?.seconds ?? (a as any).execution?.actualEndTime?.seconds ?? 0;
+          const bT = (b as any).relatorioFinal?.finalizadoEm?.seconds ?? (b as any).execution?.actualEndTime?.seconds ?? 0;
+          return bT - aT;
+        });
+      setOsRelatorioTasks(tasks);
+      setOsRelatorioLoading(false);
+    }, () => setOsRelatorioLoading(false));
     return () => unsub();
   }, [faseSelecionada]);
 
@@ -1123,8 +1219,33 @@ const FlowAtendimento: React.FC = () => {
           </>
         )}
 
-        {/* Fases restantes (relatório, faturamento, concluídos) */}
-        {!INLINE_FASES.includes(faseSelecionada) && faseSelecionada !== 'os' && faseSelecionada !== 'execucao' && faseAtual.fases && !loading && (
+        {/* Fase 7 — Relatório: hub único com O.S. individuais (avulsa/projeto/contrato) + projetos com relatório final consolidado */}
+        {faseSelecionada === 'relatorio' && !loading && (
+          <div className="space-y-6">
+            <FaseRelatorioOSList
+              tasks={osRelatorioTasks}
+              loading={osRelatorioLoading}
+              onOpen={setRelatorioOSTask}
+            />
+            <div>
+              <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5 mb-3">
+                <FolderOpen className="w-3.5 h-3.5" /> Projetos com Relatório Final
+              </p>
+              <FaseProjectList
+                fase={faseAtual}
+                projects={projetosDaFase}
+                search={search}
+                onSearch={setSearch}
+                canManage={canManageProjects}
+                onArchiveProject={handleArchiveProject}
+                onDeleteProject={setConfirmDelete}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Fases restantes (faturamento, concluídos) */}
+        {!INLINE_FASES.includes(faseSelecionada) && faseSelecionada !== 'os' && faseSelecionada !== 'execucao' && faseSelecionada !== 'relatorio' && faseAtual.fases && !loading && (
           <FaseProjectList
             fase={faseAtual}
             projects={projetosDaFase}
@@ -1134,6 +1255,16 @@ const FlowAtendimento: React.FC = () => {
             onArchiveProject={handleArchiveProject}
             onDeleteProject={setConfirmDelete}
           />
+        )}
+
+        {relatorioOSTask && (
+          <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}>
+            <OSRelatorioConclusao
+              task={relatorioOSTask}
+              onClose={() => setRelatorioOSTask(null)}
+              onSave={updated => setRelatorioOSTask(updated)}
+            />
+          </Suspense>
         )}
 
       </div>

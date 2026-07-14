@@ -331,15 +331,24 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
 
   /* ─── Encerramento da O.S. ───────────────────────── */
   const handleEncerramentoConfirmado = async (relatorio: RelatorioFinal) => {
+    // Mesmo gate usado em Pipeline.tsx (moveTask) e OSExecution.tsx: O.S. de
+    // projeto com faturamento pelo projeto pula direto para CONCLUIDO; O.S.
+    // avulsa entra em AGUARDANDO_FATURAMENTO para alimentar o financeiro (Billing.tsx).
+    const skipBilling = (os as any).faturamentoPeloProjeto === true;
+    const workflowDestino = skipBilling ? WorkflowStatus.CONCLUIDO : WorkflowStatus.AGUARDANDO_FATURAMENTO;
+
     await updateDoc(doc(db, 'tasks', os.id), {
       status: 'completed',
-      workflowStatus: WorkflowStatus.CONCLUIDO,
+      workflowStatus: workflowDestino,
       fotosFinais: relatorio.fotosFinais,
       relatorioFinal: {
         pendencia:    relatorio.pendencia,
         recomendacao: relatorio.recomendacao,
         finalizadoEm: Timestamp.now(),
       },
+      // Toda O.S. concluída (avulsa, de projeto ou de contrato) gera relatório individual —
+      // independente do gate de faturamento, que só decide o destino do workflowStatus.
+      relatorioOSEnvio: { status: 'aguardando_relatorio' },
       'execution.checkOut':    Timestamp.now(),
       'execution.actualEndTime': Timestamp.now(),
     });

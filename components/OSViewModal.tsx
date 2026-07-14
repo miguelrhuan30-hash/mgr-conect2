@@ -21,11 +21,12 @@ import {
 import {
   X, Edit2, Printer, CheckCircle2, Circle, Clock, MapPin, User,
   Wrench, ClipboardList, Camera, MessageSquare, ChevronDown, ChevronUp,
-  AlertTriangle, Loader2, Plus, Navigation, CheckSquare, Square,
+  AlertTriangle, Loader2, Plus, Navigation, CheckSquare, Square, FileText,
 } from 'lucide-react';
 
-const OSEditModal    = lazy(() => import('./OSEditModal'));
-const OSSuporteChat  = lazy(() => import('./OSSuporteChat'));
+const OSEditModal          = lazy(() => import('./OSEditModal'));
+const OSSuporteChat        = lazy(() => import('./OSSuporteChat'));
+const OSRelatorioConclusao = lazy(() => import('./OSRelatorioConclusao'));
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
@@ -100,6 +101,7 @@ const OSViewModal: React.FC<OSViewModalProps> = ({ taskId, onClose }) => {
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
   const [showEdit, setShowEdit]     = useState(false);
+  const [showRelatorio, setShowRelatorio] = useState(false);
   const [showChat, setShowChat]     = useState(false);
   const [showObs, setShowObs]       = useState(false);
   const [novaObs, setNovaObs]       = useState('');
@@ -269,6 +271,15 @@ const OSViewModal: React.FC<OSViewModalProps> = ({ taskId, onClose }) => {
                   >
                     <Printer size={16} />
                   </button>
+                  {task.status === 'completed' && (
+                    <button
+                      onClick={() => setShowRelatorio(true)}
+                      className="p-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition-colors"
+                      title="Relatório de Conclusão"
+                    >
+                      <FileText size={16} />
+                    </button>
+                  )}
                 </>
               )}
               <button onClick={onClose} className={`p-2 rounded-lg transition-colors ${isTechExec ? 'hover:bg-blue-500 text-white' : 'hover:bg-gray-100 text-gray-500'}`}>
@@ -603,6 +614,17 @@ const OSViewModal: React.FC<OSViewModalProps> = ({ taskId, onClose }) => {
       {showChat && task && (
         <Suspense fallback={null}>
           <OSSuporteChat task={task} onClose={() => setShowChat(false)} />
+        </Suspense>
+      )}
+
+      {/* OSRelatorioConclusao */}
+      {showRelatorio && task && (
+        <Suspense fallback={null}>
+          <OSRelatorioConclusao
+            task={task}
+            onClose={() => setShowRelatorio(false)}
+            onSave={(updated: Task) => setTask(updated)}
+          />
         </Suspense>
       )}
     </>

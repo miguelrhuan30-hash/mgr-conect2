@@ -804,6 +804,21 @@ export interface Task {
     timestamp: any;
     descricao?: string;
   }>;
+
+  // ─── Módulo de Relatório de O.S. Avulsa ────────────────────────────────────
+  tipoOrigemOS?: 'avulsa' | 'projeto' | 'contrato_sla'; // auto-computado — ver getTipoOrigemOS() em services/osService.ts
+  fotosFinais?: string[]; // fotos "depois" — gravadas no encerramento (FieldOSEncerramentoModal → FieldOSDetail)
+  relatorioFinal?: {
+    pendencia: string | null;
+    recomendacao: string | null;
+    finalizadoEm: Timestamp;
+  }; // preenchido pelo técnico no encerramento. DISTINTO de ProjectV2.relatorioFinal (mesmo nome, documento diferente)
+  relatorioOSEnvio?: {
+    status: 'aguardando_relatorio' | 'relatorio_enviado';
+    enviadoEm?: Timestamp;
+    enviadoPor?: string;
+    enviadoPorNome?: string;
+  }; // ausente = tratar como 'aguardando_relatorio'
 }
 
 export interface ClientContact {

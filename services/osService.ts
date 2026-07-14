@@ -4,7 +4,17 @@ import {
   addDoc, serverTimestamp
 } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { WorkflowStatus, OSStatusFinal } from '../types';
+import { WorkflowStatus, OSStatusFinal, Task } from '../types';
+
+/**
+ * Deriva a origem da O.S. (avulsa | projeto | contrato_sla) sem exigir
+ * migração de dados: usa `tipoOrigemOS` se persistido (prepara terreno para
+ * o futuro fluxo de contrato SLA), senão infere pela presença de `projectId`.
+ */
+export function getTipoOrigemOS(task: Pick<Task, 'tipoOrigemOS' | 'projectId'>): 'avulsa' | 'projeto' | 'contrato_sla' {
+  if (task.tipoOrigemOS) return task.tipoOrigemOS;
+  return task.projectId ? 'projeto' : 'avulsa';
+}
 
 // ─── Normalização de statusOS (legado lowercase → UPPERCASE) ───
 const STATUS_MIGRATION_MAP: Record<string, OSStatusFinal> = {
