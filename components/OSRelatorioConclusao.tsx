@@ -15,7 +15,7 @@ import {
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Task } from '../types';
+import { Task, OSItemTarefa, OSObservacao } from '../types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -30,10 +30,14 @@ const fmtDateTime = (ts: any): string => {
   try { return format(ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000), "dd/MM/yy 'às' HH:mm", { locale: ptBR }); }
   catch { return '—'; }
 };
-const fmtDate = (ts: any): string => {
-  if (!ts) return '—';
-  try { return format(ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000), 'dd/MM/yyyy', { locale: ptBR }); }
-  catch { return '—'; }
+interface FotoComComentario { url: string; comentario?: string; }
+
+// Evidências ficam em dois formatos ao longo do histórico do app (fotosEvidencia,
+// mais novo, com slot; fotos, legado, um Record por id) — junta os dois.
+const getFotosDaTarefa = (t: OSItemTarefa): FotoComComentario[] => {
+  const doSlots = (t.fotosEvidencia || []).map(f => ({ url: f.url, comentario: f.descricaoGeral || undefined }));
+  const doLegado = t.fotos ? Object.values(t.fotos).map(f => ({ url: f.url, comentario: f.comentarioTecnico || undefined })) : [];
+  return [...doSlots, ...doLegado];
 };
 
 // ── Geração de PDF/Print com layout MGR (mesmo padrão de ProjectRelatorio.gerarPDF) ──
@@ -44,20 +48,44 @@ const gerarPDF = (task: Task) => {
   const fotosAntes: string[] = (task as any).execution?.evidencias || [];
   const fotosDepois: string[] = (task as any).fotosFinais || [];
   const relatorio = (task as any).relatorioFinal as { pendencia: string | null; recomendacao: string | null } | undefined;
-  const tarefas = (task as any).tarefasOS as Array<{ descricao: string; status: string }> | undefined;
+  const tarefas = ((task as any).tarefasOS || []) as OSItemTarefa[];
+  const observacoes = ((task as any).observacoes || []) as OSObservacao[];
+  const inicio = (task as any).execution?.actualStartTime;
+  const fim = (task as any).execution?.actualEndTime;
 
   const fotosHTML = (urls: string[]) => urls.slice(0, 6).map(url =>
     `<img src="${url}" style="width:31%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb" />`
   ).join('');
 
-  const tarefasHTML = tarefas && tarefas.length > 0 ? `
-    <h2>Itens Executados</h2>
-    ${tarefas.map(t => `
-      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f3f4f6">
-        <div style="width:16px;height:16px;border-radius:3px;border:2px solid ${t.status === 'concluida' ? '#059669' : '#d1d5db'};background:${t.status === 'concluida' ? '#059669' : '#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          ${t.status === 'concluida' ? '<span style="color:white;font-size:11px;font-weight:bold">✓</span>' : ''}
+  const horarioHTML = (inicio || fim) ? `
+    <h2>Horário de Atendimento</h2>
+    <div class="obs"><strong>Início:</strong> ${fmtDateTime(inicio)} &nbsp;|&nbsp; <strong>Finalização:</strong> ${fmtDateTime(fim)}</div>
+  ` : '';
+
+  const tarefasHTML = tarefas.length > 0 ? `
+    <h2>Itens Executados (${tarefas.length})</h2>
+    ${tarefas.map(t => {
+      const fotos = getFotosDaTarefa(t);
+      const comentarios = fotos.filter(f => f.comentario);
+      return `
+      <div style="margin-bottom:10px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:16px;height:16px;border-radius:3px;border:2px solid ${t.status === 'concluida' ? '#059669' : '#d1d5db'};background:${t.status === 'concluida' ? '#059669' : '#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            ${t.status === 'concluida' ? '<span style="color:white;font-size:11px;font-weight:bold">✓</span>' : ''}
+          </div>
+          <span style="font-size:12px;font-weight:600;color:#374151">${t.descricao}</span>
         </div>
-        <span style="font-size:12px;color:#374151">${t.descricao}</span>
+        ${comentarios.map(f => `<p style="font-size:11px;color:#6b7280;margin:4px 0 0 24px;font-style:italic">"${f.comentario}"</p>`).join('')}
+        ${fotos.length > 0 ? `<div class="fotos" style="margin:6px 0 0 24px">${fotosHTML(fotos.map(f => f.url))}</div>` : ''}
+      </div>`;
+    }).join('')}
+  ` : '';
+
+  const observacoesHTML = observacoes.length > 0 ? `
+    <h2>Observações Gerais (${observacoes.length})</h2>
+    ${observacoes.map(o => `
+      <div class="obs" style="margin-bottom:6px">
+        <strong>${o.autorNome}</strong> — ${fmtDateTime(o.criadaEm)}<br/>${o.texto}
       </div>
     `).join('')}
   ` : '';
@@ -103,10 +131,14 @@ const gerarPDF = (task: Task) => {
         ${task.description ? `<strong>Descrição:</strong> ${task.description}` : ''}
       </div>
 
+      ${horarioHTML}
+
       ${tarefasHTML}
 
       ${fotosAntes.length > 0 ? `<h2>Fotos — Antes (${fotosAntes.length})</h2><div class="fotos">${fotosHTML(fotosAntes)}</div>` : ''}
       ${fotosDepois.length > 0 ? `<h2>Fotos — Depois (${fotosDepois.length})</h2><div class="fotos">${fotosHTML(fotosDepois)}</div>` : ''}
+
+      ${observacoesHTML}
 
       ${relatorio?.pendencia ? `<h2>Pendência</h2><div class="obs">${relatorio.pendencia}</div>` : ''}
       ${relatorio?.recomendacao ? `<h2>Recomendação ao Cliente</h2><div class="obs">${relatorio.recomendacao}</div>` : ''}
@@ -131,6 +163,10 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const relatorio = (task as any).relatorioFinal as { pendencia: string | null; recomendacao: string | null } | undefined;
   const fotosAntes: string[] = (task as any).execution?.evidencias || [];
   const fotosDepois: string[] = (task as any).fotosFinais || [];
+  const tarefas = ((task as any).tarefasOS || []) as OSItemTarefa[];
+  const observacoes = ((task as any).observacoes || []) as OSObservacao[];
+  const inicio = (task as any).execution?.actualStartTime;
+  const fim = (task as any).execution?.actualEndTime;
 
   const handleMarcarEnviado = async () => {
     if (!currentUser) return;
@@ -190,15 +226,49 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
                 <Wrench className="w-4 h-4 text-gray-400" /> {(task as any).tipoServico}
               </div>
             )}
-            <div className="flex items-center gap-2 text-gray-600">
-              <Calendar className="w-4 h-4 text-gray-400" /> {fmtDate((task as any).execution?.actualEndTime)}
-            </div>
+            {(inicio || fim) && (
+              <div className="col-span-2 flex items-center gap-2 text-gray-600">
+                <Calendar className="w-4 h-4 text-gray-400" />
+                Início: {fmtDateTime(inicio)} &nbsp;·&nbsp; Finalização: {fmtDateTime(fim)}
+              </div>
+            )}
           </div>
 
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Serviço Executado</p>
             <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-xl p-3">{task.description || task.title}</p>
           </div>
+
+          {tarefas.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Itens Executados ({tarefas.length})</p>
+              <div className="space-y-2">
+                {tarefas.map(t => {
+                  const fotos = getFotosDaTarefa(t);
+                  return (
+                    <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                      <div className="flex items-center gap-2">
+                        {t.status === 'concluida'
+                          ? <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                          : <div className="w-3.5 h-3.5 rounded border border-gray-300 flex-shrink-0" />}
+                        <span className="text-sm font-semibold text-gray-800">{t.descricao}</span>
+                      </div>
+                      {fotos.filter(f => f.comentario).map((f, i) => (
+                        <p key={i} className="text-xs text-gray-500 italic mt-1 ml-5">"{f.comentario}"</p>
+                      ))}
+                      {fotos.length > 0 && (
+                        <div className="grid grid-cols-4 gap-1.5 mt-2 ml-5">
+                          {fotos.map((f, i) => (
+                            <img key={i} src={f.url} className="aspect-square object-cover rounded-lg border border-gray-200" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {(fotosAntes.length > 0 || fotosDepois.length > 0) && (
             <div className="grid grid-cols-2 gap-3">
@@ -226,6 +296,20 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {observacoes.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Observações Gerais ({observacoes.length})</p>
+              <div className="space-y-1.5">
+                {observacoes.map(o => (
+                  <div key={o.id} className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                    <p className="text-xs font-bold text-gray-600">{o.autorNome} <span className="font-normal text-gray-400">— {fmtDateTime(o.criadaEm)}</span></p>
+                    <p className="text-sm text-gray-700 mt-0.5">{o.texto}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
