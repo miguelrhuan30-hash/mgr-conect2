@@ -919,8 +919,13 @@ const FlowAtendimento: React.FC = () => {
       counts['os'] = (counts['os'] || 0) + allOSTasks.filter(t => t.workflowStatus !== WS.EM_EXECUCAO).length;
       counts['execucao'] = (counts['execucao'] || 0) + allOSTasks.filter(t => t.workflowStatus === WS.EM_EXECUCAO).length;
     }
+    // Fase Relatório — soma O.S. individuais ainda aguardando envio de relatório
+    if (osRelatorioTasks.length > 0) {
+      counts['relatorio'] = (counts['relatorio'] || 0)
+        + osRelatorioTasks.filter(t => (t as any).relatorioOSEnvio?.status !== 'relatorio_enviado').length;
+    }
     return counts;
-  }, [projects, allOSTasks]);
+  }, [projects, allOSTasks, osRelatorioTasks]);
 
   const projetosDaFase = useMemo(() => {
     if (!projects) return [];
