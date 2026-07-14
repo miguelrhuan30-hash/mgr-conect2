@@ -503,6 +503,7 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
       await updateDoc(doc(db, CollectionName.TASKS, task.id), {
         status: 'completed',
         statusOS: 'REAGENDAR',
+        workflowStatus: WorkflowStatus.CONCLUIDO, // encerra a O.S. antiga no Kanban/Flow — substituída pela nova
         reagendamentoMotivo: motivo,
         reagendamentoPara: novaRef.id,
         updatedAt: serverTimestamp(),

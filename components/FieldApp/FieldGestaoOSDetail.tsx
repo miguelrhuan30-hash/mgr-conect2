@@ -224,6 +224,7 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
       await updateDoc(doc(db, 'tasks', os.id), {
         status: 'completed',
         statusOS: 'REAGENDAR',
+        workflowStatus: WorkflowStatus.CONCLUIDO, // encerra a O.S. antiga no Kanban/Flow — substituída pela nova
         reagendamentoMotivo: motivo,
         reagendamentoPara: novaRef.id,
         atualizadoEm: Timestamp.now(),
@@ -555,7 +556,20 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
             ))}
             <div className="flex gap-2 pt-1">
               <button
-                onClick={() => save({ status: novoStatus }, 'mudar status')}
+                onClick={() => {
+                  // Ao marcar "Concluída" manualmente aqui, sincroniza workflowStatus
+                  // (mesmo gate de FieldOSDetail.tsx/Pipeline.tsx/OSExecution.tsx) — sem
+                  // isso a O.S. aparece "Concluída" no app mas fica presa em "Aguardando
+                  // Agendamento" no Kanban/Flow web, que leem workflowStatus, não status.
+                  const skipBilling = (os as any).faturamentoPeloProjeto === true;
+                  const extra = novoStatus === 'completed'
+                    ? {
+                        workflowStatus: skipBilling ? WorkflowStatus.CONCLUIDO : WorkflowStatus.AGUARDANDO_FATURAMENTO,
+                        relatorioOSEnvio: { status: 'aguardando_relatorio' },
+                      }
+                    : {};
+                  save({ status: novoStatus, ...extra }, 'mudar status');
+                }}
                 disabled={saving}
                 className="flex-1 py-2.5 bg-orange-600 text-white font-bold text-xs rounded-xl disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
