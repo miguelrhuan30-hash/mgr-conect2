@@ -230,6 +230,7 @@ export default function FieldOSEncerramentoModal({ taskId, titulo, uid, onConfir
                   onChange={e => setTextoPendencia(e.target.value)}
                   placeholder="O que ficou pendente? Qual é o próximo passo necessário?"
                   rows={4}
+                  spellCheck autoCorrect="on" autoCapitalize="sentences"
                   className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-orange-500"
                 />
               </div>
@@ -275,6 +276,7 @@ export default function FieldOSEncerramentoModal({ taskId, titulo, uid, onConfir
                   onChange={e => setTextoRecomendacao(e.target.value)}
                   placeholder="Descreva os cuidados necessários ou o que deve ser observado futuramente..."
                   rows={4}
+                  spellCheck autoCorrect="on" autoCapitalize="sentences"
                   className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-blue-500"
                 />
               </div>

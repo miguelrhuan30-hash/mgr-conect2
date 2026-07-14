@@ -692,6 +692,7 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
               onChange={e => setNovaTarefaDesc(e.target.value)}
               placeholder="Ex: Troca de válvula de alívio..."
               rows={3}
+              spellCheck autoCorrect="on" autoCapitalize="sentences"
               autoFocus
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-emerald-500"
             />

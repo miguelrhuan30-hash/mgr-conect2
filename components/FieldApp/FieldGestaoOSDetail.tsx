@@ -661,6 +661,7 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
                   onChange={e => setMotivoOutro(e.target.value)}
                   placeholder="Descreva o motivo..."
                   rows={2}
+                  spellCheck autoCorrect="on" autoCapitalize="sentences"
                   className="w-full mt-2 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-orange-500 resize-none"
                 />
               )}

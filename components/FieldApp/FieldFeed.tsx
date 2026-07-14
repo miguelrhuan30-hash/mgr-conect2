@@ -370,6 +370,7 @@ function FeedCard({ atividade }: { atividade: FeedAtividade }) {
                     value={textoObs} onChange={e => setTextoObs(e.target.value)}
                     placeholder="Descreva o que foi entregue, ajuste necessário..."
                     rows={2}
+                    spellCheck autoCorrect="on" autoCapitalize="sentences"
                     className="w-full text-xs bg-gray-900 border border-gray-700 rounded-lg px-2.5 py-2 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500"
                   />
                   <div className="flex gap-2">

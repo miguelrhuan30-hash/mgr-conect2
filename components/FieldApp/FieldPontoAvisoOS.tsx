@@ -139,6 +139,7 @@ export default function FieldPontoAvisoOS({ osList, resolvidas, onResolver, onCl
                       onChange={e => setObservacao(e.target.value)}
                       placeholder="Detalhe (opcional)..."
                       rows={2}
+                      spellCheck autoCorrect="on" autoCapitalize="sentences"
                       className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-2 text-xs text-white placeholder-gray-600 resize-none focus:outline-none focus:border-red-500"
                     />
                     <div className="flex gap-2">

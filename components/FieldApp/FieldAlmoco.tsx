@@ -410,6 +410,7 @@ export default function FieldAlmoco() {
         <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 block">✏️ Observação (opcional)</label>
         <textarea value={notes[day]} onChange={e => setNotes(prev => ({ ...prev, [day]: e.target.value }))}
           placeholder="Ex: sem feijão, mais arroz, sem cebola..." maxLength={120} rows={2}
+          spellCheck autoCorrect="on" autoCapitalize="sentences"
           className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-orange-500 resize-none" />
         {notes[day].length > 0 && <p className="text-[10px] text-gray-600 text-right mt-0.5">{notes[day].length}/120</p>}
       </div>
@@ -460,6 +461,7 @@ export default function FieldAlmoco() {
           <button onClick={() => setSizes(prev => ({ ...prev, [day]: 'grande' }))} className={`flex-1 py-2 rounded-xl border-2 text-xs font-bold ${sizes[day]==='grande'?'border-purple-500 bg-purple-500/20 text-purple-300':'border-gray-700 text-gray-500'}`}>🍲 Grande</button>
         </div>
         <textarea value={editNote} onChange={e => setEditNote(e.target.value)} placeholder="Observação..." maxLength={120} rows={2}
+          spellCheck autoCorrect="on" autoCapitalize="sentences"
           className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none resize-none" />
         <div className="flex gap-2">
           <button onClick={onSave} disabled={saving} className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold disabled:opacity-50">

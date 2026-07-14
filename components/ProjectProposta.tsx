@@ -423,19 +423,24 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       snap => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
       err => { setUploadError(err.message); setUploadProgress(null); },
       async () => {
-        const url = await getDownloadURL(ref);
-        const newDados = { ...dados, pdfUrl: url, pdfStoragePath: path };
-        await updateProject(project.id, { propostaDados: newDados as any });
-        if (project.apresentacaoId) {
-          await updateDoc(doc(db, CollectionName.PRESENTATIONS, project.apresentacaoId), {
-            pdfUrl: url, pdfStoragePath: path, updatedAt: serverTimestamp(),
-          });
+        try {
+          const url = await getDownloadURL(ref);
+          const newDados = { ...dados, pdfUrl: url, pdfStoragePath: path };
+          await updateProject(project.id, { propostaDados: newDados as any });
+          if (project.apresentacaoId) {
+            await updateDoc(doc(db, CollectionName.PRESENTATIONS, project.apresentacaoId), {
+              pdfUrl: url, pdfStoragePath: path, updatedAt: serverTimestamp(),
+            });
+          }
+          setDados(newDados);
+          setPdfExternalUrl(url);
+          setUploadProgress(null);
+          setSavedLocal(true);
+          await garantirPropostaSlug(); // garante link interno
+        } catch (e: any) {
+          setUploadError(e?.message || 'Erro ao salvar PDF da apresentação');
+          setUploadProgress(null);
         }
-        setDados(newDados);
-        setPdfExternalUrl(url);
-        setUploadProgress(null);
-        setSavedLocal(true);
-        await garantirPropostaSlug(); // garante link interno
       },
     );
   };
@@ -469,14 +474,19 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       snap => setUploadProgressDesc(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
       err => { setUploadErrorDesc(err.message); setUploadProgressDesc(null); },
       async () => {
-        const url = await getDownloadURL(ref);
-        const newDados = { ...dados, pdfDescritivo: url, pdfDescritivoPath: path };
-        await updateProject(project.id, { propostaDados: newDados as any });
-        setDados(newDados);
-        setPdfDescritivoUrl(url);
-        setPdfDescritivoExtUrl(url);
-        setUploadProgressDesc(null);
-        setSavedLocal(true);
+        try {
+          const url = await getDownloadURL(ref);
+          const newDados = { ...dados, pdfDescritivo: url, pdfDescritivoPath: path };
+          await updateProject(project.id, { propostaDados: newDados as any });
+          setDados(newDados);
+          setPdfDescritivoUrl(url);
+          setPdfDescritivoExtUrl(url);
+          setUploadProgressDesc(null);
+          setSavedLocal(true);
+        } catch (e: any) {
+          setUploadErrorDesc(e?.message || 'Erro ao salvar PDF descritivo');
+          setUploadProgressDesc(null);
+        }
       },
     );
   };
@@ -545,14 +555,19 @@ const ProjectProposta: React.FC<Props> = ({ project }) => {
       snap => setUploadProgressHtml(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
       err => { setUploadErrorHtml(err.message); setUploadProgressHtml(null); },
       async () => {
-        const url = await getDownloadURL(ref);
-        const newDados = { ...dados, htmlUrl: url, htmlPath: path };
-        await updateProject(project.id, { propostaDados: newDados as any });
-        setDados(newDados);
-        setHtmlApresUrl(url);
-        setUploadProgressHtml(null);
-        setSavedLocal(true);
-        await garantirPropostaSlug(); // garante link interno
+        try {
+          const url = await getDownloadURL(ref);
+          const newDados = { ...dados, htmlUrl: url, htmlPath: path };
+          await updateProject(project.id, { propostaDados: newDados as any });
+          setDados(newDados);
+          setHtmlApresUrl(url);
+          setUploadProgressHtml(null);
+          setSavedLocal(true);
+          await garantirPropostaSlug(); // garante link interno
+        } catch (e: any) {
+          setUploadErrorHtml(e?.message || 'Erro ao salvar HTML da apresentação');
+          setUploadProgressHtml(null);
+        }
       },
     );
   };

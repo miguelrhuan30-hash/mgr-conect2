@@ -605,6 +605,7 @@ const OSSuporteChat: React.FC<OSSuporteChatProps> = ({ task, onClose, variant = 
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensagem(); } }}
                   placeholder="Escreva sua mensagem..."
                   rows={2}
+                  spellCheck autoCorrect="on" autoCapitalize="sentences"
                   className={`flex-1 border rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 ${theme.input}`}
                 />
                 <div className="flex flex-col gap-1.5">

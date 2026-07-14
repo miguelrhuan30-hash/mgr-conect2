@@ -332,6 +332,7 @@ export default function FieldOSPendenciaModal({ onClose }: Props) {
             onChange={e => setDescription(e.target.value)}
             placeholder="Descreva o serviço ou problema..."
             rows={3}
+            spellCheck autoCorrect="on" autoCapitalize="sentences"
             className={`${input} resize-none`}
           />
         </div>

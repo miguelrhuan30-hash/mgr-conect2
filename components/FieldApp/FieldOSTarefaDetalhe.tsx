@@ -229,6 +229,7 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
             onChange={e => setObservacao(e.target.value)}
             placeholder="Descreva o que foi feito, resultado ou motivo de não execução..."
             rows={4}
+            spellCheck autoCorrect="on" autoCapitalize="sentences"
             disabled={uploading}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-blue-500 disabled:opacity-50"
           />

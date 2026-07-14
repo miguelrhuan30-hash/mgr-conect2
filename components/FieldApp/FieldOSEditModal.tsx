@@ -269,6 +269,7 @@ export default function FieldOSEditModal({ os, onClose, onSaved }: Props) {
               onChange={e => setDescription(e.target.value)}
               rows={3}
               placeholder="Descreva o serviço ou problema..."
+              spellCheck autoCorrect="on" autoCapitalize="sentences"
               className={`${input} resize-none`}
             />
           </div>

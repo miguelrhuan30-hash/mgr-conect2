@@ -664,6 +664,7 @@ export default function FieldPerfil() {
                 onChange={e => setMotivo(e.target.value)}
                 placeholder="Ex: Troca de conta bancária, número antigo desativado..."
                 rows={3}
+                spellCheck autoCorrect="on" autoCapitalize="sentences"
                 className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-blue-500"
               />
             </div>

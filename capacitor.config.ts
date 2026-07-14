@@ -13,7 +13,11 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: false,
-    captureInput: true,
+    // captureInput desligado — intercepta o teclado de um jeito que quebra
+    // a sugestão nativa de correção/autocomplete do Android. O resize do
+    // layout quando o teclado abre agora é feito via windowSoftInputMode
+    // (AndroidManifest.xml), a forma nativa correta.
+    captureInput: false,
     webContentsDebuggingEnabled: false, // true só em dev
   },
   plugins: {
