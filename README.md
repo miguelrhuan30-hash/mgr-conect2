@@ -16,11 +16,14 @@ O sistema está hospedado no Google Cloud Run, utilizando uma arquitetura *state
 >
 > Antes de mudar qualquer `--project` em `cloudbuild.yaml` ou em comandos `gcloud run`, **verifique o histórico de revisões, não confie só no nome/label do projeto no Console.**
 
+> ⚠️ **A URL que o time realmente usa no dia a dia é `https://app.mgrrefrigeracao.com.br`, e ela NÃO é o Cloud Run acima — é o Firebase Hosting `hosting:app`** (target `mgr-connect-app.web.app`, serve a pasta `dist/` estática). O `cloudbuild.yaml` **nunca** deploya `hosting:app` — só Cloud Run + `hosting:site` (site institucional). Depois de qualquer push, rodar também `npm run build && firebase deploy --only hosting:app --project mgr-conect2`, senão o gestor/técnico continua vendo a versão antiga mesmo com o Cloud Run atualizado. Pra confirmar qual URL alguém está usando, pedir pra rodar no Console do navegador: `[window.location.href, document.querySelector('script[type="module"]')?.src]`.
+
 ### Dados do Deploy
 *   **Projeto GCP (Cloud Run):** `gen-lang-client-0227796366`
 *   **Projeto Firebase (Firestore/Auth/Functions/Hosting):** `mgr-conect2`
 *   **Região:** `us-west1`
-*   **URL de Produção:** [https://mgr-conect-2-615090802090.us-west1.run.app](https://mgr-conect-2-615090802090.us-west1.run.app)
+*   **URL de Produção (uso real do time):** [https://app.mgrrefrigeracao.com.br](https://app.mgrrefrigeracao.com.br) (Firebase Hosting `hosting:app`)
+*   **URL do Cloud Run (backend, não é a que o time acessa):** [https://mgr-conect-2-615090802090.us-west1.run.app](https://mgr-conect-2-615090802090.us-west1.run.app)
 
 ### Variáveis de Ambiente
 Para garantir a invalidação de cache em novos deploys, certifique-se de que a seguinte variável está definida:
