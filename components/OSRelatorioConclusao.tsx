@@ -260,6 +260,9 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
                           : <div className="w-3.5 h-3.5 rounded border border-gray-300 flex-shrink-0" />}
                         <span className="text-sm font-semibold text-gray-800">{t.descricao}</span>
                       </div>
+                      <p className="text-[9px] text-gray-300 mt-0.5 ml-5">
+                        [debug] fotosApp:{t.fotosApp?.length ?? 'undefined'} · fotosEvidencia:{t.fotosEvidencia?.length ?? 'undefined'} · fotos(legado):{t.fotos ? Object.keys(t.fotos).length : 'undefined'} · fasesAnteriores:{t.fasesAnteriores?.length ?? 'undefined'}
+                      </p>
                       {comentarios.map((c, i) => (
                         <p key={i} className="text-xs text-gray-500 italic mt-1 ml-5">"{c}"</p>
                       ))}
