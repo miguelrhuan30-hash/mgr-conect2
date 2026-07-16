@@ -193,10 +193,81 @@ const gerarPDF = (task: Task, c: ConteudoEditavel) => {
   if (win) { win.document.write(html); win.document.close(); }
 };
 
+// ── Visão somente leitura do registro original (bruto) da execução ───────────
+const ConteudoSomenteLeitura: React.FC<{ c: ConteudoEditavel }> = ({ c }) => (
+  <div className="space-y-4">
+    <div>
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Serviço Executado</p>
+      <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-xl p-3 whitespace-pre-wrap">{c.descricaoServico || '—'}</p>
+    </div>
+
+    {c.itens.length > 0 && (
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Itens Executados ({c.itens.length})</p>
+        <div className="space-y-2">
+          {c.itens.map(item => (
+            <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+              <p className="text-sm font-semibold text-gray-800">{item.descricao}</p>
+              {item.comentario && <p className="text-xs text-gray-500 italic mt-1">"{item.comentario}"</p>}
+              {item.fotos.length > 0 && (
+                <div className="grid grid-cols-4 gap-1.5 mt-2">
+                  {item.fotos.map((url, i) => (
+                    <img key={i} src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {(c.fotosAntes.length > 0 || c.fotosDepois.length > 0) && (
+      <div className="grid grid-cols-2 gap-3">
+        {c.fotosAntes.length > 0 && (
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+              <ImageIcon className="w-3.5 h-3.5" /> Antes ({c.fotosAntes.length})
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {c.fotosAntes.map((url, i) => <img key={i} src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />)}
+            </div>
+          </div>
+        )}
+        {c.fotosDepois.length > 0 && (
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+              <ImageIcon className="w-3.5 h-3.5" /> Depois ({c.fotosDepois.length})
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {c.fotosDepois.map((url, i) => <img key={i} src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />)}
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+
+    {c.pendencia && (
+      <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+        <div><p className="text-xs font-bold text-orange-700 mb-0.5">Pendência</p><p className="text-sm text-orange-800 whitespace-pre-wrap">{c.pendencia}</p></div>
+      </div>
+    )}
+    {c.recomendacao && (
+      <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+        <MessageSquare className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+        <div><p className="text-xs font-bold text-blue-700 mb-0.5">Recomendação ao Cliente</p><p className="text-sm text-blue-800 whitespace-pre-wrap">{c.recomendacao}</p></div>
+      </div>
+    )}
+  </div>
+);
+
 const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const { currentUser, userProfile } = useAuth() as any;
   const [saving, setSaving] = useState(false);
   const [salvo, setSalvo] = useState(false);
+  const [aba, setAba] = useState<'editado' | 'original'>('editado');
+  const original = derivarConteudoOriginal(task);
 
   const numeroOS = (task as any).numeroOS || task.code || task.id.slice(0, 8).toUpperCase();
   const envio = (task as any).relatorioOSEnvio as { status: 'aguardando_relatorio' | 'relatorio_enviado'; enviadoEm?: any } | undefined;
@@ -279,9 +350,22 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
               <Hash className="w-3 h-3" /> {numeroOS}
             </p>
             <h3 className="font-bold text-gray-900">Relatório de Conclusão de O.S.</h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">Edite livremente — nada aqui altera o registro original da O.S.</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              {aba === 'editado' ? 'Edite livremente — nada aqui altera o registro original da O.S.' : 'Registro original da execução, somente leitura.'}
+            </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none px-2">×</button>
+        </div>
+
+        <div className="flex gap-1 p-1 mx-5 mt-3 bg-gray-100 rounded-xl">
+          <button onClick={() => setAba('editado')}
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${aba === 'editado' ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            Editado para Envio
+          </button>
+          <button onClick={() => setAba('original')}
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${aba === 'original' ? 'bg-white text-gray-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            Original da O.S.
+          </button>
         </div>
 
         <div className="p-5 space-y-4">
@@ -311,6 +395,10 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
             )}
           </div>
 
+          {aba === 'original' ? (
+            <ConteudoSomenteLeitura c={original} />
+          ) : (
+          <>
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Serviço Executado</p>
             <textarea value={descricaoServico} onChange={e => setDescricaoServico(e.target.value)} rows={3}
@@ -400,6 +488,8 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
               )}
             </div>
           )}
+          </>
+          )}
 
           {observacoes.length > 0 && (
             <div>
@@ -415,6 +505,8 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
             </div>
           )}
 
+          {aba === 'editado' && (
+          <>
           <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-1" />
             <div className="flex-1">
@@ -433,15 +525,21 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
                 className="w-full text-sm text-blue-800 bg-white/60 border border-blue-200 rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-blue-300 placeholder:text-blue-300" />
             </div>
           </div>
+          </>
+          )}
         </div>
 
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-4 flex items-center gap-2 flex-wrap">
-          <button onClick={handleSalvar} disabled={saving}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50 ${salvo ? 'bg-emerald-100 text-emerald-700' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : salvo ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-            {salvo ? 'Salvo' : 'Salvar'}
-          </button>
-          <button onClick={() => gerarPDF(task, conteudoAtual())}
+          {aba === 'editado' ? (
+            <button onClick={handleSalvar} disabled={saving}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50 ${salvo ? 'bg-emerald-100 text-emerald-700' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : salvo ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+              {salvo ? 'Salvo' : 'Salvar'}
+            </button>
+          ) : (
+            <p className="text-[10px] text-gray-400">Somente leitura — mude para "Editado para Envio" para alterar.</p>
+          )}
+          <button onClick={() => gerarPDF(task, aba === 'editado' ? conteudoAtual() : original)}
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50">
             <Printer className="w-3.5 h-3.5" /> Exportar PDF
           </button>
@@ -449,7 +547,7 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
             className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700">
             <Share2 className="w-3.5 h-3.5" /> WhatsApp
           </button>
-          {!enviado && (
+          {aba === 'editado' && !enviado && (
             <button onClick={handleMarcarEnviado} disabled={saving}
               className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 disabled:opacity-50">
               {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
