@@ -35,10 +35,14 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [projectId, setProjectId] = useState('');
   const [faturamentoPeloProjeto, setFaturamentoPeloProjeto] = useState(false);
 
-  // Contrato de Manutenção SLA — atendimento direto (sem passar pelo portal do cliente)
-  const [contratoAtivo, setContratoAtivo] = useState<ContratoSLA | null>(null);
-  const [atendimentoContrato, setAtendimentoContrato] = useState(false);
+  // Tipo de O.S. — Avulsa (padrão) | Projeto | Contrato SLA. Mutuamente exclusivos.
+  const [tipoOSSelecionado, setTipoOSSelecionado] = useState<'avulsa' | 'projeto' | 'contrato'>('avulsa');
+  // Contrato de Manutenção SLA — atendimento direto (sem passar pelo portal do cliente).
+  // Um cliente pode ter mais de um contrato ativo (ex: unidades/plantas diferentes).
+  const [contratosAtivos, setContratosAtivos] = useState<ContratoSLA[]>([]);
+  const [contratoSlaIdSelecionado, setContratoSlaIdSelecionado] = useState('');
   const [prioridadeSla, setPrioridadeSla] = useState<PrioridadeSLA>('P3');
+  const contratoSelecionado = contratosAtivos.find(c => c.id === contratoSlaIdSelecionado) || null;
 
   // Hub de Tarefas do Projeto — itens do backlog disponíveis para distribuir
   const [backlogItens, setBacklogItens] = useState<BacklogTarefa[]>([]);
@@ -144,17 +148,22 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
       .catch(() => setAtivos([]));
   }, [clientId]);
 
-  // Contrato SLA ativo do cliente selecionado — habilita o checkbox de atendimento de contrato
+  // Contrato(s) SLA ativo(s) do cliente selecionado — um cliente pode ter mais de um.
+  // Trocar de cliente reseta o tipo de O.S. e as seleções de projeto/contrato, já
+  // que elas pertencem ao cliente anterior.
   useEffect(() => {
-    setAtendimentoContrato(false);
-    if (!clientId) { setContratoAtivo(null); return; }
+    setTipoOSSelecionado('avulsa');
+    setProjectId('');
+    setFaturamentoPeloProjeto(false);
+    setContratoSlaIdSelecionado('');
+    if (!clientId) { setContratosAtivos([]); return; }
     getDocs(query(
       collection(db, CollectionName.CONTRATOS_SLA),
       where('clientId', '==', clientId),
       where('status', '==', 'ativo'),
     ))
-      .then(snap => setContratoAtivo(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } as ContratoSLA))
-      .catch(() => setContratoAtivo(null));
+      .then(snap => setContratosAtivos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContratoSLA))))
+      .catch(() => setContratosAtivos([]));
   }, [clientId]);
 
   // Hub de Tarefas — carrega itens do backlog do projeto (status 'backlog')
@@ -306,14 +315,14 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         dadosCompletos: true,
         clientId,
         clientName,
-        projectId,
-        projectName,
-        faturamentoPeloProjeto: !!(projectId && faturamentoPeloProjeto),
-        ...(contratoAtivo && atendimentoContrato ? {
+        projectId: tipoOSSelecionado === 'projeto' ? projectId : '',
+        projectName: tipoOSSelecionado === 'projeto' ? projectName : '',
+        faturamentoPeloProjeto: tipoOSSelecionado === 'projeto' && !!(projectId && faturamentoPeloProjeto),
+        ...(tipoOSSelecionado === 'contrato' && contratoSelecionado ? {
           tipoOrigemOS: 'contrato_sla' as const,
-          contratoSlaId: contratoAtivo.id,
+          contratoSlaId: contratoSelecionado.id,
           prioridadeSla,
-          prazoSlaLimite: Timestamp.fromDate(new Date(Date.now() + contratoAtivo.prazosPrioridade[prioridadeSla] * 3600 * 1000)),
+          prazoSlaLimite: Timestamp.fromDate(new Date(Date.now() + contratoSelecionado.prazosPrioridade[prioridadeSla] * 3600 * 1000)),
         } : {}),
         assignedTo: assigneeId || null,
         assigneeName: assigneeId ? assigneeName : null,
@@ -581,74 +590,121 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       </div>
                     )}
                   </div>
-                  <div>
-                    <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                      <Briefcase className="w-4 h-4 mr-1 text-gray-400" /> Projeto
-                    </label>
-                    <select
-                      value={projectId}
-                      onChange={(e) => {
-                        setProjectId(e.target.value);
-                        if (!e.target.value) setFaturamentoPeloProjeto(false);
-                      }}
-                      className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
-                    >
-                      <option value="">Nenhum projeto</option>
-                      {(() => {
-                        const clientProjects = clientId ? projects.filter(p => p.clientId === clientId) : [];
-                        const otherProjects = clientId ? projects.filter(p => p.clientId !== clientId) : projects;
-                        return (<>
-                          {clientProjects.length > 0 && (
-                            <optgroup label="Projetos do cliente">
-                              {clientProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}</option>)}
-                            </optgroup>
-                          )}
-                          {otherProjects.length > 0 && (
-                            <optgroup label={clientProjects.length > 0 ? 'Outros projetos' : 'Todos os projetos'}>
-                              {otherProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}{p.clientName ? ` (${p.clientName})` : ''}</option>)}
-                            </optgroup>
-                          )}
-                        </>);
-                      })()}
-                    </select>
-                  </div>
-                  {projectId && (
-                    <div className="col-span-2">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={faturamentoPeloProjeto}
-                          onChange={e => setFaturamentoPeloProjeto(e.target.checked)}
-                          className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                        />
-                        <span className="text-sm text-gray-600">Faturamento pelo projeto <span className="text-xs text-gray-400">(O.S. não gera cobrança individual)</span></span>
-                      </label>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de O.S.</label>
+                    <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+                      {([
+                        { key: 'avulsa',   label: 'Avulsa' },
+                        { key: 'projeto',  label: 'Projeto' },
+                        { key: 'contrato', label: 'Contrato SLA' },
+                      ] as const).map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => {
+                            setTipoOSSelecionado(opt.key);
+                            if (opt.key !== 'projeto') { setProjectId(''); setFaturamentoPeloProjeto(false); }
+                            if (opt.key !== 'contrato') { setContratoSlaIdSelecionado(''); }
+                          }}
+                          className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${
+                            tipoOSSelecionado === opt.key ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                  {contratoAtivo && (
-                    <div className="col-span-2 bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 space-y-2">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={atendimentoContrato}
-                          onChange={e => setAtendimentoContrato(e.target.checked)}
-                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-gray-600">Atendimento de Contrato SLA <span className="text-xs text-gray-400">(O.S. não gera cobrança individual — já coberta pelo contrato)</span></span>
-                      </label>
-                      {atendimentoContrato && (
-                        <div>
-                          <label className="text-xs font-bold text-gray-500 mb-1 block">Prioridade</label>
-                          <select
-                            value={prioridadeSla}
-                            onChange={e => setPrioridadeSla(e.target.value as PrioridadeSLA)}
-                            className="w-full rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-gray-900 text-sm"
-                          >
-                            {(['P1', 'P2', 'P3', 'P4'] as PrioridadeSLA[]).map(p => (
-                              <option key={p} value={p}>{p} — resposta em {contratoAtivo.prazosPrioridade[p]}h</option>
-                            ))}
-                          </select>
+                  </div>
+
+                  {tipoOSSelecionado === 'projeto' && (
+                    <>
+                      <div className="col-span-2">
+                        <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                          <Briefcase className="w-4 h-4 mr-1 text-gray-400" /> Projeto
+                        </label>
+                        <select
+                          value={projectId}
+                          onChange={(e) => {
+                            setProjectId(e.target.value);
+                            if (!e.target.value) setFaturamentoPeloProjeto(false);
+                          }}
+                          className="w-full rounded-lg border-gray-300 focus:ring-brand-500 focus:border-brand-500 bg-white text-gray-900"
+                        >
+                          <option value="">Selecione o projeto...</option>
+                          {(() => {
+                            const clientProjects = clientId ? projects.filter(p => p.clientId === clientId) : [];
+                            const otherProjects = clientId ? projects.filter(p => p.clientId !== clientId) : projects;
+                            return (<>
+                              {clientProjects.length > 0 && (
+                                <optgroup label="Projetos do cliente">
+                                  {clientProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}</option>)}
+                                </optgroup>
+                              )}
+                              {otherProjects.length > 0 && (
+                                <optgroup label={clientProjects.length > 0 ? 'Outros projetos' : 'Todos os projetos'}>
+                                  {otherProjects.map(p => <option key={p.id} value={p.id}>{p.name || p.nome}{p.clientName ? ` (${p.clientName})` : ''}</option>)}
+                                </optgroup>
+                              )}
+                            </>);
+                          })()}
+                        </select>
+                        {clientId && projects.filter(p => p.clientId === clientId).length === 0 && (
+                          <p className="text-[10px] text-amber-600 mt-1">Este cliente não tem projetos cadastrados ainda.</p>
+                        )}
+                      </div>
+                      {projectId && (
+                        <div className="col-span-2">
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={faturamentoPeloProjeto}
+                              onChange={e => setFaturamentoPeloProjeto(e.target.checked)}
+                              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            <span className="text-sm text-gray-600">Faturamento pelo projeto <span className="text-xs text-gray-400">(O.S. não gera cobrança individual)</span></span>
+                          </label>
                         </div>
+                      )}
+                    </>
+                  )}
+
+                  {tipoOSSelecionado === 'contrato' && (
+                    <div className="col-span-2 bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 space-y-3">
+                      {contratosAtivos.length === 0 ? (
+                        <p className="text-xs text-indigo-700">
+                          {clientId ? 'Este cliente não tem contrato SLA ativo. Cadastre um em Clientes → Contrato SLA.' : 'Selecione um cliente para ver os contratos ativos.'}
+                        </p>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="text-xs font-bold text-gray-500 mb-1 block">Contrato</label>
+                            <select
+                              value={contratoSlaIdSelecionado}
+                              onChange={e => setContratoSlaIdSelecionado(e.target.value)}
+                              className="w-full rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-gray-900 text-sm"
+                            >
+                              <option value="">Selecione o contrato...</option>
+                              {contratosAtivos.map(c => (
+                                <option key={c.id} value={c.id}>{c.identificador || `Contrato ${c.id.slice(0, 6)}`}</option>
+                              ))}
+                            </select>
+                          </div>
+                          {contratoSelecionado && (
+                            <div>
+                              <label className="text-xs font-bold text-gray-500 mb-1 block">Prioridade</label>
+                              <select
+                                value={prioridadeSla}
+                                onChange={e => setPrioridadeSla(e.target.value as PrioridadeSLA)}
+                                className="w-full rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-gray-900 text-sm"
+                              >
+                                {(['P1', 'P2', 'P3', 'P4'] as PrioridadeSLA[]).map(p => (
+                                  <option key={p} value={p}>{p} — resposta em {contratoSelecionado.prazosPrioridade[p]}h</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          <p className="text-[10px] text-indigo-500">O.S. não gera cobrança individual — já coberta pelo contrato.</p>
+                        </>
                       )}
                     </div>
                   )}
