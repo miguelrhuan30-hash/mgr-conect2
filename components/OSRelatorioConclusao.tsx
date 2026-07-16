@@ -1,15 +1,19 @@
 /**
  * components/OSRelatorioConclusao.tsx
  *
- * Relatório de conclusão de O.S. avulsa (corretiva/preventiva pontual, sem projeto).
- * Modelado no mesmo padrão visual/estrutural de ProjectRelatorio.tsx, mas operando
- * sobre uma única Task em vez de um ProjectV2 com várias O.S. vinculadas.
- * Os dados já vêm prontos da execução do técnico (FieldOSEncerramentoModal) —
- * este componente só apresenta, exporta em PDF e rastreia o envio ao cliente.
+ * Relatório de conclusão de O.S. (avulsa, de projeto ou de contrato). Modelado
+ * no mesmo padrão visual/estrutural de ProjectRelatorio.tsx.
+ *
+ * Existem DOIS "relatórios": o registro técnico bruto da execução (tarefasOS,
+ * execution.evidencias, fotosFinais, relatorioFinal — nunca alterado aqui) e o
+ * "relatório final editado" (Task.relatorioOSConteudo), uma cópia livre que o
+ * gestor pode reescrever, adicionar/remover itens e fotos antes de enviar ao
+ * cliente. Na primeira abertura, a cópia editável é derivada do registro bruto;
+ * depois de salva, edições futuras partem sempre da última versão salva.
  */
 import React, { useState } from 'react';
 import {
-  Printer, Share2, Check, Send, Loader2, User, Building2, Save,
+  Printer, Share2, Check, Send, Loader2, User, Building2, Save, Plus, Trash2, X,
   Calendar, Wrench, AlertTriangle, MessageSquare, Image as ImageIcon, Hash,
 } from 'lucide-react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -30,6 +34,7 @@ const fmtDateTime = (ts: any): string => {
   try { return format(ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000), "dd/MM/yy 'às' HH:mm", { locale: ptBR }); }
   catch { return '—'; }
 };
+
 interface FotoComComentario { url: string; comentario?: string; }
 
 // Evidências de tarefa vêm de até 3 formatos, dependendo de onde a O.S. foi
@@ -46,16 +51,53 @@ const getFotosDaTarefa = (t: OSItemTarefa): FotoComComentario[] => {
   return [...doSlots, ...doLegado, ...doAppAtual, ...doAppAnterior];
 };
 
-interface ConteudoEditavel { descricaoServico: string; pendencia: string; recomendacao: string; }
+interface ItemRelatorio { id: string; descricao: string; comentario: string; fotos: string[]; }
+interface ConteudoEditavel {
+  descricaoServico: string;
+  pendencia: string;
+  recomendacao: string;
+  itens: ItemRelatorio[];
+  fotosAntes: string[];
+  fotosDepois: string[];
+}
+
+// Deriva a cópia editável inicial do registro técnico bruto — só roda na
+// primeira vez (sem relatorioOSConteudo salvo ainda).
+const derivarConteudoOriginal = (task: Task): ConteudoEditavel => {
+  const relatorio = (task as any).relatorioFinal as { pendencia: string | null; recomendacao: string | null } | undefined;
+  const tarefas = ((task as any).tarefasOS || []) as OSItemTarefa[];
+  const itens: ItemRelatorio[] = tarefas.map(t => {
+    const fotos = getFotosDaTarefa(t);
+    const comentario = [...new Set(fotos.map(f => f.comentario).filter(Boolean))].join(' · ');
+    return { id: t.id, descricao: t.descricao, comentario, fotos: fotos.map(f => f.url) };
+  });
+  return {
+    descricaoServico: task.description || task.title || '',
+    pendencia: relatorio?.pendencia || '',
+    recomendacao: relatorio?.recomendacao || '',
+    itens,
+    fotosAntes: (task as any).execution?.evidencias || [],
+    fotosDepois: (task as any).fotosFinais || [],
+  };
+};
+
+const getConteudoInicial = (task: Task): ConteudoEditavel => {
+  const salvo = (task as any).relatorioOSConteudo;
+  if (!salvo) return derivarConteudoOriginal(task);
+  return {
+    descricaoServico: salvo.descricaoServico ?? task.description ?? task.title ?? '',
+    pendencia: salvo.pendencia ?? '',
+    recomendacao: salvo.recomendacao ?? '',
+    itens: salvo.itens ?? derivarConteudoOriginal(task).itens,
+    fotosAntes: salvo.fotosAntes ?? ((task as any).execution?.evidencias || []),
+    fotosDepois: salvo.fotosDepois ?? ((task as any).fotosFinais || []),
+  };
+};
 
 // ── Geração de PDF/Print com layout MGR (mesmo padrão de ProjectRelatorio.gerarPDF) ──
-const gerarPDF = (task: Task, conteudo: ConteudoEditavel) => {
+const gerarPDF = (task: Task, c: ConteudoEditavel) => {
   const hoje = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
   const numeroOS = (task as any).numeroOS || task.code || task.id.slice(0, 8).toUpperCase();
-
-  const fotosAntes: string[] = (task as any).execution?.evidencias || [];
-  const fotosDepois: string[] = (task as any).fotosFinais || [];
-  const tarefas = ((task as any).tarefasOS || []) as OSItemTarefa[];
   const observacoes = ((task as any).observacoes || []) as OSObservacao[];
   const inicio = (task as any).execution?.actualStartTime;
   const fim = (task as any).execution?.actualEndTime;
@@ -69,23 +111,14 @@ const gerarPDF = (task: Task, conteudo: ConteudoEditavel) => {
     <div class="obs"><strong>Início:</strong> ${fmtDateTime(inicio)} &nbsp;|&nbsp; <strong>Finalização:</strong> ${fmtDateTime(fim)}</div>
   ` : '';
 
-  const tarefasHTML = tarefas.length > 0 ? `
-    <h2>Itens Executados (${tarefas.length})</h2>
-    ${tarefas.map(t => {
-      const fotos = getFotosDaTarefa(t);
-      const comentarios = [...new Set(fotos.map(f => f.comentario).filter(Boolean))];
-      return `
+  const itensHTML = c.itens.length > 0 ? `
+    <h2>Itens Executados (${c.itens.length})</h2>
+    ${c.itens.map(item => `
       <div style="margin-bottom:10px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:16px;height:16px;border-radius:3px;border:2px solid ${t.status === 'concluida' ? '#059669' : '#d1d5db'};background:${t.status === 'concluida' ? '#059669' : '#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            ${t.status === 'concluida' ? '<span style="color:white;font-size:11px;font-weight:bold">✓</span>' : ''}
-          </div>
-          <span style="font-size:12px;font-weight:600;color:#374151">${t.descricao}</span>
-        </div>
-        ${comentarios.map(c => `<p style="font-size:11px;color:#6b7280;margin:4px 0 0 24px;font-style:italic">"${c}"</p>`).join('')}
-        ${fotos.length > 0 ? `<div class="fotos" style="margin:6px 0 0 24px">${fotosHTML(fotos.map(f => f.url))}</div>` : ''}
-      </div>`;
-    }).join('')}
+        <span style="font-size:12px;font-weight:600;color:#374151">${item.descricao}</span>
+        ${item.comentario ? `<p style="font-size:11px;color:#6b7280;margin:4px 0 0;font-style:italic">"${item.comentario}"</p>` : ''}
+        ${item.fotos.length > 0 ? `<div class="fotos" style="margin:6px 0 0">${fotosHTML(item.fotos)}</div>` : ''}
+      </div>`).join('')}
   ` : '';
 
   const observacoesHTML = observacoes.length > 0 ? `
@@ -135,20 +168,20 @@ const gerarPDF = (task: Task, conteudo: ConteudoEditavel) => {
       <div class="obs">
         ${(task as any).tipoServico ? `<strong>Tipo:</strong> ${(task as any).tipoServico}<br/>` : ''}
         ${task.title ? `<strong>Título:</strong> ${task.title}<br/>` : ''}
-        ${conteudo.descricaoServico ? `<strong>Descrição:</strong> ${conteudo.descricaoServico}` : ''}
+        ${c.descricaoServico ? `<strong>Descrição:</strong> ${c.descricaoServico}` : ''}
       </div>
 
       ${horarioHTML}
 
-      ${tarefasHTML}
+      ${itensHTML}
 
-      ${fotosAntes.length > 0 ? `<h2>Fotos — Antes (${fotosAntes.length})</h2><div class="fotos">${fotosHTML(fotosAntes)}</div>` : ''}
-      ${fotosDepois.length > 0 ? `<h2>Fotos — Depois (${fotosDepois.length})</h2><div class="fotos">${fotosHTML(fotosDepois)}</div>` : ''}
+      ${c.fotosAntes.length > 0 ? `<h2>Fotos — Antes (${c.fotosAntes.length})</h2><div class="fotos">${fotosHTML(c.fotosAntes)}</div>` : ''}
+      ${c.fotosDepois.length > 0 ? `<h2>Fotos — Depois (${c.fotosDepois.length})</h2><div class="fotos">${fotosHTML(c.fotosDepois)}</div>` : ''}
 
       ${observacoesHTML}
 
-      ${conteudo.pendencia ? `<h2>Pendência</h2><div class="obs">${conteudo.pendencia}</div>` : ''}
-      ${conteudo.recomendacao ? `<h2>Recomendação ao Cliente</h2><div class="obs">${conteudo.recomendacao}</div>` : ''}
+      ${c.pendencia ? `<h2>Pendência</h2><div class="obs">${c.pendencia}</div>` : ''}
+      ${c.recomendacao ? `<h2>Recomendação ao Cliente</h2><div class="obs">${c.recomendacao}</div>` : ''}
 
       <div class="footer">
         MGR Refrigeração — Relatório gerado em ${hoje} · O.S. ${numeroOS} · Cliente: ${task.clientName || '—'}
@@ -168,32 +201,35 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const numeroOS = (task as any).numeroOS || task.code || task.id.slice(0, 8).toUpperCase();
   const envio = (task as any).relatorioOSEnvio as { status: 'aguardando_relatorio' | 'relatorio_enviado'; enviadoEm?: any } | undefined;
   const enviado = envio?.status === 'relatorio_enviado';
-  const relatorio = (task as any).relatorioFinal as { pendencia: string | null; recomendacao: string | null } | undefined;
-  const conteudoSalvo = (task as any).relatorioOSConteudo as { descricaoServico?: string; pendencia?: string; recomendacao?: string } | undefined;
-  const fotosAntes: string[] = (task as any).execution?.evidencias || [];
-  const fotosDepois: string[] = (task as any).fotosFinais || [];
-  const tarefas = ((task as any).tarefasOS || []) as OSItemTarefa[];
   const observacoes = ((task as any).observacoes || []) as OSObservacao[];
   const inicio = (task as any).execution?.actualStartTime;
   const fim = (task as any).execution?.actualEndTime;
 
-  // Texto editável do relatório — pré-preenchido com o que já foi salvo (se houver)
-  // ou derivado dos dados brutos de execução. Editar aqui NÃO altera o registro
-  // técnico original (relatorioFinal), só o texto final que vai pro relatório.
-  const [descricaoServico, setDescricaoServico] = useState(
-    conteudoSalvo?.descricaoServico ?? task.description ?? task.title ?? ''
-  );
-  const [pendencia, setPendencia] = useState(conteudoSalvo?.pendencia ?? relatorio?.pendencia ?? '');
-  const [recomendacao, setRecomendacao] = useState(conteudoSalvo?.recomendacao ?? relatorio?.recomendacao ?? '');
+  const inicial = getConteudoInicial(task);
+  const [descricaoServico, setDescricaoServico] = useState(inicial.descricaoServico);
+  const [pendencia, setPendencia] = useState(inicial.pendencia);
+  const [recomendacao, setRecomendacao] = useState(inicial.recomendacao);
+  const [itens, setItens] = useState<ItemRelatorio[]>(inicial.itens);
+  const [fotosAntes, setFotosAntes] = useState<string[]>(inicial.fotosAntes);
+  const [fotosDepois, setFotosDepois] = useState<string[]>(inicial.fotosDepois);
 
-  const salvarConteudo = async (): Promise<Record<string, any>> => {
+  const conteudoAtual = (): ConteudoEditavel => ({ descricaoServico, pendencia, recomendacao, itens, fotosAntes, fotosDepois });
+
+  const addItem = () => setItens(prev => [...prev, { id: `novo_${Date.now()}`, descricao: '', comentario: '', fotos: [] }]);
+  const removeItem = (idx: number) => setItens(prev => prev.filter((_, i) => i !== idx));
+  const updateItem = (idx: number, patch: Partial<ItemRelatorio>) =>
+    setItens(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  const removeFotoDoItem = (idx: number, fotoIdx: number) =>
+    setItens(prev => prev.map((it, i) => i === idx ? { ...it, fotos: it.fotos.filter((_, fi) => fi !== fotoIdx) } : it));
+
+  const salvarConteudo = async (): Promise<Task> => {
     const nome = userProfile?.nomeCompleto || userProfile?.displayName || 'Gestor';
     const relatorioOSConteudo = {
-      descricaoServico, pendencia, recomendacao,
+      ...conteudoAtual(),
       editadoPor: currentUser?.uid, editadoPorNome: nome, editadoEm: serverTimestamp(),
     };
     await updateDoc(doc(db, 'tasks', task.id), { relatorioOSConteudo });
-    return { ...task, relatorioOSConteudo } as any;
+    return { ...task, relatorioOSConteudo } as any as Task;
   };
 
   const handleSalvar = async () => {
@@ -201,7 +237,7 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
     setSaving(true);
     try {
       const updated = await salvarConteudo();
-      onSave?.(updated as Task);
+      onSave?.(updated);
       setSalvo(true);
       setTimeout(() => setSalvo(false), 2500);
     } finally { setSaving(false); }
@@ -243,6 +279,7 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
               <Hash className="w-3 h-3" /> {numeroOS}
             </p>
             <h3 className="font-bold text-gray-900">Relatório de Conclusão de O.S.</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Edite livremente — nada aqui altera o registro original da O.S.</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none px-2">×</button>
         </div>
@@ -280,37 +317,48 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
               className="w-full text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-brand-400" />
           </div>
 
-          {tarefas.length > 0 && (
-            <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Itens Executados ({tarefas.length})</p>
-              <div className="space-y-2">
-                {tarefas.map(t => {
-                  const fotos = getFotosDaTarefa(t);
-                  const comentarios = [...new Set(fotos.map(f => f.comentario).filter(Boolean))];
-                  return (
-                    <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                      <div className="flex items-center gap-2">
-                        {t.status === 'concluida'
-                          ? <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                          : <div className="w-3.5 h-3.5 rounded border border-gray-300 flex-shrink-0" />}
-                        <span className="text-sm font-semibold text-gray-800">{t.descricao}</span>
-                      </div>
-                      {comentarios.map((c, i) => (
-                        <p key={i} className="text-xs text-gray-500 italic mt-1 ml-5">"{c}"</p>
-                      ))}
-                      {fotos.length > 0 && (
-                        <div className="grid grid-cols-4 gap-1.5 mt-2 ml-5">
-                          {fotos.map((f, i) => (
-                            <img key={i} src={f.url} className="aspect-square object-cover rounded-lg border border-gray-200" />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Itens Executados ({itens.length})</p>
+              <button onClick={addItem} className="flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-700">
+                <Plus className="w-3.5 h-3.5" /> Adicionar item
+              </button>
             </div>
-          )}
+            <div className="space-y-2">
+              {itens.map((item, idx) => (
+                <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <input value={item.descricao} onChange={e => updateItem(idx, { descricao: e.target.value })}
+                      placeholder="Descrição do item"
+                      className="flex-1 text-sm font-semibold text-gray-800 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-brand-400" />
+                    <button onClick={() => removeItem(idx)} title="Remover item"
+                      className="p-1.5 text-gray-400 hover:text-red-500 flex-shrink-0">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <textarea value={item.comentario} onChange={e => updateItem(idx, { comentario: e.target.value })} rows={1}
+                    placeholder="Comentário (opcional)"
+                    className="w-full text-xs text-gray-600 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none outline-none focus:ring-2 focus:ring-brand-400" />
+                  {item.fotos.length > 0 && (
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {item.fotos.map((url, fi) => (
+                        <div key={fi} className="relative group">
+                          <img src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />
+                          <button onClick={() => removeFotoDoItem(idx, fi)} title="Remover foto"
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {itens.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-3 bg-gray-50 rounded-xl border border-dashed border-gray-200">Nenhum item — clique em "Adicionar item"</p>
+              )}
+            </div>
+          </div>
 
           {(fotosAntes.length > 0 || fotosDepois.length > 0) && (
             <div className="grid grid-cols-2 gap-3">
@@ -321,7 +369,13 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
                   </p>
                   <div className="grid grid-cols-3 gap-1.5">
                     {fotosAntes.map((url, i) => (
-                      <img key={i} src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />
+                      <div key={i} className="relative group">
+                        <img src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />
+                        <button onClick={() => setFotosAntes(prev => prev.filter((_, idx) => idx !== i))} title="Remover foto"
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -333,7 +387,13 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
                   </p>
                   <div className="grid grid-cols-3 gap-1.5">
                     {fotosDepois.map((url, i) => (
-                      <img key={i} src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />
+                      <div key={i} className="relative group">
+                        <img src={url} className="aspect-square object-cover rounded-lg border border-gray-200" />
+                        <button onClick={() => setFotosDepois(prev => prev.filter((_, idx) => idx !== i))} title="Remover foto"
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -381,7 +441,7 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : salvo ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
             {salvo ? 'Salvo' : 'Salvar'}
           </button>
-          <button onClick={() => gerarPDF(task, { descricaoServico, pendencia, recomendacao })}
+          <button onClick={() => gerarPDF(task, conteudoAtual())}
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50">
             <Printer className="w-3.5 h-3.5" /> Exportar PDF
           </button>

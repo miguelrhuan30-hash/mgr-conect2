@@ -823,10 +823,16 @@ export interface Task {
     descricaoServico?: string;
     pendencia?: string;
     recomendacao?: string;
+    // Cópia livremente editável dos itens/fotos do relatório final — pode ter
+    // mais, menos ou itens diferentes dos tarefasOS originais. Editar aqui
+    // NUNCA altera tarefasOS/execution (o registro técnico original da O.S.).
+    itens?: Array<{ id: string; descricao: string; comentario?: string; fotos: string[] }>;
+    fotosAntes?: string[];
+    fotosDepois?: string[];
     editadoPor?: string;
     editadoPorNome?: string;
     editadoEm?: Timestamp;
-  }; // edição do gestor sobre o texto do relatório — não altera os dados brutos de execução
+  }; // "relatório final editado" — versão preparada para envio ao cliente
 }
 
 export interface ClientContact {
