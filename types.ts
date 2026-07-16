@@ -819,6 +819,14 @@ export interface Task {
     enviadoPor?: string;
     enviadoPorNome?: string;
   }; // ausente = tratar como 'aguardando_relatorio'
+  relatorioOSConteudo?: {
+    descricaoServico?: string;
+    pendencia?: string;
+    recomendacao?: string;
+    editadoPor?: string;
+    editadoPorNome?: string;
+    editadoEm?: Timestamp;
+  }; // edição do gestor sobre o texto do relatório — não altera os dados brutos de execução
 }
 
 export interface ClientContact {

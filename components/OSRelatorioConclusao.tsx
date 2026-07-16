@@ -9,7 +9,7 @@
  */
 import React, { useState } from 'react';
 import {
-  Printer, Share2, Check, Send, Loader2, User, Building2,
+  Printer, Share2, Check, Send, Loader2, User, Building2, Save,
   Calendar, Wrench, AlertTriangle, MessageSquare, Image as ImageIcon, Hash,
 } from 'lucide-react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -46,14 +46,15 @@ const getFotosDaTarefa = (t: OSItemTarefa): FotoComComentario[] => {
   return [...doSlots, ...doLegado, ...doAppAtual, ...doAppAnterior];
 };
 
+interface ConteudoEditavel { descricaoServico: string; pendencia: string; recomendacao: string; }
+
 // ── Geração de PDF/Print com layout MGR (mesmo padrão de ProjectRelatorio.gerarPDF) ──
-const gerarPDF = (task: Task) => {
+const gerarPDF = (task: Task, conteudo: ConteudoEditavel) => {
   const hoje = format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
   const numeroOS = (task as any).numeroOS || task.code || task.id.slice(0, 8).toUpperCase();
 
   const fotosAntes: string[] = (task as any).execution?.evidencias || [];
   const fotosDepois: string[] = (task as any).fotosFinais || [];
-  const relatorio = (task as any).relatorioFinal as { pendencia: string | null; recomendacao: string | null } | undefined;
   const tarefas = ((task as any).tarefasOS || []) as OSItemTarefa[];
   const observacoes = ((task as any).observacoes || []) as OSObservacao[];
   const inicio = (task as any).execution?.actualStartTime;
@@ -134,7 +135,7 @@ const gerarPDF = (task: Task) => {
       <div class="obs">
         ${(task as any).tipoServico ? `<strong>Tipo:</strong> ${(task as any).tipoServico}<br/>` : ''}
         ${task.title ? `<strong>Título:</strong> ${task.title}<br/>` : ''}
-        ${task.description ? `<strong>Descrição:</strong> ${task.description}` : ''}
+        ${conteudo.descricaoServico ? `<strong>Descrição:</strong> ${conteudo.descricaoServico}` : ''}
       </div>
 
       ${horarioHTML}
@@ -146,8 +147,8 @@ const gerarPDF = (task: Task) => {
 
       ${observacoesHTML}
 
-      ${relatorio?.pendencia ? `<h2>Pendência</h2><div class="obs">${relatorio.pendencia}</div>` : ''}
-      ${relatorio?.recomendacao ? `<h2>Recomendação ao Cliente</h2><div class="obs">${relatorio.recomendacao}</div>` : ''}
+      ${conteudo.pendencia ? `<h2>Pendência</h2><div class="obs">${conteudo.pendencia}</div>` : ''}
+      ${conteudo.recomendacao ? `<h2>Recomendação ao Cliente</h2><div class="obs">${conteudo.recomendacao}</div>` : ''}
 
       <div class="footer">
         MGR Refrigeração — Relatório gerado em ${hoje} · O.S. ${numeroOS} · Cliente: ${task.clientName || '—'}
@@ -162,11 +163,13 @@ const gerarPDF = (task: Task) => {
 const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const { currentUser, userProfile } = useAuth() as any;
   const [saving, setSaving] = useState(false);
+  const [salvo, setSalvo] = useState(false);
 
   const numeroOS = (task as any).numeroOS || task.code || task.id.slice(0, 8).toUpperCase();
   const envio = (task as any).relatorioOSEnvio as { status: 'aguardando_relatorio' | 'relatorio_enviado'; enviadoEm?: any } | undefined;
   const enviado = envio?.status === 'relatorio_enviado';
   const relatorio = (task as any).relatorioFinal as { pendencia: string | null; recomendacao: string | null } | undefined;
+  const conteudoSalvo = (task as any).relatorioOSConteudo as { descricaoServico?: string; pendencia?: string; recomendacao?: string } | undefined;
   const fotosAntes: string[] = (task as any).execution?.evidencias || [];
   const fotosDepois: string[] = (task as any).fotosFinais || [];
   const tarefas = ((task as any).tarefasOS || []) as OSItemTarefa[];
@@ -174,11 +177,42 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const inicio = (task as any).execution?.actualStartTime;
   const fim = (task as any).execution?.actualEndTime;
 
+  // Texto editável do relatório — pré-preenchido com o que já foi salvo (se houver)
+  // ou derivado dos dados brutos de execução. Editar aqui NÃO altera o registro
+  // técnico original (relatorioFinal), só o texto final que vai pro relatório.
+  const [descricaoServico, setDescricaoServico] = useState(
+    conteudoSalvo?.descricaoServico ?? task.description ?? task.title ?? ''
+  );
+  const [pendencia, setPendencia] = useState(conteudoSalvo?.pendencia ?? relatorio?.pendencia ?? '');
+  const [recomendacao, setRecomendacao] = useState(conteudoSalvo?.recomendacao ?? relatorio?.recomendacao ?? '');
+
+  const salvarConteudo = async (): Promise<Record<string, any>> => {
+    const nome = userProfile?.nomeCompleto || userProfile?.displayName || 'Gestor';
+    const relatorioOSConteudo = {
+      descricaoServico, pendencia, recomendacao,
+      editadoPor: currentUser?.uid, editadoPorNome: nome, editadoEm: serverTimestamp(),
+    };
+    await updateDoc(doc(db, 'tasks', task.id), { relatorioOSConteudo });
+    return { ...task, relatorioOSConteudo } as any;
+  };
+
+  const handleSalvar = async () => {
+    if (!currentUser) return;
+    setSaving(true);
+    try {
+      const updated = await salvarConteudo();
+      onSave?.(updated as Task);
+      setSalvo(true);
+      setTimeout(() => setSalvo(false), 2500);
+    } finally { setSaving(false); }
+  };
+
   const handleMarcarEnviado = async () => {
     if (!currentUser) return;
     setSaving(true);
     try {
       const nome = userProfile?.nomeCompleto || userProfile?.displayName || 'Gestor';
+      await salvarConteudo();
       await updateDoc(doc(db, 'tasks', task.id), {
         relatorioOSEnvio: {
           status: 'relatorio_enviado',
@@ -242,7 +276,8 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
 
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Serviço Executado</p>
-            <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-xl p-3">{task.description || task.title}</p>
+            <textarea value={descricaoServico} onChange={e => setDescricaoServico(e.target.value)} rows={3}
+              className="w-full text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-xl p-3 resize-none outline-none focus:ring-2 focus:ring-brand-400" />
           </div>
 
           {tarefas.length > 0 && (
@@ -320,22 +355,33 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
             </div>
           )}
 
-          {relatorio?.pendencia && (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
-              <div><p className="text-xs font-bold text-orange-700 mb-0.5">Pendência</p><p className="text-sm text-orange-800">{relatorio.pendencia}</p></div>
+          <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-1" />
+            <div className="flex-1">
+              <p className="text-xs font-bold text-orange-700 mb-1">Pendência</p>
+              <textarea value={pendencia} onChange={e => setPendencia(e.target.value)} rows={2}
+                placeholder="Sem pendências registradas"
+                className="w-full text-sm text-orange-800 bg-white/60 border border-orange-200 rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-orange-300 placeholder:text-orange-300" />
             </div>
-          )}
-          {relatorio?.recomendacao && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
-              <MessageSquare className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-              <div><p className="text-xs font-bold text-blue-700 mb-0.5">Recomendação ao Cliente</p><p className="text-sm text-blue-800">{relatorio.recomendacao}</p></div>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+            <MessageSquare className="w-4 h-4 text-blue-500 flex-shrink-0 mt-1" />
+            <div className="flex-1">
+              <p className="text-xs font-bold text-blue-700 mb-1">Recomendação ao Cliente</p>
+              <textarea value={recomendacao} onChange={e => setRecomendacao(e.target.value)} rows={2}
+                placeholder="Sem recomendação registrada"
+                className="w-full text-sm text-blue-800 bg-white/60 border border-blue-200 rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-blue-300 placeholder:text-blue-300" />
             </div>
-          )}
+          </div>
         </div>
 
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-4 flex items-center gap-2 flex-wrap">
-          <button onClick={() => gerarPDF(task)}
+          <button onClick={handleSalvar} disabled={saving}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50 ${salvo ? 'bg-emerald-100 text-emerald-700' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : salvo ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+            {salvo ? 'Salvo' : 'Salvar'}
+          </button>
+          <button onClick={() => gerarPDF(task, { descricaoServico, pendencia, recomendacao })}
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-50">
             <Printer className="w-3.5 h-3.5" /> Exportar PDF
           </button>
