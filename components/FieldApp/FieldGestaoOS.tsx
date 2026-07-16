@@ -4,16 +4,21 @@
  * Tabs: Pendentes | Em Andamento | Agendadas | Concluídas
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { CollectionName } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, Wrench, User,
   CalendarDays, ChevronRight, ChevronLeft, Plus, Shield,
+  MapPinned, Navigation, Gauge, Loader2,
 } from 'lucide-react';
 import { OSField } from './FieldOS';
 import FieldGestaoOSDetail from './FieldGestaoOSDetail';
 import FieldOSPendenciaModal from './FieldOSPendenciaModal';
+import LocationTimelineMap from '../LocationTimelineMap';
+import { getSlaBadgeInfo } from '../../services/osService';
+import { buscarPingsDoDia, calcularKmPercorrido, LocationPing } from '../../services/trackerService';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   'pending':     { label: 'Pendente',     color: 'bg-orange-500/20 text-orange-400 border-orange-500/30',    icon: <AlertCircle size={11} /> },
@@ -42,7 +47,12 @@ const toKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const isSameDay = (a: Date, b: Date) => toKey(a) === toKey(b);
 
-type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas' | 'calendario';
+type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas' | 'calendario' | 'rastreio';
+
+const fmtHoraPing = (p: LocationPing) => {
+  const d = p.timestamp?.toDate?.();
+  return d ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—';
+};
 
 export default function FieldGestaoOS() {
   const { userProfile } = useAuth();
@@ -60,6 +70,39 @@ export default function FieldGestaoOS() {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
   });
   const [diaSel, setDiaSel]         = useState<Date | null>(new Date());
+
+  // ── Rastreio — linha do tempo de localização (sem vínculo com O.S.) ──
+  const [rastreioUsers, setRastreioUsers] = useState<{ id: string; nome: string }[]>([]);
+  const [rastreioUserId, setRastreioUserId] = useState('');
+  const [rastreioData, setRastreioData] = useState(() => toKey(new Date()));
+  const [rastreioPings, setRastreioPings] = useState<LocationPing[] | null>(null);
+  const [rastreioLoading, setRastreioLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    getDocs(collection(db, CollectionName.USERS)).then(snap => {
+      setRastreioUsers(snap.docs.map(d => {
+        const u: any = d.data();
+        return { id: d.id, nome: u.nomeCompleto || u.displayName || u.email || d.id };
+      }).sort((a, b) => a.nome.localeCompare(b.nome)));
+    }).catch(() => {});
+  }, [isAdmin]);
+
+  const buscarRastreio = async () => {
+    if (!rastreioUserId || !rastreioData) return;
+    setRastreioLoading(true);
+    setRastreioPings(null);
+    try {
+      const pings = await buscarPingsDoDia(rastreioUserId, rastreioData);
+      setRastreioPings(pings);
+    } catch {
+      setRastreioPings([]);
+    } finally {
+      setRastreioLoading(false);
+    }
+  };
+
+  const nomeRastreioSelecionado = rastreioUsers.find(u => u.id === rastreioUserId)?.nome;
 
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
@@ -171,6 +214,7 @@ export default function FieldGestaoOS() {
       : null;
     const responsavel = os.assigneeName
       ?? (os.assignedUserNames && os.assignedUserNames.length > 0 ? os.assignedUserNames[0] : null);
+    const slaBadge = getSlaBadgeInfo(os);
 
     return (
       <div
@@ -196,6 +240,12 @@ export default function FieldGestaoOS() {
           <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cfg.color}`}>
             {cfg.icon} {cfg.label}
           </span>
+
+          {slaBadge && (
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${slaBadge.cor} ${slaBadge.vencido ? 'animate-pulse' : ''}`}>
+              {slaBadge.label}
+            </span>
+          )}
 
           {responsavel ? (
             <span className="flex items-center gap-1 text-[10px] text-gray-400">
@@ -232,6 +282,7 @@ export default function FieldGestaoOS() {
     { id: 'andamento',  label: 'Em Campo',   count: andamento.length  },
     { id: 'agendadas',  label: 'Agendadas',  count: agendadas.length  },
     { id: 'concluidas', label: 'Concluídas', count: concluidas.length },
+    { id: 'rastreio',   label: 'Rastreio',   count: 0, icon: <MapPinned size={11} /> },
   ];
 
   return (
@@ -368,6 +419,84 @@ export default function FieldGestaoOS() {
               <p className="text-center text-xs text-gray-600 py-4">Toque em um dia para ver as O.S. agendadas</p>
             )}
           </div>
+        </div>
+      ) : tab === 'rastreio' ? (
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Colaborador</label>
+              <select value={rastreioUserId} onChange={e => setRastreioUserId(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500">
+                <option value="">Selecione...</option>
+                {rastreioUsers.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
+            </div>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Data</label>
+                <input type="date" value={rastreioData} onChange={e => setRastreioData(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500" />
+              </div>
+              <button onClick={buscarRastreio} disabled={!rastreioUserId || rastreioLoading}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-bold disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0">
+                {rastreioLoading ? <Loader2 size={14} className="animate-spin" /> : <MapPinned size={14} />}
+                Buscar
+              </button>
+            </div>
+          </div>
+
+          {rastreioPings && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-2.5">
+                  <p className="text-[9px] font-bold text-gray-500 uppercase flex items-center gap-1"><Navigation size={9} /> Início</p>
+                  <p className="text-sm font-black text-emerald-400 mt-0.5">{rastreioPings[0] ? fmtHoraPing(rastreioPings[0]) : '—'}</p>
+                </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-2.5">
+                  <p className="text-[9px] font-bold text-gray-500 uppercase flex items-center gap-1"><MapPinned size={9} /> Fim</p>
+                  <p className="text-sm font-black text-red-400 mt-0.5">{rastreioPings.length > 0 ? fmtHoraPing(rastreioPings[rastreioPings.length - 1]) : '—'}</p>
+                </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-2.5">
+                  <p className="text-[9px] font-bold text-gray-500 uppercase flex items-center gap-1"><Gauge size={9} /> KM</p>
+                  <p className="text-sm font-black text-blue-400 mt-0.5">{calcularKmPercorrido(rastreioPings)} km</p>
+                </div>
+              </div>
+
+              <LocationTimelineMap pings={rastreioPings} height={280} />
+
+              <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div className="px-3 py-2 border-b border-gray-800">
+                  <p className="text-xs font-bold text-gray-300">
+                    Trajeto de {nomeRastreioSelecionado} — {new Date(`${rastreioData}T12:00:00`).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+                {rastreioPings.length === 0 ? (
+                  <div className="p-6 text-center text-gray-600">
+                    <MapPinned size={28} className="mx-auto mb-2 opacity-30" />
+                    <p className="text-xs font-medium">Nenhum ping de GPS registrado nesse dia</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-800 max-h-[300px] overflow-y-auto">
+                    {rastreioPings.map((p, i) => {
+                      const isFirst = i === 0;
+                      const isLast = i === rastreioPings.length - 1;
+                      return (
+                        <div key={i} className="px-3 py-2 flex items-center gap-2">
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isFirst ? 'bg-emerald-500' : isLast ? 'bg-red-500' : 'bg-blue-400'}`} />
+                          <span className="text-xs font-bold text-gray-200 w-12 flex-shrink-0">{fmtHoraPing(p)}</span>
+                          <span className="text-[10px] text-gray-500 font-mono truncate flex-1">{p.lat.toFixed(5)}, {p.lng.toFixed(5)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {!rastreioPings && !rastreioLoading && (
+            <p className="text-center text-xs text-gray-600 py-4">Selecione um colaborador e uma data, depois toque em Buscar.</p>
+          )}
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">

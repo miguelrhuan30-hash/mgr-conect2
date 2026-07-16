@@ -10,10 +10,11 @@ import { Analytics } from '../utils/mgr-analytics';
 import {
   Building, Plus, Trash2, Search, Phone, MapPin, User,
   Loader2, Save, X, Pencil, ChevronDown, ChevronUp,
-  Globe, Mail, Tag, Users, Thermometer, Map as MapIcon, Briefcase,
+  Globe, Mail, Tag, Users, Thermometer, Map as MapIcon, Briefcase, FileSignature,
 } from 'lucide-react';
 import ClientAssets from './ClientAssets';
 import ClientProjectHistory from './ClientProjectHistory';
+import ClientContratoSLA from './ClientContratoSLA';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -513,11 +514,11 @@ const Clients: React.FC = () => {
   const [modal, setModal] = useState<{ open: boolean; client: Client | null }>({ open: false, client: null });
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos'>>({});
+  const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos' | 'contrato'>>({});
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'todos'>('todos');
 
   const getTab = (id: string) => expandedTab[id] || 'ativos';
-  const setTab = (id: string, tab: 'ativos' | 'projetos') =>
+  const setTab = (id: string, tab: 'ativos' | 'projetos' | 'contrato') =>
     setExpandedTab(prev => ({ ...prev, [id]: tab }));
 
   useEffect(() => {
@@ -663,6 +664,7 @@ const Clients: React.FC = () => {
                   {([
                     { key: 'ativos',   label: '🌡 Ativos',   icon: Thermometer },
                     { key: 'projetos', label: '📂 Projetos', icon: Briefcase },
+                    { key: 'contrato', label: '📄 Contrato SLA', icon: FileSignature },
                   ] as const).map(tab => (
                     <button key={tab.key}
                       onClick={() => {
@@ -690,7 +692,9 @@ const Clients: React.FC = () => {
                   <div className="border-t border-gray-100 p-5 bg-gray-50/50">
                     {getTab(client.id) === 'ativos'
                       ? <ClientAssets clientId={client.id} clientName={client.name} />
-                      : <ClientProjectHistory clientId={client.id} clientName={client.name} />}
+                      : getTab(client.id) === 'projetos'
+                      ? <ClientProjectHistory clientId={client.id} clientName={client.name} />
+                      : <ClientContratoSLA clientId={client.id} clientName={client.name} />}
                   </div>
                 )}
               </div>

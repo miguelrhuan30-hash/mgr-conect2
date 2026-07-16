@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp, updateDoc, doc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus, BacklogTarefa, ProjectDocument, OSArquivoApoio } from '../types';
+import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus, BacklogTarefa, ProjectDocument, OSArquivoApoio, ContratoSLA, PrioridadeSLA } from '../types';
 import { gerarNumeroOS } from '../services/osService';
 import { registrarAtividade } from '../services/activityFeedService';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,6 +34,11 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [clientId, setClientId] = useState('');
   const [projectId, setProjectId] = useState('');
   const [faturamentoPeloProjeto, setFaturamentoPeloProjeto] = useState(false);
+
+  // Contrato de Manutenção SLA — atendimento direto (sem passar pelo portal do cliente)
+  const [contratoAtivo, setContratoAtivo] = useState<ContratoSLA | null>(null);
+  const [atendimentoContrato, setAtendimentoContrato] = useState(false);
+  const [prioridadeSla, setPrioridadeSla] = useState<PrioridadeSLA>('P3');
 
   // Hub de Tarefas do Projeto — itens do backlog disponíveis para distribuir
   const [backlogItens, setBacklogItens] = useState<BacklogTarefa[]>([]);
@@ -137,6 +142,19 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
     getDocs(query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientId)))
       .then(snap => setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
       .catch(() => setAtivos([]));
+  }, [clientId]);
+
+  // Contrato SLA ativo do cliente selecionado — habilita o checkbox de atendimento de contrato
+  useEffect(() => {
+    setAtendimentoContrato(false);
+    if (!clientId) { setContratoAtivo(null); return; }
+    getDocs(query(
+      collection(db, CollectionName.CONTRATOS_SLA),
+      where('clientId', '==', clientId),
+      where('status', '==', 'ativo'),
+    ))
+      .then(snap => setContratoAtivo(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() } as ContratoSLA))
+      .catch(() => setContratoAtivo(null));
   }, [clientId]);
 
   // Hub de Tarefas — carrega itens do backlog do projeto (status 'backlog')
@@ -291,6 +309,12 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         projectId,
         projectName,
         faturamentoPeloProjeto: !!(projectId && faturamentoPeloProjeto),
+        ...(contratoAtivo && atendimentoContrato ? {
+          tipoOrigemOS: 'contrato_sla' as const,
+          contratoSlaId: contratoAtivo.id,
+          prioridadeSla,
+          prazoSlaLimite: Timestamp.fromDate(new Date(Date.now() + contratoAtivo.prazosPrioridade[prioridadeSla] * 3600 * 1000)),
+        } : {}),
         assignedTo: assigneeId || null,
         assigneeName: assigneeId ? assigneeName : null,
         assignedUsers,
@@ -599,6 +623,33 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                         />
                         <span className="text-sm text-gray-600">Faturamento pelo projeto <span className="text-xs text-gray-400">(O.S. não gera cobrança individual)</span></span>
                       </label>
+                    </div>
+                  )}
+                  {contratoAtivo && (
+                    <div className="col-span-2 bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={atendimentoContrato}
+                          onChange={e => setAtendimentoContrato(e.target.checked)}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-600">Atendimento de Contrato SLA <span className="text-xs text-gray-400">(O.S. não gera cobrança individual — já coberta pelo contrato)</span></span>
+                      </label>
+                      {atendimentoContrato && (
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Prioridade</label>
+                          <select
+                            value={prioridadeSla}
+                            onChange={e => setPrioridadeSla(e.target.value as PrioridadeSLA)}
+                            className="w-full rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-gray-900 text-sm"
+                          >
+                            {(['P1', 'P2', 'P3', 'P4'] as PrioridadeSLA[]).map(p => (
+                              <option key={p} value={p}>{p} — resposta em {contratoAtivo.prazosPrioridade[p]}h</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   )}
                   {projectId && backlogItens.length > 0 && (

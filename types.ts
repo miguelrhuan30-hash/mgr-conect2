@@ -833,6 +833,27 @@ export interface Task {
     editadoPorNome?: string;
     editadoEm?: Timestamp;
   }; // "relatório final editado" — versão preparada para envio ao cliente
+
+  // ─── Módulo de Contrato de Manutenção SLA (Fase 1) ─────────────────────────
+  contratoSlaId?: string;
+  prioridadeSla?: PrioridadeSLA;
+  prazoSlaLimite?: Timestamp; // calculado na criação: agora + prazosPrioridade[prioridade] horas
+}
+
+export type PrioridadeSLA = 'P1' | 'P2' | 'P3' | 'P4';
+
+export interface ContratoSLA {
+  id: string;
+  clientId: string;
+  clientName: string;
+  identificador?: string; // nome/código do contrato, opcional
+  status: 'ativo' | 'inativo' | 'suspenso';
+  dataInicio: Timestamp;
+  dataFim?: Timestamp | null;
+  prazosPrioridade: Record<PrioridadeSLA, number>; // horas de resposta por nível
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface ClientContact {
@@ -1510,6 +1531,7 @@ const _BASE_COLLECTIONS = {
   PROJECT_COTACOES: 'project_cotacoes',
   PROJECT_CONTRATOS: 'project_contratos',
   PROJECT_FATURAMENTOS: 'project_faturamentos',
+  CONTRATOS_SLA: 'contratos_sla',
   // Sprint Gantt Completo — WBS, Baselines, Adversidades
   GANTT_TASKS: 'gantt_tasks',
   GANTT_BASELINES: 'gantt_baselines',

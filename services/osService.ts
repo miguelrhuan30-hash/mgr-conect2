@@ -16,6 +16,36 @@ export function getTipoOrigemOS(task: Pick<Task, 'tipoOrigemOS' | 'projectId'>):
   return task.projectId ? 'projeto' : 'avulsa';
 }
 
+export interface SlaBadgeInfo { label: string; vencido: boolean; cor: string; }
+
+const SLA_COR_PRIORIDADE: Record<string, string> = {
+  P1: 'bg-red-100 text-red-700 border-red-200',
+  P2: 'bg-orange-100 text-orange-700 border-orange-200',
+  P3: 'bg-amber-100 text-amber-700 border-amber-200',
+  P4: 'bg-gray-100 text-gray-600 border-gray-200',
+};
+
+/**
+ * Badge de prazo de atendimento SLA (calculado no cliente, só exibição —
+ * sem escalonamento/notificação automática nesta fase).
+ */
+export function getSlaBadgeInfo(task: Pick<Task, 'prioridadeSla' | 'prazoSlaLimite'>): SlaBadgeInfo | null {
+  if (!task.prioridadeSla || !task.prazoSlaLimite) return null;
+  const raw = task.prazoSlaLimite as any;
+  const limite: Date = raw.toDate ? raw.toDate() : new Date(raw.seconds * 1000);
+  const diffMin = Math.round((limite.getTime() - Date.now()) / 60000);
+  const vencido = diffMin < 0;
+  const abs = Math.abs(diffMin);
+  const horas = Math.floor(abs / 60);
+  const minutos = abs % 60;
+  const tempo = horas > 0 ? `${horas}h${minutos > 0 ? minutos + 'min' : ''}` : `${minutos}min`;
+  return {
+    label: `${task.prioridadeSla} · ${vencido ? 'vencido há' : 'vence em'} ${tempo}`,
+    vencido,
+    cor: vencido ? 'bg-red-600 text-white border-red-700' : (SLA_COR_PRIORIDADE[task.prioridadeSla] || SLA_COR_PRIORIDADE.P4),
+  };
+}
+
 // ─── Normalização de statusOS (legado lowercase → UPPERCASE) ───
 const STATUS_MIGRATION_MAP: Record<string, OSStatusFinal> = {
   'concluida':                  'CONCLUIDA',

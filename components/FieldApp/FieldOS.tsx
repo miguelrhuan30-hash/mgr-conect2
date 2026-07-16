@@ -6,6 +6,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { getSlaBadgeInfo } from '../../services/osService';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, Wrench, User,
   MapPin, Sun, ChevronRight, CalendarDays, Plus, ChevronLeft, Inbox, Shield,
@@ -31,6 +32,8 @@ export interface OSField {
   assigneeName?: string | null;
   assignedUsers?: string[];
   assignedUserNames?: string[];
+  prioridadeSla?: 'P1' | 'P2' | 'P3' | 'P4';
+  prazoSlaLimite?: Timestamp;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -229,6 +232,7 @@ export default function FieldOS() {
     const hora  = os.startDate
       ? os.startDate.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       : null;
+    const slaBadge = getSlaBadgeInfo(os);
     return (
       <div
         onClick={() => setSelectedOS(os)}
@@ -257,10 +261,15 @@ export default function FieldOS() {
             </div>
           )}
         </div>
-        <div className="mt-2.5">
+        <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cfg.color}`}>
             {cfg.icon} {cfg.label}
           </span>
+          {slaBadge && (
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${slaBadge.cor} ${slaBadge.vencido ? 'animate-pulse' : ''}`}>
+              {slaBadge.label}
+            </span>
+          )}
         </div>
       </div>
     );

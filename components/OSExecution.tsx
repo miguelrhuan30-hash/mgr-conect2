@@ -486,7 +486,7 @@ const OSExecution: React.FC = () => {
       // Não concluída → vai para REVISAO (gestor decide: reenviar, reagendar, cancelar)
       // Concluída + faturamento pelo projeto → direto para CONCLUIDO (sem faturamento individual)
       // Concluída → avança para AGUARDANDO_FATURAMENTO
-      const skipBilling = !isBlocked && (task as any).faturamentoPeloProjeto === true;
+      const skipBilling = !isBlocked && ((task as any).faturamentoPeloProjeto === true || (task as any).tipoOrigemOS === 'contrato_sla');
       const newWorkflow: WS = isBlocked ? WS.REVISAO : skipBilling ? WS.CONCLUIDO : WS.AGUARDANDO_FATURAMENTO;
       const newTaskStatus = isBlocked ? 'in-progress' : 'completed';
       // Se bloqueada e não tem statusOS específico, marca como NAO_CONCLUIDA

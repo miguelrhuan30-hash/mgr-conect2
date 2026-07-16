@@ -16,7 +16,7 @@ import {
     WORKFLOW_LABELS, WORKFLOW_COLORS, PriorityLevel,
     CollectionName, STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal
 } from '../types';
-import { normalizeStatusOS } from '../services/osService';
+import { normalizeStatusOS, getSlaBadgeInfo } from '../services/osService';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -235,6 +235,7 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
     const isBlocked = task.workflowStatus === WS.AGUARDANDO_PAGAMENTO &&
                       task.financial?.statusPagamento !== 'confirmado';
     const colorClass = WORKFLOW_COLORS[effectiveWS];
+    const slaBadge = getSlaBadgeInfo(task);
 
     return (
         <div className={`rounded-xl border-2 p-4 bg-white shadow-sm transition-all cursor-pointer ${isBlocked ? 'border-red-300' : 'border-gray-100'} hover:shadow-md hover:border-brand-200`}
@@ -259,6 +260,11 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
                               <span className="ml-1 px-1 py-px bg-indigo-100 text-indigo-700 rounded text-[8px] font-bold">Fat. Projeto</span>
                             )}
                         </p>
+                    )}
+                    {slaBadge && (
+                        <span className={`inline-block mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${slaBadge.cor} ${slaBadge.vencido ? 'animate-pulse' : ''}`}>
+                            {slaBadge.label}
+                        </span>
                     )}
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -489,7 +495,7 @@ const Pipeline: React.FC = () => {
         if (effectiveWS === WS.REVISAO && direction === 'next') { setRevisaoModal(task); return; }
 
         // OS de projeto com faturamento pelo projeto: pula faturamento e pagamento
-        const skipBilling = (task as any).faturamentoPeloProjeto === true;
+        const skipBilling = (task as any).faturamentoPeloProjeto === true || (task as any).tipoOrigemOS === 'contrato_sla';
         if (next === WS.AGUARDANDO_FATURAMENTO && skipBilling) {
             await updateDoc(doc(db, CollectionName.TASKS, task.id), {
                 workflowStatus: WS.CONCLUIDO,

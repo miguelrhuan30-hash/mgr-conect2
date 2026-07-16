@@ -561,7 +561,7 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
                   // (mesmo gate de FieldOSDetail.tsx/Pipeline.tsx/OSExecution.tsx) — sem
                   // isso a O.S. aparece "Concluída" no app mas fica presa em "Aguardando
                   // Agendamento" no Kanban/Flow web, que leem workflowStatus, não status.
-                  const skipBilling = (os as any).faturamentoPeloProjeto === true;
+                  const skipBilling = (os as any).faturamentoPeloProjeto === true || (os as any).tipoOrigemOS === 'contrato_sla';
                   const extra = novoStatus === 'completed'
                     ? {
                         workflowStatus: skipBilling ? WorkflowStatus.CONCLUIDO : WorkflowStatus.AGUARDANDO_FATURAMENTO,

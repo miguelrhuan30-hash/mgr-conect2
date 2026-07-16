@@ -334,7 +334,7 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
     // Mesmo gate usado em Pipeline.tsx (moveTask) e OSExecution.tsx: O.S. de
     // projeto com faturamento pelo projeto pula direto para CONCLUIDO; O.S.
     // avulsa entra em AGUARDANDO_FATURAMENTO para alimentar o financeiro (Billing.tsx).
-    const skipBilling = (os as any).faturamentoPeloProjeto === true;
+    const skipBilling = (os as any).faturamentoPeloProjeto === true || (os as any).tipoOrigemOS === 'contrato_sla';
     const workflowDestino = skipBilling ? WorkflowStatus.CONCLUIDO : WorkflowStatus.AGUARDANDO_FATURAMENTO;
 
     await updateDoc(doc(db, 'tasks', os.id), {

@@ -252,6 +252,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Contratos de Manutenção SLA (Fase 1 — só equipe interna) ──
+    match /contratos_sla/{contratoId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isManager();
+      allow delete: if isAdmin();
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // GANTT COMPLETO — WBS, ADVERSIDADES, BASELINES
     // ══════════════════════════════════════════════════════════════════════
