@@ -13,7 +13,7 @@ export interface CampaignConfig {
 
 
 // --- ACCESS CONTROL & PERMISSIONS ---
-export type UserRole = 'admin' | 'gestor' | 'manager' | 'employee' | 'technician' | 'tecnico' | 'pending' | 'developer' | 'intel_viewer' | 'intel_analyst' | 'intel_admin';
+export type UserRole = 'admin' | 'gestor' | 'manager' | 'employee' | 'technician' | 'tecnico' | 'pending' | 'developer' | 'intel_viewer' | 'intel_analyst' | 'intel_admin' | 'cliente';
 
 export interface PermissionSet {
   // ── Administrative ─────────────────────────────────────────────────────────
@@ -287,6 +287,10 @@ export interface UserProfile {
   desligadoPor?: string | null;
   desligadoPorNome?: string | null;
   reativadoEm?: Timestamp | null;
+
+  // Portal do Cliente — presente só quando role === 'cliente'
+  clientId?: string;
+  clientName?: string;
 }
 
 // ── Pedido de Redefinição de Senha (enviado da tela de login) ─────────────────
@@ -852,6 +856,22 @@ export interface ContratoSLA {
   dataFim?: Timestamp | null;
   prazosPrioridade: Record<PrioridadeSLA, number>; // horas de resposta por nível
   createdBy: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface ChamadoSLA {
+  id: string;
+  clientId: string;
+  clientName: string;
+  contratoSlaId?: string; // inferido do cliente, se ele só tiver 1 contrato ativo
+  criadoPorUid: string;
+  criadoPorNome: string;
+  titulo: string;
+  descricao: string;
+  prioridade: PrioridadeSLA;
+  status: 'aberto' | 'em_triagem' | 'convertido' | 'cancelado';
+  taskId?: string; // preenchido quando convertido em O.S.
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -1532,6 +1552,7 @@ const _BASE_COLLECTIONS = {
   PROJECT_CONTRATOS: 'project_contratos',
   PROJECT_FATURAMENTOS: 'project_faturamentos',
   CONTRATOS_SLA: 'contratos_sla',
+  CHAMADOS_SLA: 'chamados_sla',
   // Sprint Gantt Completo — WBS, Baselines, Adversidades
   GANTT_TASKS: 'gantt_tasks',
   GANTT_BASELINES: 'gantt_baselines',

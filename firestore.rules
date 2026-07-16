@@ -17,6 +17,12 @@ service cloud.firestore {
       return request.auth.token.role == 'manager'
           || request.auth.token.role == 'admin';
     }
+    // Portal do Cliente — role lido do doc Firestore (não custom claim, igual
+    // ao padrão já usado por isIntelAuthorized() mais abaixo). Usuário externo
+    // à MGR, precisa ser excluído do acesso amplo dado a "qualquer autenticado".
+    function isCliente() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cliente';
+    }
     function clientCannotElevateBiometric() {
       let d = request.resource.data;
       return d.biometricVerified == false
@@ -90,10 +96,10 @@ service cloud.firestore {
 
     // ── Usuários ──────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Leitura ampla: técnico precisa listar gestores pra notificar dúvidas
-      // de Suporte, reatribuição de O.S. e outros fluxos internos já
-      // existentes precisam ler outros perfis além do próprio.
-      allow read: if isAuthenticated();
+      // Leitura ampla pra equipe interna: técnico precisa listar gestores pra
+      // notificar dúvidas de Suporte, reatribuição de O.S. e outros fluxos já
+      // existentes. Cliente do Portal (role externo à MGR) só lê o próprio doc.
+      allow read: if isAuthenticated() && (isOwner(userId) || !isCliente());
       allow write: if isAuthenticated()
         && (isOwner(userId) || isAdmin());
     }
@@ -254,8 +260,21 @@ service cloud.firestore {
 
     // ── Contratos de Manutenção SLA (Fase 1 — só equipe interna) ──
     match /contratos_sla/{contratoId} {
-      allow read: if isAuthenticated();
+      // Equipe interna lê tudo; cliente do Portal só lê o(s) contrato(s) do próprio clientId.
+      allow read: if isAuthenticated() && (!isCliente() ||
+        resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId);
       allow create, update: if isAuthenticated() && isManager();
+      allow delete: if isAdmin();
+    }
+
+    // ── Chamados de Contrato SLA (Portal do Cliente) ──
+    match /chamados_sla/{chamadoId} {
+      allow read: if isAuthenticated() && (isManager() ||
+        (isCliente() && resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId));
+      allow create: if isAuthenticated() && isCliente()
+        && request.resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId
+        && request.resource.data.criadoPorUid == request.auth.uid;
+      allow update: if isAuthenticated() && isManager();
       allow delete: if isAdmin();
     }
 
@@ -516,8 +535,11 @@ service cloud.firestore {
     }
 
     // ── Regra padrão: apenas autenticados ────────────────────────────────
+    // Fallback pra coleções internas sem regra própria — exclui explicitamente
+    // o Portal do Cliente (role externo à MGR não deve herdar acesso amplo só
+    // por estar autenticado; precisa de regra própria e restrita por coleção).
     match /{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAuthenticated() && !isCliente();
     }
   }
 }
