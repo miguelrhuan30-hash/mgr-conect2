@@ -1,7 +1,7 @@
 {
-  "build": 4,
-  "version": "1.3.0",
-  "url": "https://firebasestorage.googleapis.com/v0/b/mgr-conect2.firebasestorage.app/o/apk%2Fapp-debug.apk?alt=media",
-  "notas": "Aba Geral de O.S. para gestores — todas as O.S. do sistema com edição, reagendamento e realocação.",
-  "lancadoEm": "2026-06-27"
+  "build": 5,
+  "version": "1.4.0",
+  "url": "https://mgr-connect-app.web.app/apk/app-debug.apk",
+  "notas": "Suporte (chat técnico-gestor por O.S.), calendário geral de O.S., aviso ao encerrar o ponto com O.S. em andamento, correção do teclado/sugestão de texto, ícone novo do app, Portal do Cliente e linha do tempo de GPS.",
+  "lancadoEm": "2026-07-17"
 }
