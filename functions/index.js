@@ -126,6 +126,80 @@ exports.adminCreateUser = onCall(
 );
 
 /**
+ * adminCreateClientUser
+ * Callable Cloud Function — Cria um usuário de acesso ao Portal do Cliente
+ * (Auth + perfil Firestore com role 'cliente', vinculado a um clientId).
+ * Requer: canManageClients no perfil do chamador, OU role === 'admin'.
+ */
+exports.adminCreateClientUser = onCall(
+  { region: 'southamerica-east1', enforceAppCheck: false },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Você precisa estar autenticado.');
+    }
+
+    const callerId = request.auth.uid;
+    const { email, password, nomeCompleto, clientId, clientName } = request.data;
+
+    if (!email || typeof email !== 'string') {
+      throw new HttpsError('invalid-argument', 'E-mail inválido.');
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      throw new HttpsError('invalid-argument', 'A senha temporária deve ter pelo menos 8 caracteres.');
+    }
+    if (!nomeCompleto || typeof nomeCompleto !== 'string') {
+      throw new HttpsError('invalid-argument', 'Nome completo é obrigatório.');
+    }
+    if (!clientId || typeof clientId !== 'string') {
+      throw new HttpsError('invalid-argument', 'clientId é obrigatório.');
+    }
+
+    const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
+    const callerData = callerDoc.data();
+
+    const isAdmin = callerData?.role === 'admin';
+    const hasPermission = callerData?.permissions?.canManageClients === true;
+
+    if (!isAdmin && !hasPermission) {
+      throw new HttpsError('permission-denied', 'Sem permissão para criar acesso de cliente.');
+    }
+
+    let userRecord;
+    try {
+      userRecord = await admin.auth().createUser({
+        email,
+        password,
+        displayName: nomeCompleto,
+      });
+    } catch (err) {
+      if (err.code === 'auth/email-already-exists') {
+        throw new HttpsError('already-exists', 'Este e-mail já está cadastrado.');
+      }
+      throw new HttpsError('internal', err.message || 'Erro ao criar usuário.');
+    }
+
+    await admin.firestore().doc(`users/${userRecord.uid}`).set({
+      uid: userRecord.uid,
+      email,
+      displayName: nomeCompleto,
+      nomeCompleto,
+      role: 'cliente',
+      clientId,
+      clientName: clientName || null,
+      ativo: true,
+      xp: 0,
+      level: 1,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      requiresPasswordChange: true,
+      tempPasswordSetAt: admin.firestore.FieldValue.serverTimestamp(),
+      tempPasswordSetBy: callerId,
+    });
+
+    return { success: true, uid: userRecord.uid };
+  }
+);
+
+/**
  * adminSetUserActive
  * Callable Cloud Function — Ativa/desativa (desliga) um colaborador.
  * Ao desativar: desabilita o login no Firebase Auth (perde acesso), mas mantém todo o
@@ -254,6 +328,49 @@ exports.enviarPushNotificacao = onDocumentCreated(
     } catch (e) {
       console.error('[enviarPushNotificacao] erro ao enviar FCM:', e);
     }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PORTAL DO CLIENTE — notifica gestores quando um chamado de contrato SLA é
+// aberto. Roda com Admin SDK porque o cliente (role 'cliente') não tem
+// permissão de leitura ampla sobre `users` para montar a lista de destinatários.
+// ═══════════════════════════════════════════════════════════════════════════
+exports.notificarGestoresNovoChamadoSla = onDocumentCreated(
+  { region: 'southamerica-east1', document: 'chamados_sla/{chamadoId}' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const chamado = snap.data() || {};
+
+    const usersSnap = await admin.firestore().collection('users').get();
+    const destinatarios = usersSnap.docs
+      .filter(d => {
+        const u = d.data() || {};
+        return ['admin', 'gestor', 'manager', 'developer'].includes(u.role || '') || u.permissions?.canManageProjects === true;
+      })
+      .map(d => d.id);
+
+    if (destinatarios.length === 0) return;
+
+    const prioridade = chamado.prioridade || 'P3';
+    const batch = admin.firestore().batch();
+    destinatarios.forEach(uid => {
+      const ref = admin.firestore().collection('notifications').doc();
+      batch.set(ref, {
+        destinatarioId: uid,
+        tipo: 'chamado_sla_novo',
+        canal: 'os',
+        titulo: `📞 Novo chamado — ${prioridade}`,
+        corpo: `${chamado.clientName || 'Cliente'} abriu um chamado: ${chamado.titulo || ''}`,
+        lida: false,
+        criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        som: true,
+        prioridade: (prioridade === 'P1' || prioridade === 'P2') ? 'alta' : 'normal',
+        rota: '/app/chamados-sla',
+      });
+    });
+    await batch.commit();
   }
 );
 

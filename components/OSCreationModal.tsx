@@ -20,10 +20,18 @@ function tipoArquivoFromName(nome: string): OSArquivoApoio['tipo'] {
 interface OSCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (taskId?: string) => void;
+  // Pré-preenchimento — usado ao converter um chamado de contrato SLA (Portal do Cliente) em O.S.
+  prefill?: {
+    clientId: string;
+    contratoSlaId?: string;
+    prioridadeSla?: PrioridadeSLA;
+    title?: string;
+    description?: string;
+  };
 }
 
-const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSuccess, prefill }) => {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
 
@@ -140,6 +148,16 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
     }
   }, [isOpen]);
 
+  // Pré-preenchimento vindo de um chamado de contrato SLA convertido em O.S.
+  useEffect(() => {
+    if (isOpen && prefill) {
+      setTitle(prefill.title || '');
+      setDescription(prefill.description || '');
+      setClientId(prefill.clientId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   // Sprint 44 — load ativos when client changes
   useEffect(() => {
     if (!clientId) { setAtivos([]); setAtivoId(''); return; }
@@ -162,8 +180,18 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
       where('clientId', '==', clientId),
       where('status', '==', 'ativo'),
     ))
-      .then(snap => setContratosAtivos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContratoSLA))))
+      .then(snap => {
+        const lista = snap.docs.map(d => ({ id: d.id, ...d.data() } as ContratoSLA));
+        setContratosAtivos(lista);
+        // Se veio de um chamado convertido, já seleciona o tipo "Contrato SLA" e o contrato/prioridade indicados.
+        if (prefill && prefill.clientId === clientId) {
+          setTipoOSSelecionado('contrato');
+          setContratoSlaIdSelecionado(prefill.contratoSlaId || lista[0]?.id || '');
+          if (prefill.prioridadeSla) setPrioridadeSla(prefill.prioridadeSla);
+        }
+      })
       .catch(() => setContratosAtivos([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
   // Hub de Tarefas — carrega itens do backlog do projeto (status 'backlog')
@@ -437,7 +465,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
           if (tSnap.empty) await addDoc(collection(db, CollectionName.SERVICE_TYPES), { nome: tipoServico.trim(), usoCount: 1, criadoEm: Timestamp.now() });
         } catch { /* silent */ }
       }
-      onSuccess();
+      onSuccess(ref.id);
       onClose();
     } catch (error) {
       console.error("Error creating O.S.:", error);

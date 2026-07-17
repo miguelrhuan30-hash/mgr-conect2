@@ -15,6 +15,7 @@ import {
 import ClientAssets from './ClientAssets';
 import ClientProjectHistory from './ClientProjectHistory';
 import ClientContratoSLA from './ClientContratoSLA';
+import ClientPortalUsers from './ClientPortalUsers';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -514,11 +515,11 @@ const Clients: React.FC = () => {
   const [modal, setModal] = useState<{ open: boolean; client: Client | null }>({ open: false, client: null });
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos' | 'contrato'>>({});
+  const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos' | 'contrato' | 'portal'>>({});
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'todos'>('todos');
 
   const getTab = (id: string) => expandedTab[id] || 'ativos';
-  const setTab = (id: string, tab: 'ativos' | 'projetos' | 'contrato') =>
+  const setTab = (id: string, tab: 'ativos' | 'projetos' | 'contrato' | 'portal') =>
     setExpandedTab(prev => ({ ...prev, [id]: tab }));
 
   useEffect(() => {
@@ -665,6 +666,7 @@ const Clients: React.FC = () => {
                     { key: 'ativos',   label: '🌡 Ativos',   icon: Thermometer },
                     { key: 'projetos', label: '📂 Projetos', icon: Briefcase },
                     { key: 'contrato', label: '📄 Contrato SLA', icon: FileSignature },
+                    { key: 'portal',   label: '👤 Portal',   icon: Users },
                   ] as const).map(tab => (
                     <button key={tab.key}
                       onClick={() => {
@@ -694,7 +696,9 @@ const Clients: React.FC = () => {
                       ? <ClientAssets clientId={client.id} clientName={client.name} />
                       : getTab(client.id) === 'projetos'
                       ? <ClientProjectHistory clientId={client.id} clientName={client.name} />
-                      : <ClientContratoSLA clientId={client.id} clientName={client.name} />}
+                      : getTab(client.id) === 'contrato'
+                      ? <ClientContratoSLA clientId={client.id} clientName={client.name} />
+                      : <ClientPortalUsers clientId={client.id} clientName={client.name} />}
                   </div>
                 )}
               </div>

@@ -1673,6 +1673,7 @@ export type NotificacaoTipo =
   | 'os_observacao_gestor'         // gestor adicionou observação numa evidência
   | 'os_tarefa_nao_concluida'      // tarefa marcada como não concluída
   | 'veiculo_check_pendente'       // responsável não registrou o veículo após o ponto
+  | 'chamado_sla_novo'             // cliente abriu chamado de contrato SLA pelo Portal
   | 'geral';                       // notificação genérica
 
 export type NotificacaoCanal = 'almoco' | 'duvida' | 'os' | 'veiculo' | 'geral';

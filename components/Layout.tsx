@@ -53,6 +53,7 @@ import {
   Truck,
   KeyRound,
   GraduationCap,
+  MessageSquareText,
 } from 'lucide-react';
 import AlertasCentral from './AlertasCentral';
 
@@ -72,6 +73,7 @@ const Layout: React.FC = () => {
   const [suporteNaoLidos, setSuporteNaoLidos] = useState(0);
   const [leadsNovos, setLeadsNovos] = useState(0);
   const [pendingPasswordResets, setPendingPasswordResets] = useState(0);
+  const [chamadosSlaAbertos, setChamadosSlaAbertos] = useState(0);
   const isGestorLayout = ['admin', 'gestor', 'manager', 'developer'].includes(userProfile?.role || '');
 
   // Sprint 46 — expandable submenu
@@ -99,6 +101,15 @@ const Layout: React.FC = () => {
       where('status', '==', 'novo'),
     );
     return onSnapshot(q, snap => setLeadsNovos(snap.size));
+  }, [isGestorLayout, currentUser]);
+
+  useEffect(() => {
+    if (!isGestorLayout || !currentUser) return;
+    const q = query(
+      collection(db, CollectionName.CHAMADOS_SLA),
+      where('status', '==', 'aberto'),
+    );
+    return onSnapshot(q, snap => setChamadosSlaAbertos(snap.size));
   }, [isGestorLayout, currentUser]);
 
   // Badge de pedidos de redefinição de senha pendentes
@@ -344,6 +355,7 @@ const Layout: React.FC = () => {
       visible: can('canViewTasks') || can('canManageProjects'),
       children: [
         { to: '/app/pipeline',      icon: Kanban,          label: 'Pipeline',            visible: can('canManageProjects') },
+        { to: '/app/chamados-sla',  icon: MessageSquareText, label: 'Chamados SLA',       visible: can('canManageProjects'), badge: chamadosSlaAbertos > 0 ? chamadosSlaAbertos : undefined },
         { to: '/app/agenda',        icon: CalendarDays,    label: 'Agenda',              visible: can('canViewSchedule') || can('canViewFullSchedule') || can('canViewMySchedule') },
         { to: '/app/tarefas',       icon: CheckSquare,     label: 'Lista de O.S.',       visible: can('canViewTasks') },
         // Projetos (antigo) removido — unificado em Flow de Atendimento > Todos os Projetos

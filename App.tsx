@@ -79,6 +79,7 @@ const IntelGuard       = lazy(() => import('./components/IntelGuard'));
 // ─────────────────────────────────────────────
 const Assets      = lazy(() => import('./components/Assets'));
 const Pipeline    = lazy(() => import('./components/Pipeline'));
+const ChamadosSLA = lazy(() => import('./components/ChamadosSLA'));
 const OSExecution = lazy(() => import('./components/OSExecution'));
 const Billing     = lazy(() => import('./components/Billing'));
 const BIDashboard = lazy(() => import('./components/BIDashboard'));
@@ -188,6 +189,10 @@ const FieldPerfil        = lazy(() => import('./components/FieldApp/FieldPerfil'
 const FieldConfiguracoes = lazy(() => import('./components/FieldApp/FieldConfiguracoes'));
 const FieldVeiculo    = lazy(() => import('./components/FieldApp/FieldVeiculo'));
 const FieldAlmoco     = lazy(() => import('./components/FieldApp/FieldAlmoco'));
+
+const PortalLayout      = lazy(() => import('./components/Portal/PortalLayout'));
+const PortalChamados     = lazy(() => import('./components/Portal/PortalChamados'));
+const PortalNovoChamado = lazy(() => import('./components/Portal/PortalNovoChamado'));
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -365,6 +370,8 @@ const AppContent: React.FC = () => {
                 <EnforceShiftLock isShiftLocked={isShiftLocked}>
                   <Layout />
                 </EnforceShiftLock>
+              ) : userProfile?.role === 'cliente' ? (
+                <Navigate to="/portal" />
               ) : userProfile?.role === 'pending' ? (
                 <Navigate to="/aguardando-aprovacao" />
               ) : isAvatarMissing ? (
@@ -450,6 +457,9 @@ const AppContent: React.FC = () => {
           ════════════════════════════════════════ */}
           <Route path="pipeline"
             element={hasPermission('canManageProjects') ? <Pipeline /> : <Navigate to="/app" />} />
+
+          <Route path="chamados-sla"
+            element={hasPermission('canManageProjects') ? <ChamadosSLA /> : <Navigate to="/app" />} />
 
           {/* ════════════════════════════════════════
               SPRINT 32 — Execução de Campo
@@ -581,7 +591,9 @@ const AppContent: React.FC = () => {
         <Route
           path="/campo"
           element={
-            currentUser ? <FieldLayout /> : <Navigate to="/login" />
+            currentUser
+              ? (userProfile?.role === 'cliente' ? <Navigate to="/portal" /> : <FieldLayout />)
+              : <Navigate to="/login" />
           }
         >
           <Route index element={<Navigate to="os" replace />} />
@@ -597,6 +609,22 @@ const AppContent: React.FC = () => {
           <Route path="veiculo"   element={<FieldVeiculo />} />
           <Route path="perfil"         element={<FieldPerfil />} />
           <Route path="configuracoes"  element={<FieldConfiguracoes />} />
+        </Route>
+
+        {/* ════════════════════════════════════════
+            PORTAL — Área do Cliente (role 'cliente')
+            Rota isolada: sem Layout admin, sem FieldLayout
+        ════════════════════════════════════════ */}
+        <Route
+          path="/portal"
+          element={
+            currentUser
+              ? (userProfile?.role === 'cliente' ? <PortalLayout /> : <Navigate to="/app" />)
+              : <Navigate to="/login" />
+          }
+        >
+          <Route index element={<PortalChamados />} />
+          <Route path="novo" element={<PortalNovoChamado />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" />} />
