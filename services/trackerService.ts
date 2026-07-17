@@ -53,6 +53,13 @@ export function calcularKmPercorrido(pings: LocationPing[]): number {
   return Math.round(total * 10) / 10;
 }
 
+/** Todos os pings de GPS de um colaborador num dia (00h-23h59), sem vínculo com nenhuma O.S. */
+export async function buscarPingsDoDia(userId: string, dataISO: string): Promise<LocationPing[]> {
+  const inicio = new Date(`${dataISO}T00:00:00`);
+  const fim = new Date(`${dataISO}T23:59:59`);
+  return buscarPings(userId, inicio, fim);
+}
+
 export interface MetricasOS {
   osId: string;
   osTitulo?: string;
