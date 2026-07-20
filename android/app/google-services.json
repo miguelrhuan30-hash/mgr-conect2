@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "94240285880",
+    "project_id": "mgr-conect2",
+    "storage_bucket": "mgr-conect2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:94240285880:android:47173d05e4ce3ed980c04d",
+        "android_client_info": {
+          "package_name": "com.mgr.fieldapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "94240285880-ribj1srfs9phfd216g5a9mffcdigj1mk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-Z0N-z3vq3PuS_SLVdjsWnWkEzAZVyjI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "94240285880-ribj1srfs9phfd216g5a9mffcdigj1mk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

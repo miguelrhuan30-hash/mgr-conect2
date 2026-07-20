@@ -216,6 +216,97 @@ export function atualizarBadgeApp(contagem: number): void {
   }
 }
 
+/* ─── Aviso de nova versão do sistema (banner + sino, todo tipo de usuário) ── */
+
+export interface VersaoSistemaInfo {
+  build: number;
+  version: string;
+  url: string;
+  notas: string;
+  lancadoEm: string;
+}
+
+/**
+ * Verifica se há uma versão do sistema mais nova que a última já notificada
+ * NESTE dispositivo/navegador (localStorage, por uid). Se houver, cria uma
+ * notificação `sistema_atualizado` pro próprio usuário (aparece no sino) e
+ * retorna os dados pra exibir o banner nesta sessão.
+ *
+ * Funciona igual para técnico nativo, gestor web e cliente do Portal — não
+ * depende de App.getInfo() (plugin nativo, historicamente instável aqui),
+ * só do arquivo estático `apk-version.json` já publicado a cada release.
+ * Chamar uma vez ao montar o layout autenticado (Field/gestor web/Portal).
+ */
+export async function verificarNovaVersaoSistema(uid: string, rota?: string): Promise<VersaoSistemaInfo | null> {
+  if (!uid) return null;
+  const chave = `mgr_versao_sistema_notificada_${uid}`;
+  try {
+    const res = await fetch('/apk-version.json?t=' + Date.now());
+    if (!res.ok) return null;
+    const remote = await res.json() as VersaoSistemaInfo;
+    const ultimoNotificado = parseInt(localStorage.getItem(chave) || '0', 10);
+    if (!remote?.build || remote.build <= ultimoNotificado) return null;
+
+    localStorage.setItem(chave, String(remote.build));
+    criarNotificacao({
+      destinatarioId: uid,
+      tipo: 'sistema_atualizado',
+      canal: 'geral',
+      titulo: `Sistema atualizado — v${remote.version}`,
+      corpo: remote.notas || 'Uma nova versão do sistema MGRConnect está disponível.',
+      som: false,
+      ...(rota ? { rota } : {}),
+    });
+    return remote;
+  } catch {
+    return null;
+  }
+}
+
+/** Acesso ao plugin nativo custom (LocationPlugin) que expõe utilitários
+ *  Android que a WebView do Capacitor não intercepta via URL scheme
+ *  (`intent:` só é interceptado automaticamente no navegador Chrome). */
+async function getNativeUtilPlugin(): Promise<any> {
+  if (!isNative) return null;
+  try {
+    const { Plugins } = await import('@capacitor/core');
+    return (Plugins as any).LocationPlugin ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Abre a URL do APK pelo instalador nativo do Android, fora da WebView.
+ *
+ * `window.open(url, '_system')` não é confiável quando a URL do APK está no
+ * MESMO domínio configurado em `server.url` do Capacitor (aqui,
+ * mgr-connect-app.web.app): a WebView pode tratar como navegação interna e
+ * tentar renderizar o binário .apk inline, travando a tela em branco.
+ * Usa o plugin nativo (LocationPlugin.instalarApk), que chama
+ * Intent.ACTION_VIEW diretamente em Java — garantido de funcionar, ao
+ * contrário do esquema `intent:` via window.location (não interceptado
+ * pela WebView genérica do Capacitor).
+ */
+export async function abrirInstaladorApk(url: string): Promise<void> {
+  if (Capacitor.getPlatform() === 'android') {
+    const plugin = await getNativeUtilPlugin();
+    if (plugin?.instalarApk) {
+      await plugin.instalarApk({ url }).catch(() => window.open(url, '_system'));
+      return;
+    }
+  }
+  window.open(url, '_system');
+}
+
+/** Abre a tela "Info do app" nativa (Configurações → Apps → MGR Campo). */
+export async function abrirConfiguracoesApp(): Promise<void> {
+  const plugin = await getNativeUtilPlugin();
+  if (plugin?.abrirConfiguracoesApp) {
+    await plugin.abrirConfiguracoesApp().catch(() => {});
+  }
+}
+
 /* ─── Registro de token de push (FCM) ─────────────────────────────────────── */
 
 /**

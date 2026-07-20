@@ -10,6 +10,7 @@ import { Camera }              from '@capacitor/camera';
 import { Geolocation }         from '@capacitor/geolocation';
 import { LocalNotifications }  from '@capacitor/local-notifications';
 import { PushNotifications }   from '@capacitor/push-notifications';
+import { abrirConfiguracoesApp } from '../../services/notificationService';
 import {
   ChevronLeft, Camera as CameraIcon, Image, Mic, MapPin, MapPinOff,
   Bell, BellRing, Phone, PhoneCall, Settings, CheckCircle2,
@@ -49,8 +50,11 @@ const capStatus = (s: string): PermStatus =>
 /* ─── Abre configurações do app no dispositivo ───────────────────────────── */
 const abrirConfigDispositivo = () => {
   if (Capacitor.getPlatform() === 'android') {
-    // Android — abre via intent através de window location
-    window.open('app-settings:', '_system');
+    // 'app-settings:' é um esquema iOS — no Android não existe. E "intent:"
+    // via window.location só é interceptado automaticamente no navegador
+    // Chrome, não na WebView genérica embutida do Capacitor — por isso
+    // nenhuma das duas abria nada. Usa o plugin nativo (chamada Java real).
+    abrirConfiguracoesApp();
   } else if (Capacitor.getPlatform() === 'ios') {
     window.open('app-settings:', '_system');
   }
@@ -368,6 +372,13 @@ export default function FieldConfiguracoes() {
   const handleSolicitar = async (id: string) => {
     const perm = permissoes.find(p => p.id === id);
     if (!perm) return;
+    // Uma vez negada, o Android não deixa pedir de novo pelo app — só
+    // reabrir o mesmo diálogo já negado (sem efeito) em vez de encaminhar
+    // pra tela de configurações, que é o único jeito de reverter.
+    if (perm.status === 'denied' && !perm.manual) {
+      abrirConfigDispositivo();
+      return;
+    }
     setLoading(prev => ({ ...prev, [id]: true }));
     try {
       const novoStatus = await perm.solicitar();

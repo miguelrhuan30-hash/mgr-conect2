@@ -7,6 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { PermissionSet, CollectionName } from '../types';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { useNotificacoes } from '../src/hooks/useNotificacoes';
+import { verificarNovaVersaoSistema, VersaoSistemaInfo } from '../services/notificationService';
+import NotificacoesBell from './NotificacoesBell';
 import { 
   LayoutDashboard, 
   Clock, 
@@ -83,6 +85,15 @@ const Layout: React.FC = () => {
   // igual ao FieldApp já faz via FieldNotificacoes — antes o gestor no web
   // não tinha nenhum alerta sonoro/visual pra notificações em tempo real.
   useNotificacoes();
+
+  // Banner de "nova versão do sistema disponível" — mesma central de
+  // notificações do FieldApp, agora também pro gestor no navegador.
+  const [versaoNova, setVersaoNova] = useState<VersaoSistemaInfo | null>(null);
+  const [versaoBannerDismissed, setVersaoBannerDismissed] = useState(false);
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    verificarNovaVersaoSistema(currentUser.uid).then(v => { if (v) setVersaoNova(v); });
+  }, [currentUser?.uid]);
 
   useEffect(() => {
     if (!isGestorLayout || !currentUser) return;
@@ -474,6 +485,9 @@ const Layout: React.FC = () => {
         {/* 🔔 AlertasCentral — Sprint 17 */}
         {isGestorLayout && <AlertasCentral />}
 
+        {/* 🔔 Notificações pessoais (suporte, sistema, etc.) */}
+        <NotificacoesBell />
+
         {/* Badge de Suporte — dúvidas de técnicos aguardando resposta */}
         {isGestorLayout && suporteNaoLidos > 0 && (
           <button
@@ -703,6 +717,24 @@ const Layout: React.FC = () => {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden pt-12 lg:pt-0">
+        {/* Banner de nova versão do sistema */}
+        {versaoNova && !versaoBannerDismissed && (
+          <div className="flex items-center gap-3 px-4 sm:px-6 lg:px-8 py-2.5 bg-emerald-50 border-b border-emerald-100">
+            <Download size={14} className="text-emerald-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-emerald-800">
+                Sistema atualizado — v{versaoNova.version}
+              </p>
+              <p className="text-[11px] text-emerald-700/80 truncate">{versaoNova.notas}</p>
+            </div>
+            <button
+              onClick={() => setVersaoBannerDismissed(true)}
+              className="flex-shrink-0 p-1 text-emerald-600/60 hover:text-emerald-700"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <Outlet />
         </div>

@@ -4,21 +4,32 @@
  * Minimalista: sem sidebar/módulos internos, só o essencial pro cliente
  * acompanhar e abrir chamados de contrato SLA.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, ShieldCheck } from 'lucide-react';
+import { LogOut, ShieldCheck, Download, X } from 'lucide-react';
+import { verificarNovaVersaoSistema, VersaoSistemaInfo } from '../../services/notificationService';
+import NotificacoesBell from '../NotificacoesBell';
 
 export default function PortalLayout() {
-  const { userProfile } = useAuth();
+  const { userProfile, currentUser } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     await signOut(auth);
     navigate('/login');
   };
+
+  // Banner de "nova versão do sistema disponível" — mesmo mecanismo do
+  // gestor web e do FieldApp, agora também pro cliente do Portal.
+  const [versaoNova, setVersaoNova] = useState<VersaoSistemaInfo | null>(null);
+  const [versaoBannerDismissed, setVersaoBannerDismissed] = useState(false);
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    verificarNovaVersaoSistema(currentUser.uid).then(v => { if (v) setVersaoNova(v); });
+  }, [currentUser?.uid]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -30,10 +41,32 @@ export default function PortalLayout() {
             <p className="text-[10px] text-gray-400">{userProfile?.clientName || 'Cliente'}</p>
           </div>
         </div>
-        <button onClick={handleLogout} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-          <LogOut className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificacoesBell />
+          <button onClick={handleLogout} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
+
+      {versaoNova && !versaoBannerDismissed && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-emerald-50 border-b border-emerald-100">
+          <Download size={14} className="text-emerald-600 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-emerald-800">
+              Sistema atualizado — v{versaoNova.version}
+            </p>
+            <p className="text-[11px] text-emerald-700/80 truncate">{versaoNova.notas}</p>
+          </div>
+          <button
+            onClick={() => setVersaoBannerDismissed(true)}
+            className="flex-shrink-0 p-1 text-emerald-600/60 hover:text-emerald-700"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 max-w-2xl w-full mx-auto p-4">
         <Outlet />
       </div>

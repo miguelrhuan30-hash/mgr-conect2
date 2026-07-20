@@ -235,7 +235,7 @@
   <!-- Botão Download -->
   <a
     id="btn-download"
-    href="https://firebasestorage.googleapis.com/v0/b/mgr-conect2.appspot.com/o/apk%2Fmgr-campo-latest.apk?alt=media"
+    href="#"
     class="btn-download"
     download="mgr-campo.apk"
   >
@@ -248,7 +248,7 @@
   </a>
 
   <p class="version-badge">
-    <span id="ver-badge">v1.0 · Android 8.0+ · ~25 MB</span>
+    <span id="ver-badge">Carregando versão...</span>
   </p>
 
   <!-- Aviso instalação -->
@@ -319,7 +319,7 @@
 </div>
 
 <script>
-  // Detecta Android e adapta o texto
+  // Detecta Android/iOS e adapta o texto
   var ua = navigator.userAgent || '';
   var isAndroid = /android/i.test(ua);
   var isIOS = /iphone|ipad|ipod/i.test(ua);
@@ -336,6 +336,18 @@
       Apenas Android
     `;
     document.getElementById('ver-badge').textContent = 'Este app é compatível apenas com Android';
+  } else {
+    // Busca a versão publicada dinamicamente — nunca mais fica desatualizado
+    fetch('/apk-version.json?t=' + Date.now())
+      .then(function (r) { return r.json(); })
+      .then(function (v) {
+        document.getElementById('btn-download').href = v.url;
+        document.getElementById('ver-badge').textContent =
+          'v' + v.version + ' (build ' + v.build + ') · Android 8.0+';
+      })
+      .catch(function () {
+        document.getElementById('ver-badge').textContent = 'Não foi possível carregar a versão — tente recarregar.';
+      });
   }
 </script>
 </body>

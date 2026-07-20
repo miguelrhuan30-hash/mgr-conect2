@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { abrirInstaladorApk } from '../../services/notificationService';
 
 /* ── helpers ────────────────────────────────────────────── */
 const DAYS: Record<string, string> = {
@@ -194,13 +195,15 @@ export default function FieldPerfil() {
   /* auto-check ao montar */
   useEffect(() => { verificarAtualizacao(); }, []);
 
-  /* Versão instalada como número (para comparar) */
+  /* Versão instalada como número (para comparar). App.getInfo() nem sempre
+     responde neste device — quando não sabemos a build instalada, oferece
+     o download mesmo assim (não dá pra confirmar que já está atualizado). */
+  const versaoInstaladaDesconhecida = installedBuild === null;
   const temAtualizacao = remoteApk !== null
-    && installedBuild !== null
-    && remoteApk.build > installedBuild;
+    && (versaoInstaladaDesconhecida || remoteApk.build > installedBuild);
 
   const baixarApk = () => {
-    if (remoteApk?.url) window.open(remoteApk.url, '_system');
+    if (remoteApk?.url) abrirInstaladorApk(remoteApk.url);
   };
 
   /* ── jornada ─────────────────────────────────────────── */
@@ -497,7 +500,7 @@ export default function FieldPerfil() {
                 </span>
               ) : (
                 <span className="text-xs text-gray-600">
-                  {Capacitor.isNativePlatform() ? 'Não lido' : 'Via web'}
+                  {Capacitor.isNativePlatform() ? 'Indisponível' : 'Via web'}
                 </span>
               )}
             </div>
@@ -525,8 +528,14 @@ export default function FieldPerfil() {
             )}
             {!checkingApk && !apkError && remoteApk && temAtualizacao && (
               <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
-                <p className="text-[11px] font-bold text-orange-400 mb-1">Nova versão disponível!</p>
-                <p className="text-[10px] text-orange-400/80 leading-relaxed">{remoteApk.notas}</p>
+                <p className="text-[11px] font-bold text-orange-400 mb-1">
+                  {versaoInstaladaDesconhecida ? 'Baixe a versão mais recente' : 'Nova versão disponível!'}
+                </p>
+                <p className="text-[10px] text-orange-400/80 leading-relaxed">
+                  {versaoInstaladaDesconhecida
+                    ? 'Não foi possível confirmar sua versão instalada neste aparelho. Se tiver dúvida, baixe a mais recente abaixo.'
+                    : remoteApk.notas}
+                </p>
               </div>
             )}
             {!checkingApk && !apkError && remoteApk && !temAtualizacao && installedBuild !== null && (

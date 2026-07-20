@@ -9,7 +9,7 @@ import { startFieldServices, stopFieldServices } from '../../services/FieldAppBo
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { useProfileAlerta } from '../../src/hooks/useProfileAlerta';
-import { registrarPushToken } from '../../services/notificationService';
+import { registrarPushToken, verificarNovaVersaoSistema, abrirInstaladorApk } from '../../services/notificationService';
 import FieldNotificacoes from './FieldNotificacoes';
 
 interface ApkVersionInfo {
@@ -61,19 +61,29 @@ export default function FieldLayout() {
     };
   }, [currentUser]);
 
-  /* ── Verificação de atualização do APK ─────────────────── */
+  /* ── Verificação de atualização do APK (banner de instalar, só nativo) ── */
   useEffect(() => {
     const checkUpdate = async () => {
+      if (!Capacitor.isNativePlatform()) return; // botão "Instalar" só faz sentido no APK
+
       try {
         const res = await fetch('/apk-version.json?t=' + Date.now());
         if (!res.ok) return;
         const remote: ApkVersionInfo = await res.json();
 
-        // Só verifica no Android nativo (não no browser)
-        if (!Capacitor.isNativePlatform()) return;
-
-        const info = await App.getInfo();
-        const installedBuild = parseInt(info.build, 10);
+        // Base da comparação: build já instalada quando App.getInfo() responde
+        // (nem sempre confiável neste device); se falhar, cai pra última build
+        // já oferecida neste aparelho (localStorage) — nunca fica sem aviso.
+        let installedBuild: number | null = null;
+        try {
+          const info = await App.getInfo();
+          installedBuild = parseInt(info.build, 10);
+        } catch {
+          installedBuild = null;
+        }
+        if (installedBuild === null) {
+          installedBuild = parseInt(localStorage.getItem('mgr_apk_build_oferecido') || '0', 10);
+        }
 
         if (remote.build > installedBuild) {
           setUpdateInfo(remote);
@@ -85,10 +95,20 @@ export default function FieldLayout() {
     checkUpdate();
   }, []);
 
+  // Sino de notificações — funciona pra qualquer usuário (técnico, gestor web,
+  // cliente do Portal), independente do banner nativo acima.
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    verificarNovaVersaoSistema(currentUser.uid, '/campo/perfil');
+  }, [currentUser?.uid]);
+
   const instalarAtualizacao = () => {
     if (!updateInfo) return;
-    // Abre o download manager do Android para baixar e instalar o APK
-    window.open(updateInfo.url, '_system');
+    // Não marca como "oferecido" aqui — só quando o usuário realmente
+    // dispensar o banner (X). Clicar em Instalar não garante que o
+    // download/instalação foi concluído, então o aviso deve continuar
+    // aparecendo em sessões futuras até a versão realmente mudar.
+    abrirInstaladorApk(updateInfo.url);
   };
 
   const NAV_BASE = [
@@ -158,7 +178,10 @@ export default function FieldLayout() {
             <Download size={11} /> Instalar
           </button>
           <button
-            onClick={() => setBannerDismissed(true)}
+            onClick={() => {
+              localStorage.setItem('mgr_apk_build_oferecido', String(updateInfo.build));
+              setBannerDismissed(true);
+            }}
             className="flex-shrink-0 p-1 text-orange-400/60 active:text-orange-400"
           >
             <X size={14} />

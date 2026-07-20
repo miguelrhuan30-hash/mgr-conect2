@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Download, Smartphone, MapPin, Camera, Bell, Mic, Phone, Volume2,
   CheckCircle2, ChevronRight, Shield, RefreshCcw, ExternalLink,
 } from 'lucide-react';
 
-const APK_URL =
-  'https://firebasestorage.googleapis.com/v0/b/mgr-conect2.firebasestorage.app/o/apk%2Fapp-debug.apk?alt=media';
+interface ApkVersionInfo { build: number; version: string; url: string; notas: string; lancadoEm: string; }
 
 const STEPS = [
   {
@@ -42,6 +41,14 @@ const PERMS = [
 export default function InstallarApp() {
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [apk, setApk] = useState<ApkVersionInfo | null>(null);
+
+  useEffect(() => {
+    fetch('/apk-version.json?t=' + Date.now())
+      .then(res => res.json())
+      .then(setApk)
+      .catch(() => {});
+  }, []);
 
   function handleDownload() {
     setDownloading(true);
@@ -69,16 +76,24 @@ export default function InstallarApp() {
         {/* Botão download */}
         <div className="flex flex-col items-center gap-3">
           <a
-            href={APK_URL}
+            href={apk?.url || '#'}
             download="mgr-campo.apk"
             onClick={handleDownload}
+            aria-disabled={!apk}
             className={`flex items-center justify-center gap-3 w-full max-w-sm py-4 px-6 rounded-2xl font-bold text-base transition-all active:scale-95 ${
-              downloaded
+              !apk
+                ? 'bg-gray-800 text-gray-500 cursor-wait'
+                : downloaded
                 ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-400'
                 : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-900/40'
             }`}
           >
-            {downloading ? (
+            {!apk ? (
+              <>
+                <RefreshCcw size={20} className="animate-spin" />
+                Carregando versão...
+              </>
+            ) : downloading ? (
               <>
                 <RefreshCcw size={20} className="animate-spin" />
                 Baixando…
@@ -102,7 +117,7 @@ export default function InstallarApp() {
               Android 8.0+
             </span>
             <span>·</span>
-            <span>v1.0 · ~25 MB</span>
+            <span>{apk ? `v${apk.version} (build ${apk.build})` : '—'}</span>
             <span>·</span>
             <span className="flex items-center gap-1">
               <RefreshCcw size={11} className="text-blue-700" />

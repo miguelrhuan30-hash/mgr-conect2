@@ -1674,6 +1674,7 @@ export type NotificacaoTipo =
   | 'os_tarefa_nao_concluida'      // tarefa marcada como não concluída
   | 'veiculo_check_pendente'       // responsável não registrou o veículo após o ponto
   | 'chamado_sla_novo'             // cliente abriu chamado de contrato SLA pelo Portal
+  | 'sistema_atualizado'           // nova versão do sistema/app disponível
   | 'geral';                       // notificação genérica
 
 export type NotificacaoCanal = 'almoco' | 'duvida' | 'os' | 'veiculo' | 'geral';

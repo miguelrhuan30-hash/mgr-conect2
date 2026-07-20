@@ -1,7 +1,9 @@
 package com.mgr.fieldapp;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -9,13 +11,19 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
- * LocationPlugin — bridge entre JavaScript e LocationForegroundService.
+ * LocationPlugin — bridge entre JavaScript e LocationForegroundService, e
+ * pequenos utilitários nativos que "intent:" via window.location não
+ * consegue disparar de dentro da WebView do Capacitor (esse esquema só é
+ * interceptado automaticamente no navegador Chrome, não numa WebView
+ * genérica embutida — precisa de uma chamada Java real).
  *
  * Uso no JS (via FieldApp):
  *   import { Plugins } from '@capacitor/core';
  *   const { LocationPlugin } = Plugins;
  *   await LocationPlugin.startTracking({ userId, userName, idToken });
  *   await LocationPlugin.stopTracking();
+ *   await LocationPlugin.abrirConfiguracoesApp();
+ *   await LocationPlugin.instalarApk({ url });
  */
 @CapacitorPlugin(name = "LocationPlugin")
 public class LocationPlugin extends Plugin {
@@ -44,6 +52,32 @@ public class LocationPlugin extends Plugin {
     public void stopTracking(PluginCall call) {
         Intent intent = new Intent(getContext(), LocationForegroundService.class);
         getContext().stopService(intent);
+        call.resolve();
+    }
+
+    /** Abre a tela "Info do app" (Configurações → Apps → MGR Campo) nativamente. */
+    @PluginMethod
+    public void abrirConfiguracoesApp(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        Uri uri = Uri.fromParts("package", getContext().getPackageName(), null);
+        intent.setData(uri);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    /** Abre o instalador nativo do Android pra uma URL de APK, fora da WebView. */
+    @PluginMethod
+    public void instalarApk(PluginCall call) {
+        String url = call.getString("url", "");
+        if (url.isEmpty()) {
+            call.reject("url é obrigatória");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(Uri.parse(url), "application/vnd.android.package-archive");
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
         call.resolve();
     }
 }

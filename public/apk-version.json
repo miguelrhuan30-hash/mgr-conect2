@@ -1,7 +1,7 @@
 {
-  "build": 5,
-  "version": "1.4.0",
-  "url": "https://mgr-connect-app.web.app/apk/app-debug.apk",
-  "notas": "Suporte (chat técnico-gestor por O.S.), calendário geral de O.S., aviso ao encerrar o ponto com O.S. em andamento, correção do teclado/sugestão de texto, ícone novo do app, Portal do Cliente e linha do tempo de GPS.",
-  "lancadoEm": "2026-07-17"
+  "build": 7,
+  "version": "1.4.2",
+  "url": "https://mgr-connect-app.web.app/apk/app-debug-b7.apk",
+  "notas": "Correção: botão 'Abrir configurações' (Microfone, Sons, Chamadas) e instalador de atualização agora usam chamada nativa direta, sem depender de esquema de URL não suportado pela WebView.",
+  "lancadoEm": "2026-07-20"
 }
