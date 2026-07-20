@@ -534,6 +534,7 @@ const PropostaDocPublica: React.FC = () => {
 
   const [loading, setLoading]               = useState(true);
   const [notFound, setNotFound]             = useState(false);
+  const [loadError, setLoadError]           = useState(false);
   const [projectId, setProjectId]           = useState<string>('');
   const [proposta, setProposta]             = useState<PropostaDocumento | null>(null);
   const [projectNome, setProjectNome]       = useState('');
@@ -555,42 +556,45 @@ const PropostaDocPublica: React.FC = () => {
   const [wowData, setWowData]               = useState<Date>(new Date());
 
   // ── Busca por slug ────────────────────────────────────────────────────────
-  useEffect(() => {
+  const buscarProposta = useCallback(async () => {
     if (!slug) { setNotFound(true); setLoading(false); return; }
-    const fetch = async () => {
-      try {
-        const q = query(
-          collection(db, CollectionName.PROJECTS_V2),
-          where('propostaDocumento.slug', '==', slug),
-        );
-        const snap = await getDocs(q);
-        if (snap.empty) { setNotFound(true); setLoading(false); return; }
-        const d = snap.docs[0];
-        const data = { id: d.id, ...d.data() } as ProjectV2;
-        if (!data.propostaDocumento) { setNotFound(true); setLoading(false); return; }
-        setProjectId(d.id);
-        setProposta(data.propostaDocumento);
-        setProjectNome(data.nome ?? '');
-        setClienteNome(data.clientName ?? '');
-        setHtmlApresentacao(data.propostaDados?.htmlUrl ?? null);
-        setPdfApresentacao(data.propostaDados?.pdfUrl ?? null);
-        setPdfDescritivo(data.propostaDados?.pdfDescritivo ?? null);
-        setContratoPdfUrl(data.propostaDocumento?.contratoPdfUrl ?? null);
-        setAssinaturaCampo(data.propostaDocumento?.assinaturaCampo);
-        // Fallback: slug da apresentação de slides do sistema
-        const versoes = data.propostaVersoes;
-        if (!data.propostaDados?.pdfUrl && versoes?.length) {
-          const slug = versoes[versoes.length - 1].slug;
-          if (slug) setSlidesSlug(slug);
-        }
-      } catch {
-        setNotFound(true);
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setLoadError(false);
+    setNotFound(false);
+    try {
+      const q = query(
+        collection(db, CollectionName.PROJECTS_V2),
+        where('propostaDocumento.slug', '==', slug),
+      );
+      const snap = await getDocs(q);
+      if (snap.empty) { setNotFound(true); setLoading(false); return; }
+      const d = snap.docs[0];
+      const data = { id: d.id, ...d.data() } as ProjectV2;
+      if (!data.propostaDocumento) { setNotFound(true); setLoading(false); return; }
+      setProjectId(d.id);
+      setProposta(data.propostaDocumento);
+      setProjectNome(data.nome ?? '');
+      setClienteNome(data.clientName ?? '');
+      setHtmlApresentacao(data.propostaDados?.htmlUrl ?? null);
+      setPdfApresentacao(data.propostaDados?.pdfUrl ?? null);
+      setPdfDescritivo(data.propostaDados?.pdfDescritivo ?? null);
+      setContratoPdfUrl(data.propostaDocumento?.contratoPdfUrl ?? null);
+      setAssinaturaCampo(data.propostaDocumento?.assinaturaCampo);
+      // Fallback: slug da apresentação de slides do sistema
+      const versoes = data.propostaVersoes;
+      if (!data.propostaDados?.pdfUrl && versoes?.length) {
+        const slug = versoes[versoes.length - 1].slug;
+        if (slug) setSlidesSlug(slug);
       }
-    };
-    fetch();
+    } catch (err) {
+      console.error('[PropostaDocPublica] erro ao buscar proposta pelo slug:', err);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, [slug]);
+
+  useEffect(() => { buscarProposta(); }, [buscarProposta]);
 
   // ── Etapa 1: Aceite (status='aceito', sem assinatura ainda) ───────────────
   const handleAceitar = useCallback(async (nome: string, email: string) => {
@@ -674,6 +678,38 @@ const PropostaDocPublica: React.FC = () => {
     }}>
       <style>{KEYFRAMES}</style>
       <Loader2 size={40} color={C.accent} style={{ animation: 'spin 1s linear infinite' }} />
+    </div>
+  );
+
+  // ── Erro ao carregar (rede/permissão) — distinto de "não encontrada" ───────
+  if (loadError) return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      background: C.bg, color: C.textMuted, gap: 16,
+      fontFamily: 'system-ui, sans-serif', padding: 24, textAlign: 'center',
+    }}>
+      <style>{KEYFRAMES}</style>
+      <AlertCircle size={48} color="#ef4444" />
+      <h1 style={{ color: C.text, fontSize: 26, fontWeight: 800, margin: 0 }}>
+        Erro ao carregar a proposta
+      </h1>
+      <p style={{ maxWidth: 360, margin: 0 }}>
+        Houve uma falha de conexão ao buscar os dados. Verifique sua internet e tente novamente.
+      </p>
+      <button
+        onClick={() => buscarProposta()}
+        style={{
+          marginTop: 8, padding: '10px 20px', borderRadius: 8, border: 'none',
+          background: C.accent, color: '#fff', fontWeight: 700, cursor: 'pointer',
+          fontFamily: 'system-ui, sans-serif',
+        }}
+      >
+        Tentar novamente
+      </button>
+      <div style={{ marginTop: 16 }}>
+        <MGRLogo size={34} />
+      </div>
     </div>
   );
 
