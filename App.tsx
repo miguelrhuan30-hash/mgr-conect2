@@ -61,6 +61,7 @@ const TaskTemplates    = lazy(() => import('./components/TaskTemplates'));
 // Projects (antigo módulo os_projects) removido — unificado no ProjectHub/ProjectDetail
 const Inventory        = lazy(() => import('./components/Inventory'));
 const Users            = lazy(() => import('./components/Users'));
+const UsuariosGeral    = lazy(() => import('./components/UsuariosGeral'));
 const UserProfile      = lazy(() => import('./components/UserProfile'));
 const SectorManagement = lazy(() => import('./components/SectorManagement'));
 const Clients          = lazy(() => import('./components/Clients'));
@@ -438,6 +439,8 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageSettings') ? <SystemLogs /> : <Navigate to="/app" />} />
           <Route path="usuarios"
             element={hasPermission('canManageUsers') ? <Users /> : <Navigate to="/app" />} />
+          <Route path="usuarios-geral"
+            element={hasPermission('canManageUsers') ? <UsuariosGeral /> : <Navigate to="/app" />} />
           <Route path="candidatos"
             element={hasPermission('canManageUsers') ? <Candidatos /> : <Navigate to="/app" />} />
           <Route path="ranking" element={<TechnicianStats />} />

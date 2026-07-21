@@ -275,6 +275,24 @@ export interface UserProfile {
   // Sprint 48 — Nome completo
   nomeCompleto?: string; // Nome completo do colaborador (auto-preenchido do email se vazio)
 
+  // Dados de cadastro do colaborador (Dados Pessoais)
+  cargo?: string;
+  cpf?: string;
+  phone?: string;
+  pixKey?: string;
+  banco?: string;
+  conta?: string;
+  agencia?: string;
+
+  // Qualificação civil e admissional — usados em documentos formais (contratos, declarações)
+  dataAdmissao?: Timestamp | null;
+  nacionalidade?: string;
+  estadoCivil?: string;   // Solteiro(a), Casado(a), Divorciado(a), Viúvo(a), União Estável
+  profissao?: string;
+  rg?: string;
+  ctps?: string;
+  endereco?: string;      // endereço completo em linha única (rua, número, bairro, CEP)
+
   // Módulo Redefinição de Senha
   requiresPasswordChange?: boolean; // true = gestor definiu senha temporária, user deve alterar
   tempPasswordSetAt?: Timestamp;

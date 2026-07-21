@@ -47,6 +47,7 @@ import {
   FileSpreadsheet,
   UtensilsCrossed,
   SmilePlus,
+  Users2,
   FileUp,
   MonitorPlay,
   UserPlus,
@@ -416,6 +417,7 @@ const Layout: React.FC = () => {
       label: 'Gestão de Pessoas',
       visible: can('canManageUsers') || can('canViewAttendanceReports') || can('canManageSurveys') || true, // pesquisas visível p/ todos
       children: [
+        { to: '/app/usuarios-geral',     icon: Users2,       label: 'Gestão Geral de Usuários', visible: userProfile?.role === 'admin' },
         { to: '/app/usuarios',           icon: Users,        label: 'Equipe & RH',           visible: can('canManageUsers') || can('canResetUserPasswords'), badge: pendingPasswordResets > 0 ? pendingPasswordResets : undefined },
         { to: '/app/candidatos',         icon: UserPlus,     label: 'Banco de Candidatos',    visible: can('canManageUsers') },
         { to: '/app/setores',            icon: Shield,       label: 'Cargos & Acessos',       visible: can('canManageSectors') },

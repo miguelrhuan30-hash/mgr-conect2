@@ -4,6 +4,7 @@
  * Novas abas: Conhecimento (certificações NR com badges) + Vistorias (supervisão de campo)
  */
 import React, { useEffect, useState, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   collection, query, orderBy, onSnapshot, updateDoc, doc, getDocs,
   addDoc, deleteDoc, serverTimestamp, QuerySnapshot, DocumentData, Timestamp,
@@ -176,6 +177,15 @@ const EmployeeDetailPanel: React.FC<{
   const [conta, setConta] = useState((user as any).conta || '');
   const [agencia, setAgencia] = useState((user as any).agencia || '');
 
+  // ── Qualificação Civil / Admissão ──
+  const [dataAdmissao, setDataAdmissao] = useState(user.dataAdmissao?.toDate?.().toISOString().slice(0, 10) || '');
+  const [nacionalidade, setNacionalidade] = useState(user.nacionalidade || 'Brasileiro(a)');
+  const [estadoCivil, setEstadoCivil] = useState(user.estadoCivil || '');
+  const [profissao, setProfissao] = useState(user.profissao || '');
+  const [rg, setRg] = useState(user.rg || '');
+  const [ctps, setCtps] = useState(user.ctps || '');
+  const [endereco, setEndereco] = useState(user.endereco || '');
+
   // ── Jornada ──
   const [scheduleType, setScheduleType] = useState<'FIXED'|'FLEXIBLE'>(user.scheduleType || 'FIXED');
   const [schedule, setSchedule] = useState({ start: user.workSchedule?.startTime || '08:00', lunch: user.workSchedule?.lunchDuration || 60, end: user.workSchedule?.endTime || '17:00', dailyWorkMinutes: user.workSchedule?.dailyWorkMinutes || 0 });
@@ -261,6 +271,9 @@ const EmployeeDetailPanel: React.FC<{
       await updateDoc(doc(db, CollectionName.USERS, user.uid), {
         nomeCompleto, cargo: cargo || null, cpf: cpf || null, phone: phone || null,
         pixKey: pix || null, banco: banco || null, conta: conta || null, agencia: agencia || null,
+        dataAdmissao: dataAdmissao ? Timestamp.fromDate(new Date(dataAdmissao + 'T12:00:00')) : null,
+        nacionalidade: nacionalidade || null, estadoCivil: estadoCivil || null,
+        profissao: profissao || null, rg: rg || null, ctps: ctps || null, endereco: endereco || null,
         scheduleType, workSchedule: ws, allowedLocationIds: editLocations,
         hourlyRate, overtimeRules: { rate50, rate100 }, timeBankBalance,
         sectorId, sectorName, permissions, hasCustomPermissions: true,
@@ -550,6 +563,37 @@ const EmployeeDetailPanel: React.FC<{
               </div>
               <div><label className="text-xs font-bold text-gray-600 block mb-1">CPF</label>
                 <input value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-2 border-t border-gray-100">Qualificação Civil &amp; Admissão</h4>
+              <p className="text-[10px] text-gray-400 -mt-2">Usados em contratos, declarações e demais documentos formais.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs font-bold text-gray-600 block mb-1">Data de Admissão</label>
+                  <input type="date" value={dataAdmissao} onChange={e => setDataAdmissao(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+                <div><label className="text-xs font-bold text-gray-600 block mb-1">Nacionalidade</label>
+                  <input value={nacionalidade} onChange={e => setNacionalidade(e.target.value)} placeholder="Brasileiro(a)" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs font-bold text-gray-600 block mb-1">Estado Civil</label>
+                  <select value={estadoCivil} onChange={e => setEstadoCivil(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+                    <option value="">Selecione...</option>
+                    <option value="Solteiro(a)">Solteiro(a)</option>
+                    <option value="Casado(a)">Casado(a)</option>
+                    <option value="Divorciado(a)">Divorciado(a)</option>
+                    <option value="Viúvo(a)">Viúvo(a)</option>
+                    <option value="União Estável">União Estável</option>
+                  </select></div>
+                <div><label className="text-xs font-bold text-gray-600 block mb-1">Profissão</label>
+                  <input value={profissao} onChange={e => setProfissao(e.target.value)} placeholder="Ex: Montador" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs font-bold text-gray-600 block mb-1">RG</label>
+                  <input value={rg} onChange={e => setRg(e.target.value)} placeholder="00.000.000-0" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+                <div><label className="text-xs font-bold text-gray-600 block mb-1">CTPS</label>
+                  <input value={ctps} onChange={e => setCtps(e.target.value)} placeholder="Nº / Série" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+              </div>
+              <div><label className="text-xs font-bold text-gray-600 block mb-1">Endereço Completo</label>
+                <input value={endereco} onChange={e => setEndereco(e.target.value)} placeholder="Rua, número, bairro, CEP" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+
               <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-2 border-t border-gray-100">Dados Bancários</h4>
               <div><label className="text-xs font-bold text-gray-600 block mb-1">Chave PIX</label>
                 <input value={pix} onChange={e => setPix(e.target.value)} placeholder="CPF, e-mail ou telefone" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
@@ -1354,6 +1398,8 @@ const NewEmployeeModal: React.FC<{
    ═══════════════════════════════════════════════════════════════════════════ */
 const Users: React.FC = () => {
   const { userProfile } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [locations, setLocations] = useState<WorkLocation[]>([]);
@@ -1377,7 +1423,15 @@ const Users: React.FC = () => {
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
     const unsub1 = onSnapshot(query(collection(db, CollectionName.USERS), orderBy('displayName', 'asc')), (snap: QuerySnapshot<DocumentData>) => {
-      setUsers(snap.docs.map(d => ({ ...(d.data() as any), uid: d.id } as UserProfile)));
+      // Usuários com role 'cliente' (acesso ao Portal do Cliente) têm cadastro,
+      // edição e natureza completamente diferentes dos colaboradores internos —
+      // são geridos em Gestão de Clientes → aba Usuários (ClientPortalUsers.tsx),
+      // não aqui. Exclui pra não misturar as duas listas nem abrir o painel de
+      // colaborador (EmployeeDetailPanel) num registro de cliente.
+      const colaboradores = snap.docs
+        .map(d => ({ ...(d.data() as any), uid: d.id } as UserProfile))
+        .filter(u => u.role !== 'cliente');
+      setUsers(colaboradores);
       setLoading(false);
     });
     getDocs(collection(db, CollectionName.WORK_LOCATIONS)).then(snap => setLocations(snap.docs.map(d => ({id: d.id, ...(d.data() as any)} as WorkLocation)))).catch(() => {});
@@ -1388,6 +1442,16 @@ const Users: React.FC = () => {
     const unsub5 = onSnapshot(collection(db, CollectionName.SUPERVISION_VISTORIAS), snap => setVistorias(snap.docs.map(d => ({id: d.id, ...(d.data() as any)} as VistoriaSupervisao))));
     return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
   }, [isAdmin]);
+
+  // Deep-link vindo de "Gestão Geral de Usuários" (/app/usuarios-geral) — abre
+  // direto o painel do colaborador indicado, uma única vez por navegação.
+  useEffect(() => {
+    const openUid = (location.state as any)?.openUid;
+    if (!openUid || users.length === 0) return;
+    const target = users.find(u => u.uid === openUid);
+    if (target) setSelectedUser(target);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [users, location.state]);
 
   // Pedidos de redefinição de senha pendentes
   useEffect(() => {
