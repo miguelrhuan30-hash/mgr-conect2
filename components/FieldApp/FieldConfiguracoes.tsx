@@ -28,6 +28,7 @@ interface Permissao {
   obrigatoria: boolean;
   status:      PermStatus;
   manual?:     boolean; // só pode ser liberada nas config do dispositivo
+  semChecagem?: boolean; // não existe permissão Android correspondente pra checar (ex. volume)
   check:       () => Promise<PermStatus>;
   solicitar:   () => Promise<PermStatus>;
 }
@@ -249,6 +250,10 @@ const buildPermissoes = (): Omit<Permissao, 'status'>[] => [
     icon: <Phone size={20} />,
     obrigatoria: false,
     manual: true,
+    // Não existe permissão Android pra "som" — é config de volume/canal
+    // de notificação, sem API de leitura booleana. Sempre fica "prompt";
+    // semChecagem faz a UI não tratar isso como pendência real.
+    semChecagem: true,
     check: async () => 'prompt',
     solicitar: async () => {
       abrirConfigDispositivo();
@@ -277,7 +282,18 @@ const buildPermissoes = (): Omit<Permissao, 'status'>[] => [
 ];
 
 /* ─── Badge de status ─────────────────────────────────────────────────────── */
-function StatusBadge({ status }: { status: PermStatus }) {
+function StatusBadge({ status, semChecagem }: { status: PermStatus; semChecagem?: boolean }) {
+  // Itens sem checagem real (ex. "Sons e Toque" — não existe permissão
+  // Android pra isso, é config de volume/canal de notificação) sempre
+  // caem no ramo "prompt". Mostrar "Pendente" ali sugere um problema que
+  // não existe — troca por um selo neutro, sem alarme.
+  if (semChecagem && status === 'prompt') {
+    return (
+      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-700/50 text-gray-400 border border-gray-700 text-[10px] font-bold">
+        Ajustável nas configurações
+      </span>
+    );
+  }
   if (status === 'checking') {
     return (
       <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-700 text-gray-400 text-[10px] font-bold">
@@ -560,7 +576,7 @@ function PermCard({
           </p>
 
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <StatusBadge status={perm.status} />
+            <StatusBadge status={perm.status} semChecagem={perm.semChecagem} />
             <ActionBtn
               status={perm.status}
               manual={perm.manual}
