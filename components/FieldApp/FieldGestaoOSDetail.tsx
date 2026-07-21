@@ -369,7 +369,7 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
                       ? <img src={a.url} alt={a.nome} className="w-full h-full object-cover" />
                       : <FileText size={20} className="text-gray-500" />
                     }
-                    <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] px-1 py-0.5 truncate">{a.nome}</span>
+                    <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] px-1 py-0.5 truncate">{a.descricao || a.nome}</span>
                   </button>
                 ))}
               </div>

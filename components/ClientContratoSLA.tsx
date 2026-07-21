@@ -21,6 +21,7 @@ import { ptBR } from 'date-fns/locale';
 interface Props {
   clientId: string;
   clientName?: string;
+  readOnly?: boolean;
 }
 
 const PRIORIDADES: PrioridadeSLA[] = ['P1', 'P2', 'P3', 'P4'];
@@ -37,7 +38,7 @@ const STATUS_PILL: Record<ContratoSLA['status'], string> = {
 };
 const PRAZO_PADRAO: Record<PrioridadeSLA, number> = { P1: 2, P2: 4, P3: 24, P4: 48 };
 
-const ClientContratoSLA: React.FC<Props> = ({ clientId, clientName }) => {
+const ClientContratoSLA: React.FC<Props> = ({ clientId, clientName, readOnly }) => {
   const { currentUser } = useAuth();
   const [contrato, setContrato] = useState<ContratoSLA | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,7 +117,7 @@ const ClientContratoSLA: React.FC<Props> = ({ clientId, clientName }) => {
           <FileSignature size={16} className="text-brand-600" />
           Contrato SLA de {clientName || 'Cliente'}
         </h3>
-        {!editando && (
+        {!editando && !readOnly && (
           <button onClick={abrirEdicao}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-700">
             {contrato ? <><Pencil size={12} /> Editar</> : <><Plus size={12} /> Criar Contrato SLA</>}

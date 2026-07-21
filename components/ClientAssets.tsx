@@ -20,6 +20,7 @@ import { ptBR } from 'date-fns/locale';
 interface ClientAssetsProps {
     clientId: string;
     clientName?: string;
+    readOnly?: boolean;
 }
 
 const ASSET_TIPOS = [
@@ -33,7 +34,7 @@ const STATUS_PILL: Record<string, string> = {
     manutencao:  'bg-amber-50 border-amber-200 text-amber-700',
 };
 
-const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName }) => {
+const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName, readOnly }) => {
     const { currentUser, userProfile } = useAuth();
     const [assets, setAssets] = useState<ClientAsset[]>([]);
     const [osHistory, setOsHistory] = useState<Task[]>([]);
@@ -70,9 +71,10 @@ const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName }) => 
         });
     }, [clientId]);
 
-    // Load OS history for the client
+    // Load OS history for the client (staff only — cliente do Portal não tem
+    // permissão de ler `tasks` e não deve ver notas/dados internos de O.S.)
     useEffect(() => {
-        if (!clientId) return;
+        if (!clientId || readOnly) return;
         const q = query(
             collection(db, CollectionName.TASKS),
             where('clientId', '==', clientId),
@@ -120,7 +122,7 @@ const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName }) => 
     };
 
     const osForAsset = (assetId: string) =>
-        osHistory.filter(t => t.assetId === assetId);
+        osHistory.filter(t => t.ativoId === assetId);
 
     if (loading) return (
         <div className="flex items-center justify-center py-10 text-brand-600">
@@ -135,14 +137,16 @@ const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName }) => 
                     <Thermometer size={16} className="text-brand-600" />
                     Ativos de {clientName || 'Cliente'} ({assets.length})
                 </h3>
-                <button onClick={() => setShowAdd(!showAdd)}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-700">
-                    <Plus size={12} /> Novo Ativo
-                </button>
+                {!readOnly && (
+                    <button onClick={() => setShowAdd(!showAdd)}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-700">
+                        <Plus size={12} /> Novo Ativo
+                    </button>
+                )}
             </div>
 
             {/* Add form */}
-            {showAdd && (
+            {!readOnly && showAdd && (
                 <form onSubmit={handleAdd} className="border-2 border-dashed border-brand-200 rounded-xl p-4 bg-brand-50/20 space-y-3">
                     <div className="flex items-center justify-between mb-1">
                         <p className="text-xs font-bold text-brand-700">Cadastrar Ativo</p>
@@ -251,9 +255,11 @@ const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName }) => 
                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${STATUS_PILL[asset.status || 'ativo']}`}>
                                     {asset.status || 'ativo'}
                                 </span>
-                                <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                                    {assetOS.length} O.S.
-                                </span>
+                                {!readOnly && (
+                                    <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                                        {assetOS.length} O.S.
+                                    </span>
+                                )}
                                 {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
                             </div>
                         </button>
@@ -277,7 +283,8 @@ const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName }) => 
                                     </div>
                                 )}
 
-                                {/* OS History */}
+                                {/* OS History — só equipe interna */}
+                                {!readOnly && (
                                 <div>
                                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                         <Wrench size={10} /> Histórico de O.S. ({assetOS.length})
@@ -311,6 +318,7 @@ const ClientAssets: React.FC<ClientAssetsProps> = ({ clientId, clientName }) => 
                                         </div>
                                     )}
                                 </div>
+                                )}
                             </div>
                         )}
                     </div>

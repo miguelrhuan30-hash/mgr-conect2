@@ -4,19 +4,20 @@
  * Tabs: Pendentes | Em Andamento | Agendadas | Concluídas
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { CollectionName } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, Wrench, User,
   CalendarDays, ChevronRight, ChevronLeft, Plus, Shield,
-  MapPinned, Navigation, Gauge, Loader2,
+  MapPinned, Navigation, Gauge, Loader2, MessageSquareText,
 } from 'lucide-react';
 import { OSField } from './FieldOS';
 import FieldGestaoOSDetail from './FieldGestaoOSDetail';
 import FieldOSPendenciaModal from './FieldOSPendenciaModal';
 import LocationTimelineMap from '../LocationTimelineMap';
+import ChamadosSLA from '../ChamadosSLA';
 import { getSlaBadgeInfo } from '../../services/osService';
 import { buscarPingsDoDia, calcularKmPercorrido, LocationPing } from '../../services/trackerService';
 
@@ -47,7 +48,7 @@ const toKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const isSameDay = (a: Date, b: Date) => toKey(a) === toKey(b);
 
-type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas' | 'calendario' | 'rastreio';
+type TabGestao = 'pendentes' | 'andamento' | 'agendadas' | 'concluidas' | 'calendario' | 'rastreio' | 'chamados';
 
 const fmtHoraPing = (p: LocationPing) => {
   const d = p.timestamp?.toDate?.();
@@ -60,8 +61,12 @@ export default function FieldGestaoOS() {
                   || !!(userProfile?.permissions?.canManageProjects)
                   || !!(userProfile?.permissions?.canEditTasks && userProfile?.permissions?.canDeleteTasks);
   const canCreate = !!(userProfile?.permissions?.canCreateTasks);
+  const isChamadoAdmin = ['admin', 'gestor', 'manager', 'developer'].includes(userProfile?.role || '')
+                  || !!(userProfile?.permissions?.canManageChamados)
+                  || !!(userProfile?.permissions?.canManageProjects);
 
   const [allOS, setAllOS]           = useState<OSField[]>([]);
+  const [chamadosAbertos, setChamadosAbertos] = useState(0);
   const [loading, setLoading]       = useState(true);
   const [tab, setTab]               = useState<TabGestao>('pendentes');
   const [selectedOS, setSelectedOS] = useState<OSField | null>(null);
@@ -77,6 +82,12 @@ export default function FieldGestaoOS() {
   const [rastreioData, setRastreioData] = useState(() => toKey(new Date()));
   const [rastreioPings, setRastreioPings] = useState<LocationPing[] | null>(null);
   const [rastreioLoading, setRastreioLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isChamadoAdmin) return;
+    const q = query(collection(db, CollectionName.CHAMADOS_SLA), where('status', 'in', ['aberto', 'em_triagem']));
+    return onSnapshot(q, snap => setChamadosAbertos(snap.size), () => {});
+  }, [isChamadoAdmin]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -282,6 +293,7 @@ export default function FieldGestaoOS() {
     { id: 'andamento',  label: 'Em Campo',   count: andamento.length  },
     { id: 'agendadas',  label: 'Agendadas',  count: agendadas.length  },
     { id: 'concluidas', label: 'Concluídas', count: concluidas.length },
+    ...(isChamadoAdmin ? [{ id: 'chamados' as TabGestao, label: 'Chamados', count: chamadosAbertos, icon: <MessageSquareText size={11} /> }] : []),
     { id: 'rastreio',   label: 'Rastreio',   count: 0, icon: <MapPinned size={11} /> },
   ];
 
@@ -497,6 +509,10 @@ export default function FieldGestaoOS() {
           {!rastreioPings && !rastreioLoading && (
             <p className="text-center text-xs text-gray-600 py-4">Selecione um colaborador e uma data, depois toque em Buscar.</p>
           )}
+        </div>
+      ) : tab === 'chamados' ? (
+        <div className="flex-1 overflow-y-auto">
+          <ChamadosSLA variant="dark" embedded />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">

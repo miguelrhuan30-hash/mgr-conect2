@@ -3,19 +3,11 @@ import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp, 
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus, BacklogTarefa, ProjectDocument, OSArquivoApoio, ContratoSLA, PrioridadeSLA } from '../types';
-import { gerarNumeroOS } from '../services/osService';
+import { gerarNumeroOS, tipoArquivoFromName } from '../services/osService';
 import { registrarAtividade } from '../services/activityFeedService';
 import { useAuth } from '../contexts/AuthContext';
 import { X, Plus, Trash2, FileText, Calendar, User, Users, Building, Briefcase, ListTodo, Save, Loader2, Wrench, Camera, AlignLeft, MapPin, Clock, UserPlus, ExternalLink, AlertTriangle, Paperclip, Video, Image as ImageIcon, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-function tipoArquivoFromName(nome: string): OSArquivoApoio['tipo'] {
-  const ext = nome.split('.').pop()?.toLowerCase() || '';
-  if (ext === 'pdf') return 'pdf';
-  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return 'imagem';
-  if (['mp4', 'webm', 'mov'].includes(ext)) return 'video';
-  return 'outro';
-}
 
 interface OSCreationModalProps {
   isOpen: boolean;
@@ -28,6 +20,10 @@ interface OSCreationModalProps {
     prioridadeSla?: PrioridadeSLA;
     title?: string;
     description?: string;
+    chamadoId?: string;
+    ativoId?: string;
+    ativoNome?: string;
+    evidencias?: string[]; // fotos já tiradas na abertura do chamado
   };
 }
 
@@ -58,7 +54,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
 
   // Informações Adicionais — instrução + arquivos de apoio (novos ou já do projeto)
   const [infoTexto, setInfoTexto] = useState('');
-  const [novosArquivos, setNovosArquivos] = useState<File[]>([]);
+  const [novosArquivos, setNovosArquivos] = useState<{ file: File; descricao: string }[]>([]);
   const [projectDocs, setProjectDocs] = useState<ProjectDocument[]>([]);
   const [docsSelecionados, setDocsSelecionados] = useState<Set<string>>(new Set());
   const infoArquivoRef = useRef<HTMLInputElement>(null);
@@ -116,6 +112,10 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [ativoId,   setAtivoId]   = useState('');
   const [ativoNome, setAtivoNome] = useState('');
   const [ativos,    setAtivos]    = useState<{ id: string; nome: string }[]>([]);
+  // Ativos em camada reversa — maquinário específico que atende o ativo selecionado
+  const [maquinarioId,   setMaquinarioId]   = useState('');
+  const [maquinarioNome, setMaquinarioNome] = useState('');
+  const [maquinarios,    setMaquinarios]    = useState<{ id: string; nome: string }[]>([]);
 
   // Data Source State
   const [clients, setClients] = useState<any[]>([]);
@@ -160,11 +160,32 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
 
   // Sprint 44 — load ativos when client changes
   useEffect(() => {
-    if (!clientId) { setAtivos([]); setAtivoId(''); return; }
+    if (!clientId) { setAtivos([]); setAtivoId(''); setAtivoNome(''); return; }
     getDocs(query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientId)))
-      .then(snap => setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
+      .then(snap => {
+        setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id })));
+        // Se a O.S. nasce de um chamado com ativo já apontado pelo cliente, herda —
+        // mas continua editável (o cliente pode ter errado o equipamento).
+        if (prefill && prefill.clientId === clientId && prefill.ativoId) {
+          setAtivoId(prefill.ativoId);
+          setAtivoNome(prefill.ativoNome || '');
+        } else {
+          setAtivoId('');
+          setAtivoNome('');
+        }
+      })
       .catch(() => setAtivos([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
+
+  // Ativos em camada reversa — maquinários que atendem o ativo final escolhido
+  useEffect(() => {
+    setMaquinarioId(''); setMaquinarioNome('');
+    if (!ativoId) { setMaquinarios([]); return; }
+    getDocs(query(collection(db, CollectionName.MAQUINARIOS), where('ativosFinaisAtendidos', 'array-contains', ativoId)))
+      .then(snap => setMaquinarios(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
+      .catch(() => setMaquinarios([]));
+  }, [ativoId]);
 
   // Contrato(s) SLA ativo(s) do cliente selecionado — um cliente pode ter mais de um.
   // Trocar de cliente reseta o tipo de O.S. e as seleções de projeto/contrato, já
@@ -236,9 +257,11 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
 
   const addNovosArquivos = (files: FileList | null) => {
     if (!files?.length) return;
-    setNovosArquivos(prev => [...prev, ...Array.from(files)]);
+    setNovosArquivos(prev => [...prev, ...Array.from(files).map(file => ({ file, descricao: '' }))]);
   };
   const removerNovoArquivo = (i: number) => setNovosArquivos(prev => prev.filter((_, idx) => idx !== i));
+  const setDescricaoNovoArquivo = (i: number, descricao: string) =>
+    setNovosArquivos(prev => prev.map((a, idx) => idx === i ? { ...a, descricao } : a));
 
   // Sprint 43 — buscar tipos
   const buscarTipos = async (val: string) => {
@@ -381,6 +404,8 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         tipoServico: tipoServico || null,
         ativoId: ativoId || null,
         ativoNome: ativoNome || null,
+        ...(maquinarioId ? { maquinarioId } : {}),
+        ...(prefill?.chamadoId ? { chamadoId: prefill.chamadoId } : {}),
         ponto: { permiteEntrada: pontoEntrada, permiteSaida: pontoSaida },
         ...((infoTexto.trim() || docsSelecionados.size > 0) ? {
           informacoesAdicionais: {
@@ -389,6 +414,9 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
               url: d.url, nome: d.nome, tipo: d.tipo, projectDocId: d.id,
             } as OSArquivoApoio)),
           },
+        } : {}),
+        ...(prefill?.evidencias?.length ? {
+          execution: { evidencias: prefill.evidencias },
         } : {}),
         createdAt: serverTimestamp()
       };
@@ -410,12 +438,12 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         try {
           const nomeAutor = (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor';
           const uploads: OSArquivoApoio[] = [];
-          for (const file of novosArquivos) {
+          for (const { file, descricao } of novosArquivos) {
             const path = `os_evidencias/${ref.id}/informacoes-adicionais/${Date.now()}_${file.name}`;
             const snap = await uploadBytes(storageRef(storage, path), file);
             const url = await getDownloadURL(snap.ref);
             const tipo = tipoArquivoFromName(file.name);
-            uploads.push({ url, nome: file.name, tipo });
+            uploads.push({ url, nome: file.name, tipo, ...(descricao.trim() ? { descricao: descricao.trim() } : {}) });
 
             if (projectId) {
               await addDoc(collection(db, CollectionName.PROJECT_DOCS), {
@@ -901,6 +929,21 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                   </div>
                 )}
 
+                {/* Maquinário específico dentro do ativo — normalmente só se sabe durante o atendimento,
+                    mas fica disponível pra selecionar já na criação quando o técnico/gestor já sabe. */}
+                {ativoId && maquinarios.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Maquinário específico (opcional)</label>
+                    <select value={maquinarioId} onChange={e => {
+                      setMaquinarioId(e.target.value);
+                      setMaquinarioNome(maquinarios.find(m => m.id === e.target.value)?.nome || '');
+                    }} className="w-full rounded-lg border-gray-300 bg-white text-gray-900 text-sm">
+                      <option value="">Ainda não identificado</option>
+                      {maquinarios.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                    </select>
+                  </div>
+                )}
+
                 {/* Sprint 41 — Ponto */}
                 <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 space-y-2">
                   <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Registro de Ponto em Campo</p>
@@ -937,26 +980,34 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                         onClick={() => infoArquivoRef.current?.click()}
                         className="flex items-center gap-1.5 text-xs font-bold text-brand-600 bg-brand-50 border border-brand-100 rounded-lg px-3 py-1.5 hover:bg-brand-100"
                       >
-                        <Plus className="w-3.5 h-3.5" /> Anexar foto, vídeo ou arquivo
+                        <Plus className="w-3.5 h-3.5" /> Anexar foto, vídeo ou documento
                       </button>
                       <input
-                        ref={infoArquivoRef} type="file" multiple accept="image/*,video/*,.pdf" className="hidden"
+                        ref={infoArquivoRef} type="file" multiple
+                        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg"
+                        className="hidden"
                         onChange={e => { addNovosArquivos(e.target.files); e.target.value = ''; }}
                       />
                       {novosArquivos.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {novosArquivos.map((f, i) => (
-                            <span key={i} className="flex items-center gap-1.5 text-xs bg-white border border-gray-200 rounded-lg px-2 py-1">
-                              {f.type.startsWith('video') ? <Video className="w-3 h-3 text-gray-400" /> : f.type.startsWith('image') ? <ImageIcon className="w-3 h-3 text-gray-400" /> : <FileText className="w-3 h-3 text-gray-400" />}
-                              <span className="max-w-[140px] truncate">{f.name}</span>
-                              <button type="button" onClick={() => removerNovoArquivo(i)} className="text-gray-400 hover:text-red-500">
-                                <X className="w-3 h-3" />
+                        <div className="space-y-1.5 mt-2">
+                          {novosArquivos.map((a, i) => (
+                            <div key={i} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2 py-1.5">
+                              {a.file.type.startsWith('video') ? <Video className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> : a.file.type.startsWith('image') ? <ImageIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> : <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                              <span className="text-xs max-w-[110px] truncate flex-shrink-0">{a.file.name}</span>
+                              <input
+                                value={a.descricao}
+                                onChange={e => setDescricaoNovoArquivo(i, e.target.value)}
+                                placeholder="O que é isso? Ex: Planta baixa, foto do problema..."
+                                className="flex-1 min-w-0 text-xs border-0 border-l border-gray-200 pl-2 focus:outline-none focus:ring-0 text-gray-700 placeholder-gray-400"
+                              />
+                              <button type="button" onClick={() => removerNovoArquivo(i)} className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                                <X className="w-3.5 h-3.5" />
                               </button>
-                            </span>
+                            </div>
                           ))}
                         </div>
                       )}
-                      <p className="text-[10px] text-gray-400 mt-1">Novos arquivos ficam salvos no histórico de documentos do projeto.</p>
+                      <p className="text-[10px] text-gray-400 mt-1">Fotos, vídeos e documentos (planta, planejamento de execução...) ficam disponíveis pro técnico como escopo da O.S.</p>
                     </div>
 
                     {/* Selecionar arquivos já existentes do projeto */}

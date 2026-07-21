@@ -134,13 +134,13 @@ const VolumeWidget: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
         const d = t.createdAt instanceof Timestamp ? t.createdAt.toDate() : null;
         return d && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.status === 'completed';
     }).length;
-    // Recall rate: same assetId, < 30 days
+    // Recall rate: same ativoId, < 30 days
     const byAsset: Record<string, Date[]> = {};
     for (const t of tasks) {
-        if (!t.assetId || !t.createdAt) continue;
+        if (!t.ativoId || !t.createdAt) continue;
         const d = (t.createdAt as Timestamp).toDate();
-        if (!byAsset[t.assetId]) byAsset[t.assetId] = [];
-        byAsset[t.assetId].push(d);
+        if (!byAsset[t.ativoId]) byAsset[t.ativoId] = [];
+        byAsset[t.ativoId].push(d);
     }
     let recallCount = 0;
     for (const dates of Object.values(byAsset)) {

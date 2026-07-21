@@ -258,24 +258,49 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    function isChamadoAdmin() {
+      // .get('permissions', {}) defende contra usuários 'cliente' que não
+      // têm esse campo — chamar .get() num valor null derrubaria a regra
+      // inteira (uma exceção numa sub-expressão do OR nega a requisição toda).
+      return isManager() ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageChamados', false) == true ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageProjects', false) == true;
+    }
+
     // ── Contratos de Manutenção SLA (Fase 1 — só equipe interna) ──
     match /contratos_sla/{contratoId} {
       // Equipe interna lê tudo; cliente do Portal só lê o(s) contrato(s) do próprio clientId.
       allow read: if isAuthenticated() && (!isCliente() ||
         resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId);
-      allow create, update: if isAuthenticated() && isManager();
+      allow create, update: if isAuthenticated() && isChamadoAdmin();
       allow delete: if isAdmin();
     }
 
     // ── Chamados de Contrato SLA (Portal do Cliente) ──
     match /chamados_sla/{chamadoId} {
-      allow read: if isAuthenticated() && (isManager() ||
+      allow read: if isAuthenticated() && (isChamadoAdmin() ||
         (isCliente() && resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId));
       allow create: if isAuthenticated() && isCliente()
         && request.resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId
-        && request.resource.data.criadoPorUid == request.auth.uid;
-      allow update: if isAuthenticated() && isManager();
+        && request.resource.data.criadoPorUid == request.auth.uid
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('podeAbrirChamado', true) != false;
+      allow update: if isAuthenticated() && isChamadoAdmin();
       allow delete: if isAdmin();
+    }
+
+    // ── Ativos de Cliente (equipamentos) — leitura ampla pra equipe interna;
+    //    cliente do Portal só lê os do próprio clientId, se autorizado ──
+    match /client_assets/{assetId} {
+      allow read: if isAuthenticated() && (!isCliente() ||
+        (resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId
+         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('podeVerAtivos', true) != false));
+      allow write: if isAuthenticated() && !isCliente();
+    }
+
+    // ── Maquinários (peças/equipamentos que atendem um ou mais ativos finais) ──
+    match /maquinarios/{maquinarioId} {
+      allow read: if isAuthenticated() && !isCliente();
+      allow write: if isAuthenticated() && !isCliente();
     }
 
     // ══════════════════════════════════════════════════════════════════════

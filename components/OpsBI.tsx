@@ -244,7 +244,7 @@ const OpsBI: React.FC = () => {
 
     // Reincidência: ativos com 2+ OS no último mês
     const assetOSCount: Record<string, number> = {};
-    tasks.forEach(t => { if (t.assetId) assetOSCount[t.assetId] = (assetOSCount[t.assetId] || 0) + 1; });
+    tasks.forEach(t => { if (t.ativoId) assetOSCount[t.ativoId] = (assetOSCount[t.ativoId] || 0) + 1; });
     const recallCount = Object.values(assetOSCount).filter(c => c >= 2).length;
 
     // Status distribution

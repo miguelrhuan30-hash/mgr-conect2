@@ -194,6 +194,8 @@ const FieldAlmoco     = lazy(() => import('./components/FieldApp/FieldAlmoco'));
 const PortalLayout      = lazy(() => import('./components/Portal/PortalLayout'));
 const PortalChamados     = lazy(() => import('./components/Portal/PortalChamados'));
 const PortalNovoChamado = lazy(() => import('./components/Portal/PortalNovoChamado'));
+const PortalContratoSLA = lazy(() => import('./components/Portal/PortalContratoSLA'));
+const PortalAtivos      = lazy(() => import('./components/Portal/PortalAtivos'));
 
 // ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
@@ -338,13 +340,16 @@ const AppContent: React.FC = () => {
       <Routes>
 
         {/* ── ROTAS PÚBLICAS ── */}
-        {/* No APK nativo: / vai direto para /campo (logado) ou /login (deslogado) */}
+        {/* No APK nativo: / vai direto para /campo (logado) ou /login (deslogado).
+            Cliente do Portal vai direto pra /portal — sem passar por /campo, que
+            nunca chegaria a montar o chrome de técnico pra esse role mesmo assim
+            (ver guard da própria rota /campo), mas evita o hop redundante. */}
         <Route
           path="/"
           element={
             isNativeApp()
               ? currentUser
-                ? <Navigate to="/campo" replace />
+                ? (userProfile?.role === 'cliente' ? <Navigate to="/portal" replace /> : <Navigate to="/campo" replace />)
                 : <Navigate to="/login" replace />
               : <LandingPage />
           }
@@ -462,7 +467,7 @@ const AppContent: React.FC = () => {
             element={hasPermission('canManageProjects') ? <Pipeline /> : <Navigate to="/app" />} />
 
           <Route path="chamados-sla"
-            element={hasPermission('canManageProjects') ? <ChamadosSLA /> : <Navigate to="/app" />} />
+            element={(hasPermission('canManageChamados') || hasPermission('canManageProjects')) ? <ChamadosSLA /> : <Navigate to="/app" />} />
 
           {/* ════════════════════════════════════════
               SPRINT 32 — Execução de Campo
@@ -628,6 +633,8 @@ const AppContent: React.FC = () => {
         >
           <Route index element={<PortalChamados />} />
           <Route path="novo" element={<PortalNovoChamado />} />
+          <Route path="contrato" element={<PortalContratoSLA />} />
+          <Route path="ativos" element={<PortalAtivos />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" />} />

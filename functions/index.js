@@ -7,8 +7,10 @@ admin.initializeApp();
 
 /**
  * adminResetUserPassword
- * Callable Cloud Function — Redefine a senha de um colaborador.
- * Requer: canResetUserPasswords no perfil do chamador, OU role === 'admin'.
+ * Callable Cloud Function — Redefine a senha de um colaborador OU de um
+ * usuário do Portal do Cliente (role 'cliente').
+ * Requer: canResetUserPasswords no perfil do chamador (alvo colaborador),
+ * OU canManageClients (alvo cliente), OU role === 'admin' (qualquer alvo).
  */
 exports.adminResetUserPassword = onCall(
   { region: 'southamerica-east1', enforceAppCheck: false },
@@ -27,12 +29,16 @@ exports.adminResetUserPassword = onCall(
       throw new HttpsError('invalid-argument', 'A senha temporária deve ter pelo menos 8 caracteres.');
     }
 
-    // Busca o perfil do chamador no Firestore para verificar permissão
+    // Busca o perfil do chamador e do alvo no Firestore para verificar permissão
     const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
     const callerData = callerDoc.data();
+    const targetDoc = await admin.firestore().doc(`users/${targetUid}`).get();
+    const isTargetCliente = targetDoc.data()?.role === 'cliente';
 
     const isAdmin = callerData?.role === 'admin';
-    const hasPermission = callerData?.permissions?.canResetUserPasswords === true;
+    const hasPermission = isTargetCliente
+      ? callerData?.permissions?.canManageClients === true
+      : callerData?.permissions?.canResetUserPasswords === true;
 
     if (!isAdmin && !hasPermission) {
       throw new HttpsError('permission-denied', 'Sem permissão para redefinir senhas.');
@@ -201,10 +207,12 @@ exports.adminCreateClientUser = onCall(
 
 /**
  * adminSetUserActive
- * Callable Cloud Function — Ativa/desativa (desliga) um colaborador.
+ * Callable Cloud Function — Ativa/desativa (desliga) um colaborador OU um
+ * usuário do Portal do Cliente (role 'cliente').
  * Ao desativar: desabilita o login no Firebase Auth (perde acesso), mas mantém todo o
  * histórico no Firestore intacto (documentos, ocorrências, O.S., ponto, etc.).
- * Requer: canManageUsers no perfil do chamador, OU role === 'admin'.
+ * Requer: canManageUsers no perfil do chamador (alvo colaborador), OU
+ * canManageClients (alvo cliente), OU role === 'admin' (qualquer alvo).
  */
 exports.adminSetUserActive = onCall(
   { region: 'southamerica-east1', enforceAppCheck: false },
@@ -222,18 +230,22 @@ exports.adminSetUserActive = onCall(
     if (typeof ativo !== 'boolean') {
       throw new HttpsError('invalid-argument', 'Parâmetro ativo inválido.');
     }
+    if (targetUid === callerId) {
+      throw new HttpsError('failed-precondition', 'Você não pode desativar sua própria conta.');
+    }
 
     const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
     const callerData = callerDoc.data();
+    const targetDoc = await admin.firestore().doc(`users/${targetUid}`).get();
+    const isTargetCliente = targetDoc.data()?.role === 'cliente';
 
     const isAdmin = callerData?.role === 'admin';
-    const hasPermission = callerData?.permissions?.canManageUsers === true;
+    const hasPermission = isTargetCliente
+      ? callerData?.permissions?.canManageClients === true
+      : callerData?.permissions?.canManageUsers === true;
 
     if (!isAdmin && !hasPermission) {
-      throw new HttpsError('permission-denied', 'Sem permissão para ativar/desativar colaboradores.');
-    }
-    if (targetUid === callerId) {
-      throw new HttpsError('failed-precondition', 'Você não pode desativar sua própria conta.');
+      throw new HttpsError('permission-denied', 'Sem permissão para ativar/desativar este usuário.');
     }
 
     try {
@@ -257,6 +269,57 @@ exports.adminSetUserActive = onCall(
           desligadoPor: callerId,
           desligadoPorNome: callerData?.nomeCompleto || callerData?.displayName || null,
         };
+
+    await admin.firestore().doc(`users/${targetUid}`).update(updateData);
+
+    return { success: true };
+  }
+);
+
+/**
+ * adminUpdateClientAuthorizations
+ * Callable Cloud Function — Atualiza as autorizações de um usuário do Portal
+ * do Cliente (role 'cliente'): pode abrir chamado, pode ver contrato SLA,
+ * pode ver ativos. Requer: canManageClients no perfil do chamador, OU
+ * role === 'admin'.
+ */
+exports.adminUpdateClientAuthorizations = onCall(
+  { region: 'southamerica-east1', enforceAppCheck: false },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Você precisa estar autenticado.');
+    }
+
+    const callerId = request.auth.uid;
+    const { targetUid, podeAbrirChamado, podeVerContrato, podeVerAtivos } = request.data;
+
+    if (!targetUid || typeof targetUid !== 'string') {
+      throw new HttpsError('invalid-argument', 'targetUid inválido.');
+    }
+
+    const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
+    const callerData = callerDoc.data();
+    const targetDoc = await admin.firestore().doc(`users/${targetUid}`).get();
+
+    if (targetDoc.data()?.role !== 'cliente') {
+      throw new HttpsError('failed-precondition', 'Esta função só atualiza autorizações de usuários do Portal do Cliente.');
+    }
+
+    const isAdmin = callerData?.role === 'admin';
+    const hasPermission = callerData?.permissions?.canManageClients === true;
+
+    if (!isAdmin && !hasPermission) {
+      throw new HttpsError('permission-denied', 'Sem permissão para gerenciar autorizações de usuários de cliente.');
+    }
+
+    const updateData = {};
+    if (typeof podeAbrirChamado === 'boolean') updateData.podeAbrirChamado = podeAbrirChamado;
+    if (typeof podeVerContrato === 'boolean') updateData.podeVerContrato = podeVerContrato;
+    if (typeof podeVerAtivos === 'boolean') updateData.podeVerAtivos = podeVerAtivos;
+
+    if (Object.keys(updateData).length === 0) {
+      throw new HttpsError('invalid-argument', 'Nenhuma autorização informada.');
+    }
 
     await admin.firestore().doc(`users/${targetUid}`).update(updateData);
 
@@ -347,13 +410,23 @@ exports.notificarGestoresNovoChamadoSla = onDocumentCreated(
     const destinatarios = usersSnap.docs
       .filter(d => {
         const u = d.data() || {};
-        return ['admin', 'gestor', 'manager', 'developer'].includes(u.role || '') || u.permissions?.canManageProjects === true;
+        return ['admin', 'gestor', 'manager', 'developer'].includes(u.role || '')
+          || u.permissions?.canManageChamados === true
+          || u.permissions?.canManageProjects === true;
       })
       .map(d => d.id);
 
     if (destinatarios.length === 0) return;
 
     const prioridade = chamado.prioridade || 'P3';
+    const TIPO_LABEL = {
+      falha_parada: 'Falha / Parada de equipamento',
+      manutencao_preventiva: 'Manutenção preventiva',
+      duvida_tecnica: 'Dúvida técnica',
+      solicitacao_visita: 'Solicitação de visita',
+      outro: 'Outro',
+    };
+    const tipoLabel = TIPO_LABEL[chamado.tipo] || null;
     const batch = admin.firestore().batch();
     destinatarios.forEach(uid => {
       const ref = admin.firestore().collection('notifications').doc();
@@ -362,7 +435,7 @@ exports.notificarGestoresNovoChamadoSla = onDocumentCreated(
         tipo: 'chamado_sla_novo',
         canal: 'os',
         titulo: `📞 Novo chamado — ${prioridade}`,
-        corpo: `${chamado.clientName || 'Cliente'} abriu um chamado: ${chamado.titulo || ''}`,
+        corpo: `${chamado.clientName || 'Cliente'}${tipoLabel ? ` (${tipoLabel})` : ''} abriu um chamado: ${chamado.titulo || ''}`,
         lida: false,
         criadoEm: admin.firestore.FieldValue.serverTimestamp(),
         som: true,
@@ -371,6 +444,31 @@ exports.notificarGestoresNovoChamadoSla = onDocumentCreated(
       });
     });
     await batch.commit();
+  }
+);
+
+/**
+ * sincronizarDataAtendimentoChamado
+ * Quando uma O.S. nascida de um chamado (Task.chamadoId) tem sua data de
+ * atendimento prevista (scheduling.dataPrevista) definida ou alterada pelo
+ * gestor, espelha essa data no chamado de origem — o Portal do Cliente lê
+ * `dataAtendimentoPrevista` de lá, sem precisar de passo manual extra.
+ */
+exports.sincronizarDataAtendimentoChamado = onDocumentUpdated(
+  { region: 'southamerica-east1', document: 'tasks/{taskId}' },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    if (!after.chamadoId) return;
+
+    const antes = before.scheduling?.dataPrevista?.toMillis?.() ?? null;
+    const depois = after.scheduling?.dataPrevista?.toMillis?.() ?? null;
+    if (antes === depois) return;
+
+    await admin.firestore().doc(`chamados_sla/${after.chamadoId}`).update({
+      dataAtendimentoPrevista: after.scheduling?.dataPrevista ?? admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }).catch(() => {});
   }
 );
 

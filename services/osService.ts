@@ -18,7 +18,16 @@ export function getTipoOrigemOS(task: Pick<Task, 'tipoOrigemOS' | 'projectId'>):
 
 export interface SlaBadgeInfo { label: string; vencido: boolean; cor: string; }
 
-const SLA_COR_PRIORIDADE: Record<string, string> = {
+/** Deduz o tipo de anexo (OSArquivoApoio) a partir da extensão do arquivo. */
+export function tipoArquivoFromName(nome: string): 'pdf' | 'imagem' | 'video' | 'outro' {
+  const ext = nome.split('.').pop()?.toLowerCase() || '';
+  if (ext === 'pdf') return 'pdf';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return 'imagem';
+  if (['mp4', 'webm', 'mov'].includes(ext)) return 'video';
+  return 'outro';
+}
+
+export const SLA_COR_PRIORIDADE: Record<string, string> = {
   P1: 'bg-red-100 text-red-700 border-red-200',
   P2: 'bg-orange-100 text-orange-700 border-orange-200',
   P3: 'bg-amber-100 text-amber-700 border-amber-200',

@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   collection, addDoc, getDocs, query, where,
-  serverTimestamp, Timestamp,
+  serverTimestamp, Timestamp, updateDoc, doc,
 } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { CollectionName, WorkflowStatus } from '../../types';
-import { gerarNumeroOS } from '../../services/osService';
+import { CollectionName, WorkflowStatus, OSArquivoApoio } from '../../types';
+import { gerarNumeroOS, tipoArquivoFromName } from '../../services/osService';
 import {
   X, Plus, Trash2, ChevronDown, ChevronUp, Loader2,
   User, Users, Building, Briefcase, Calendar, Wrench,
   ListTodo, FileText, AlertTriangle, UserPlus, Save,
+  Paperclip, Video, Image as ImageIcon,
 } from 'lucide-react';
 
 interface Props {
@@ -77,6 +79,10 @@ export default function FieldOSPendenciaModal({ onClose }: Props) {
   /* Tarefas */
   const [tarefas, setTarefas]       = useState<Tarefa[]>([]);
   const [novaTarefa, setNovaTarefa] = useState('');
+
+  /* Anexos / Evidências iniciais — escopo pro técnico (foto, vídeo, documento) */
+  const [anexos, setAnexos] = useState<{ file: File; descricao: string }[]>([]);
+  const anexoRef = useRef<HTMLInputElement>(null);
 
   /* Templates */
   const [templates, setTemplates]   = useState<any[]>([]);
@@ -181,6 +187,15 @@ export default function FieldOSPendenciaModal({ onClose }: Props) {
   const toggleColab = (uid: string) =>
     setAssignedUsers(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
 
+  /* ── Anexos ──────────────────────────────────────────── */
+  const addAnexos = (files: FileList | null) => {
+    if (!files?.length) return;
+    setAnexos(prev => [...prev, ...Array.from(files).map(file => ({ file, descricao: '' }))]);
+  };
+  const removerAnexo = (i: number) => setAnexos(prev => prev.filter((_, idx) => idx !== i));
+  const setDescricaoAnexo = (i: number, descricao: string) =>
+    setAnexos(prev => prev.map((a, idx) => idx === i ? { ...a, descricao } : a));
+
   /* ── Salvar ──────────────────────────────────────────── */
   const handleSubmit = async () => {
     if (!title.trim()) { setErro('Título é obrigatório.'); return; }
@@ -200,7 +215,7 @@ export default function FieldOSPendenciaModal({ onClose }: Props) {
       const ts = Date.now();
       const numeroOS = await gerarNumeroOS();
 
-      await addDoc(collection(db, CollectionName.TASKS), {
+      const taskRef = await addDoc(collection(db, CollectionName.TASKS), {
         numeroOS,
         title:        title.trim(),
         description:  description.trim(),
@@ -237,6 +252,27 @@ export default function FieldOSPendenciaModal({ onClose }: Props) {
         criadoEm:      Timestamp.now(),
         createdAt:     serverTimestamp(),
       });
+
+      /* Anexos / evidências iniciais — escopo pro técnico (foto, vídeo, documento) */
+      if (anexos.length > 0) {
+        try {
+          const uploads: OSArquivoApoio[] = [];
+          for (const { file, descricao } of anexos) {
+            const path = `os_evidencias/${taskRef.id}/informacoes-adicionais/${Date.now()}_${file.name}`;
+            const snap = await uploadBytes(storageRef(storage, path), file);
+            const url = await getDownloadURL(snap.ref);
+            uploads.push({
+              url, nome: file.name, tipo: tipoArquivoFromName(file.name),
+              ...(descricao.trim() ? { descricao: descricao.trim() } : {}),
+            });
+          }
+          await updateDoc(doc(db, CollectionName.TASKS, taskRef.id), {
+            informacoesAdicionais: { arquivos: uploads },
+          });
+        } catch {
+          // Falha no upload não deve impedir a criação da O.S. — dá pra reenviar depois via edição.
+        }
+      }
 
       /* Upsert tipo de serviço */
       if (tipoServico.trim()) {
@@ -618,6 +654,52 @@ export default function FieldOSPendenciaModal({ onClose }: Props) {
               <Plus size={18} />
             </button>
           </div>
+        </div>
+
+        {/* Anexos / Evidências iniciais — escopo pro técnico (foto, vídeo, documento) */}
+        <div>
+          <label className={`${lbl} flex items-center gap-1`}>
+            <Paperclip size={10} /> Anexos / Escopo{' '}
+            <span className="text-gray-600 font-normal normal-case">({anexos.length})</span>
+          </label>
+          <p className="text-[11px] text-gray-600 mb-2">
+            Foto do problema, planta do projeto, planejamento de execução... o que o técnico precisa ver antes de ir a campo.
+          </p>
+
+          {anexos.length > 0 && (
+            <div className="space-y-2 mb-2">
+              {anexos.map((a, i) => (
+                <div key={i} className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-xl px-3 py-2.5">
+                  {a.file.type.startsWith('video') ? <Video size={15} className="text-gray-500 flex-shrink-0" /> :
+                   a.file.type.startsWith('image') ? <ImageIcon size={15} className="text-gray-500 flex-shrink-0" /> :
+                   <FileText size={15} className="text-gray-500 flex-shrink-0" />}
+                  <span className="text-xs text-gray-300 max-w-[90px] truncate flex-shrink-0">{a.file.name}</span>
+                  <input
+                    value={a.descricao}
+                    onChange={e => setDescricaoAnexo(i, e.target.value)}
+                    placeholder="O que é isso?"
+                    className="flex-1 min-w-0 bg-transparent border-0 border-l border-gray-700 pl-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none"
+                  />
+                  <button onClick={() => removerAnexo(i)} className="flex-shrink-0 p-1 text-gray-600 active:text-red-400">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => anexoRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600/15 border border-blue-500/30 text-blue-400 rounded-xl text-xs font-bold active:bg-blue-600/30"
+          >
+            <Plus size={14} /> Anexar foto, vídeo ou documento
+          </button>
+          <input
+            ref={anexoRef} type="file" multiple
+            accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg"
+            className="hidden"
+            onChange={e => { addAnexos(e.target.files); e.target.value = ''; }}
+          />
         </div>
 
         {/* ── Avançado ─────────────────────────────────── */}

@@ -115,6 +115,9 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
   const [assignedUsers, setAssignedUsers] = useState<string[]>((task as any).assignedUsers || []);
   const [ativoId,       setAtivoId]       = useState((task as any).ativoId || '');
   const [ativoNome,     setAtivoNome]     = useState((task as any).ativoNome || '');
+  const [maquinarioId,   setMaquinarioId]   = useState((task as any).maquinarioId || '');
+  const [maquinarioNome, setMaquinarioNome] = useState('');
+  const [maquinarios,    setMaquinarios]    = useState<{ id: string; nome: string }[]>([]);
   const [projectId,     setProjectId]     = useState((task as any).projectId || '');
   const [projectName,   setProjectName]   = useState((task as any).projectName || '');
   const [faturamentoPeloProjeto, setFaturamentoPeloProjeto] = useState<boolean>((task as any).faturamentoPeloProjeto || false);
@@ -195,6 +198,16 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
       .then(snap => setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
       .catch(() => setAtivos([]));
   }, [clientId]);
+
+  // Maquinários que atendem o ativo selecionado — editável em qualquer fase,
+  // já que o técnico pode identificar durante o atendimento que o problema
+  // é em outro equipamento além do que o cliente apontou no chamado.
+  useEffect(() => {
+    if (!ativoId) { setMaquinarios([]); return; }
+    getDocs(query(collection(db, CollectionName.MAQUINARIOS), where('ativosFinaisAtendidos', 'array-contains', ativoId)))
+      .then(snap => setMaquinarios(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
+      .catch(() => setMaquinarios([]));
+  }, [ativoId]);
 
   // Load ALL projects from all collections (allow linking OS to any project)
   useEffect(() => {
@@ -303,6 +316,9 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
         if (ativoId !== (task as any).ativoId) {
           patch.ativoId   = ativoId;
           patch.ativoNome = ativoNome;
+        }
+        if (maquinarioId !== ((task as any).maquinarioId || '')) {
+          patch.maquinarioId = maquinarioId || null;
         }
         if (projectId !== (task as any).projectId) {
           patch.projectId   = projectId;
@@ -655,6 +671,7 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
                         setClientId(e.target.value);
                         setClientName(c?.name || c?.nome || '');
                         setAtivoId(''); setAtivoNome('');
+                        setMaquinarioId(''); setMaquinarioNome('');
                         setProjectId(''); setProjectName('');
                       }}
                         className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-brand-200 pr-8">
@@ -669,10 +686,28 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
                         <select value={ativoId} onChange={e => {
                           const a = ativos.find(x => x.id === e.target.value);
                           setAtivoId(e.target.value); setAtivoNome(a?.nome || '');
+                          setMaquinarioId(''); setMaquinarioNome('');
                         }}
                           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-brand-200 pr-8">
                           <option value="">Selecione o ativo (opcional)...</option>
                           {ativos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                        </select>
+                        <ChevronDown size={13} className="absolute right-2.5 top-[calc(50%+8px)] -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                    )}
+                    {/* Maquinário específico — editável em qualquer fase, já que o
+                        técnico pode identificar durante o atendimento que o problema
+                        é em outro equipamento do que o cliente/gestor apontou antes. */}
+                    {ativoId && maquinarios.length > 0 && (
+                      <div className="relative">
+                        <label className="text-xs text-gray-500 font-bold uppercase tracking-wide block mb-1">Maquinário específico</label>
+                        <select value={maquinarioId} onChange={e => {
+                          const m = maquinarios.find(x => x.id === e.target.value);
+                          setMaquinarioId(e.target.value); setMaquinarioNome(m?.nome || '');
+                        }}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-brand-200 pr-8">
+                          <option value="">Ainda não identificado</option>
+                          {maquinarios.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
                         </select>
                         <ChevronDown size={13} className="absolute right-2.5 top-[calc(50%+8px)] -translate-y-1/2 text-gray-400 pointer-events-none" />
                       </div>

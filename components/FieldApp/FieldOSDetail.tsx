@@ -10,6 +10,7 @@ import FieldOSEncerramentoModal, { RelatorioFinal } from './FieldOSEncerramentoM
 import { registrarAtividade, marcarFotoApagada } from '../../services/activityFeedService';
 import { isVideoUrl } from './photoUtils';
 import OSSuporteChat from '../OSSuporteChat';
+import AtivoMaquinarioSelect from '../AtivoMaquinarioSelect';
 import {
   User, MapPin, Wrench, CheckCircle2, Play, CheckSquare, Square,
   XSquare, ArrowLeft, FileText, Calendar, UserPlus, Camera, Plus, Clock, Paperclip, Headphones,
@@ -54,6 +55,7 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
   const [lightboxArquivo, setLightboxArquivo] = useState<string | null>(null);
   const [showSuporte, setShowSuporte] = useState(false);
   const [naoLidasSuporte, setNaoLidasSuporte] = useState(0);
+  const [salvandoEquipamento, setSalvandoEquipamento] = useState(false);
 
   // Contagem de mensagens de suporte não lidas pelo técnico nesta O.S.
   useEffect(() => {
@@ -70,7 +72,7 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
   const cliente   = os.clientName ?? null;
   const local     = os.localizacao ?? null;
   const descricao = os.description ?? null;
-  const infoAdicionais = (os as any).informacoesAdicionais as { texto?: string; arquivos: { url: string; nome: string; tipo: string }[] } | undefined;
+  const infoAdicionais = (os as any).informacoesAdicionais as { texto?: string; arquivos: { url: string; nome: string; tipo: string; descricao?: string }[] } | undefined;
   const dataStr   = os.startDate
     ? os.startDate.toDate().toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
     : null;
@@ -471,6 +473,43 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
             </div>
           )}
 
+          {/* Equipamento atendido — o cliente pode ter apontado o ativo errado no
+              chamado, e é durante o atendimento que o técnico costuma identificar
+              a peça exata; por isso fica editável aqui, não só na criação/edição
+              pelo gestor. */}
+          {(os as any).clientId && euSouResponsavel && os.status !== 'completed' && (
+            <div className="px-4 py-4 border-b border-gray-800">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <Wrench size={11} /> Equipamento atendido
+              </p>
+              <AtivoMaquinarioSelect
+                clientId={(os as any).clientId}
+                ativoId={(os as any).ativoId || ''}
+                maquinarioId={(os as any).maquinarioId || ''}
+                variant="dark"
+                disabled={salvandoEquipamento}
+                onChangeAtivo={async (id, nome) => {
+                  setSalvandoEquipamento(true);
+                  try {
+                    await updateDoc(doc(db, 'tasks', os.id), {
+                      ativoId: id || null,
+                      ativoNome: nome || null,
+                      maquinarioId: null,
+                    });
+                    onUpdate({ ...os, ativoId: id, ativoNome: nome, maquinarioId: '' } as any);
+                  } finally { setSalvandoEquipamento(false); }
+                }}
+                onChangeMaquinario={async (id) => {
+                  setSalvandoEquipamento(true);
+                  try {
+                    await updateDoc(doc(db, 'tasks', os.id), { maquinarioId: id || null });
+                    onUpdate({ ...os, maquinarioId: id } as any);
+                  } finally { setSalvandoEquipamento(false); }
+                }}
+              />
+            </div>
+          )}
+
           {/* Informações Adicionais — instrução + arquivos de apoio (fotos, vídeos, plantas) */}
           {(infoAdicionais?.texto || (infoAdicionais?.arquivos?.length ?? 0) > 0) && (
             <div className="px-4 py-4 border-b border-gray-800 bg-blue-500/5">
@@ -494,7 +533,7 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
                         ? <img src={a.url} alt={a.nome} className="w-full h-full object-cover" />
                         : <FileText size={24} className="text-gray-500" />
                       }
-                      <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] px-1 py-0.5 truncate">{a.nome}</span>
+                      <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] px-1 py-0.5 truncate">{a.descricao || a.nome}</span>
                     </button>
                   ))}
                 </div>

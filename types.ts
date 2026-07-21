@@ -34,6 +34,7 @@ export interface PermissionSet {
   canEditTasks: boolean;          // Editar O.S. existente
   canDeleteTasks: boolean;        // Excluir O.S.
   canManageProjects: boolean;     // Pipeline + Projetos
+  canManageChamados?: boolean;    // Ver/gerenciar chamados de contrato SLA abertos por clientes
   canViewSchedule: boolean;       // Agenda/Gantt (acesso geral)
   canViewFullSchedule: boolean;   // Agenda completa (gerencial)
   canViewMySchedule: boolean;     // Minha agenda (pessoal)
@@ -309,6 +310,9 @@ export interface UserProfile {
   // Portal do Cliente — presente só quando role === 'cliente'
   clientId?: string;
   clientName?: string;
+  podeAbrirChamado?: boolean; // ausente/undefined = true (permitido por padrão)
+  podeVerContrato?: boolean;  // ausente/undefined = true — controla só a aba "Meu Contrato" no Portal
+  podeVerAtivos?: boolean;    // ausente/undefined = true — controla a aba "Meus Ativos" e a leitura de client_assets
 }
 
 // ── Pedido de Redefinição de Senha (enviado da tela de login) ─────────────────
@@ -736,7 +740,6 @@ export interface Task {
   // Sprint 30-34 WorkOrder extensions
   workflowStatus?: WorkflowStatus;
   parentOSId?: string;              // Sub-OS: filho de outra O.S.
-  assetId?: string;                 // Equipámento specífico do cliente
   geofencing?: {
     lat: number;
     lng: number;
@@ -860,6 +863,11 @@ export interface Task {
   contratoSlaId?: string;
   prioridadeSla?: PrioridadeSLA;
   prazoSlaLimite?: Timestamp; // calculado na criação: agora + prazosPrioridade[prioridade] horas
+  chamadoId?: string; // preenchido quando a O.S. nasce de um chamado do Portal do Cliente
+
+  // ─── Ativos — vínculo com o equipamento atendido (camada reversa) ─────────
+  // ativoId/ativoNome (Sprint 44, acima) já é o "o quê" amplo — ex. Câmara Fria X.
+  maquinarioId?: string;  // a peça específica que de fato recebeu manutenção — ex. Evaporador Y daquela câmara (Maquinario)
 }
 
 export type PrioridadeSLA = 'P1' | 'P2' | 'P3' | 'P4';
@@ -878,6 +886,13 @@ export interface ContratoSLA {
   updatedAt?: Timestamp;
 }
 
+export type TipoChamadoSLA =
+  | 'falha_parada'        // Falha / Parada de equipamento
+  | 'manutencao_preventiva'
+  | 'duvida_tecnica'
+  | 'solicitacao_visita'
+  | 'outro';
+
 export interface ChamadoSLA {
   id: string;
   clientId: string;
@@ -885,14 +900,28 @@ export interface ChamadoSLA {
   contratoSlaId?: string; // inferido do cliente, se ele só tiver 1 contrato ativo
   criadoPorUid: string;
   criadoPorNome: string;
+  tipo?: TipoChamadoSLA; // opcional — chamados antigos podem não ter esse campo
   titulo: string;
   descricao: string;
   prioridade: PrioridadeSLA;
+  prazoSlaLimite?: Timestamp; // calculado na abertura: agora + prazosPrioridade[prioridade] horas
+  fotos?: string[];
+  ativoId?: string;   // qual ClientAsset (mesmo campo/conceito de Task.ativoId) o cliente aponta como o com problema
+  ativoNome?: string;
   status: 'aberto' | 'em_triagem' | 'convertido' | 'cancelado';
   taskId?: string; // preenchido quando convertido em O.S.
+  dataAtendimentoPrevista?: Timestamp; // espelha scheduling.dataPrevista da Task, sincronizado via Cloud Function
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
+
+export const TIPO_CHAMADO_LABEL: Record<TipoChamadoSLA, string> = {
+  falha_parada: 'Falha / Parada de equipamento',
+  manutencao_preventiva: 'Manutenção preventiva',
+  duvida_tecnica: 'Dúvida técnica',
+  solicitacao_visita: 'Solicitação de visita',
+  outro: 'Outro',
+};
 
 export interface ClientContact {
   id: string;
@@ -938,11 +967,15 @@ export interface Client {
   dadosIncompletos?: boolean;
 }
 
+// "Ativo final" — o equipamento consumer-facing que o cliente reconhece
+// (ex. "Câmara Fria Walk-in #1"). Cadastro simples, sem ficha técnica de
+// maquinário — a ficha técnica/manutenção fica no Maquinario (abaixo), que
+// atende um ou mais ativos finais.
 export interface ClientAsset {
   id: string;
   clientId: string;
   nome: string;                 // ex: "Câmara Fria Walk-in #1"
-  tipo: string;                 // ex: "Câmara Fria" | "Split" | "Chiller"
+  tipo: string;                 // TIPOS_ATIVO_FINAL
   fotos?: string[];             // URLs de fotos/plaquetas
   especificacoes?: {
     marca?: string;
@@ -955,11 +988,40 @@ export interface ClientAsset {
     [key: string]: any;
   };
   dataInstalacao?: Timestamp;
-  historicoOS?: string[];       // array de Task IDs
+  historicoOS?: string[];       // legado — não é mais escrito, histórico real é via Maquinario.ativosFinaisAtendidos
   status?: 'ativo' | 'inativo' | 'manutencao';
   localizacao?: string;         // ex: "Sala B2, 2º andar"
   createdAt: Timestamp;
 }
+
+// Maquinário — a peça específica (evaporador, condensadora, compressor,
+// rack de refrigeração, controlador). Cadastrado primeiro, depois vinculado
+// a quais ativos finais ele atende (N:N — um rack pode atender 2 câmaras).
+// Histórico de manutenção (Task.maquinarioId) fica preso aqui, não no ativo final.
+export interface Maquinario {
+  id: string;
+  clientId: string;
+  nome: string;                 // ex: "Evaporador Bohn EM-450 — Rack 2"
+  tipo: string;                 // TIPOS_MAQUINARIO
+  especificacoes?: {
+    marca?: string;
+    modelo?: string;
+    capacidadeBTU?: number;
+    potenciaKW?: number;
+    refrigerante?: string;
+    anoFabricacao?: number;
+    numeroSerie?: string;
+    [key: string]: any;
+  };
+  fotos?: string[];
+  ativosFinaisAtendidos: string[]; // IDs de ClientAsset — relação N:N
+  dataInstalacao?: Timestamp;
+  status?: 'ativo' | 'inativo' | 'manutencao';
+  createdAt: Timestamp;
+}
+
+export const TIPOS_ATIVO_FINAL = ['Câmara Fria', 'Câmara de Congelamento', 'Câmara Walk-in', 'Outro'] as const;
+export const TIPOS_MAQUINARIO = ['Evaporador', 'Condensadora', 'Compressor', 'Rack de Refrigeração', 'Controlador', 'Split', 'Chiller', 'Outro'] as const;
 
 export interface Project {
   id: string;
@@ -1010,6 +1072,7 @@ export interface OSArquivoApoio {
   url: string;
   nome: string;
   tipo: 'pdf' | 'imagem' | 'video' | 'outro';
+  descricao?: string;                // o que esse anexo representa (ex: "Planta baixa", "Foto do problema")
   projectDocId?: string;             // se referencia um doc já existente do projeto
 }
 
@@ -1520,6 +1583,7 @@ const _BASE_COLLECTIONS = {
   REQUIREMENTS: 'hub_requirements',
   // Sprint 30-34
   ASSETS: 'client_assets',
+  MAQUINARIOS: 'maquinarios',
   RECEIVABLES: 'receivables',
   // Sprint Veículos
   VEHICLE_CHECKS: 'vehicle_checks',

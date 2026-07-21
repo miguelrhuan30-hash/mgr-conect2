@@ -4,11 +4,12 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { CollectionName, ContratoSLA, PrioridadeSLA } from '../../types';
-import { ArrowLeft, Loader2, Send, AlertTriangle } from 'lucide-react';
+import { CollectionName, ContratoSLA, PrioridadeSLA, TipoChamadoSLA, TIPO_CHAMADO_LABEL } from '../../types';
+import { ArrowLeft, Loader2, Send, AlertTriangle, Camera, X } from 'lucide-react';
 
 const PRIORIDADES: { valor: PrioridadeSLA; label: string; desc: string; cor: string }[] = [
   { valor: 'P1', label: 'P1 — Crítico', desc: 'Parada total, risco imediato', cor: 'border-red-300 bg-red-50 text-red-700' },
@@ -16,6 +17,8 @@ const PRIORIDADES: { valor: PrioridadeSLA; label: string; desc: string; cor: str
   { valor: 'P3', label: 'P3 — Moderado', desc: 'Impacto parcial', cor: 'border-amber-300 bg-amber-50 text-amber-700' },
   { valor: 'P4', label: 'P4 — Baixo', desc: 'Sem urgência', cor: 'border-gray-300 bg-gray-50 text-gray-600' },
 ];
+
+const TIPOS: TipoChamadoSLA[] = ['falha_parada', 'manutencao_preventiva', 'duvida_tecnica', 'solicitacao_visita', 'outro'];
 
 export default function PortalNovoChamado() {
   const { userProfile } = useAuth();
@@ -26,11 +29,21 @@ export default function PortalNovoChamado() {
   const [contratoSlaId, setContratoSlaId] = useState('');
   const [loadingContratos, setLoadingContratos] = useState(true);
 
+  const [ativos, setAtivos] = useState<{ id: string; nome: string }[]>([]);
+  const [ativoId, setAtivoId] = useState('');
+
+  const [tipo, setTipo] = useState<TipoChamadoSLA>('falha_parada');
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [prioridade, setPrioridade] = useState<PrioridadeSLA>('P3');
+  const [fotos, setFotos] = useState<string[]>([]);
+  const [uploadingFoto, setUploadingFoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if ((userProfile as any)?.podeAbrirChamado === false) navigate('/portal', { replace: true });
+  }, [userProfile, navigate]);
 
   useEffect(() => {
     if (!clientId) { setLoadingContratos(false); return; }
@@ -48,6 +61,28 @@ export default function PortalNovoChamado() {
     })();
   }, [clientId]);
 
+  useEffect(() => {
+    if (!clientId) return;
+    getDocs(query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientId)))
+      .then(snap => setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
+      .catch(() => setAtivos([]));
+  }, [clientId]);
+
+  const handleFotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !clientId) return;
+    setUploadingFoto(true);
+    try {
+      const path = `chamados_sla/${clientId}/${Date.now()}_${file.name}`;
+      const snap = await uploadBytes(ref(storage, path), file);
+      const url = await getDownloadURL(snap.ref);
+      setFotos(prev => [...prev, url]);
+    } finally {
+      setUploadingFoto(false);
+      e.target.value = '';
+    }
+  };
+
   const contratoSelecionado = contratos.find(c => c.id === contratoSlaId);
   const prazoHoras = contratoSelecionado?.prazosPrioridade?.[prioridade];
 
@@ -61,15 +96,22 @@ export default function PortalNovoChamado() {
     setSaving(true);
     try {
       const nomeCliente = userProfile!.nomeCompleto || userProfile!.displayName || 'Cliente';
+      const ativoSelecionado = ativos.find(a => a.id === ativoId);
       await addDoc(collection(db, CollectionName.CHAMADOS_SLA), {
         clientId,
         clientName: (userProfile as any)?.clientName || '',
         contratoSlaId: contratoSlaId || contratos[0]?.id || null,
         criadoPorUid: userProfile!.uid,
         criadoPorNome: nomeCliente,
+        tipo,
         titulo: titulo.trim(),
         descricao: descricao.trim(),
         prioridade,
+        ...(typeof prazoHoras === 'number' ? {
+          prazoSlaLimite: Timestamp.fromDate(new Date(Date.now() + prazoHoras * 3600 * 1000)),
+        } : {}),
+        ...(ativoId ? { ativoId, ativoNome: ativoSelecionado?.nome || '' } : {}),
+        ...(fotos.length ? { fotos } : {}),
         status: 'aberto',
         createdAt: serverTimestamp(),
       });
@@ -112,6 +154,25 @@ export default function PortalNovoChamado() {
       )}
 
       <div>
+        <label className="text-xs font-bold text-gray-500 mb-1 block">Tipo de chamado</label>
+        <select value={tipo} onChange={e => setTipo(e.target.value as TipoChamadoSLA)}
+          className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white">
+          {TIPOS.map(t => <option key={t} value={t}>{TIPO_CHAMADO_LABEL[t]}</option>)}
+        </select>
+      </div>
+
+      {ativos.length > 0 && (
+        <div>
+          <label className="text-xs font-bold text-gray-500 mb-1 block">Qual equipamento? (opcional)</label>
+          <select value={ativoId} onChange={e => setAtivoId(e.target.value)}
+            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white">
+            <option value="">Não sei / não se aplica</option>
+            {ativos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+          </select>
+        </div>
+      )}
+
+      <div>
         <label className="text-xs font-bold text-gray-500 mb-1 block">Título</label>
         <input value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Ar-condicionado sem gelar"
           className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl" />
@@ -122,6 +183,25 @@ export default function PortalNovoChamado() {
         <textarea value={descricao} onChange={e => setDescricao(e.target.value)} rows={4}
           placeholder="Descreva o problema com o máximo de detalhes possível"
           className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl resize-none" />
+      </div>
+
+      <div>
+        <label className="text-xs font-bold text-gray-500 mb-1 block">Fotos (opcional)</label>
+        <div className="flex items-center gap-2 flex-wrap">
+          {fotos.map((url, i) => (
+            <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-200">
+              <img src={url} alt="" className="w-full h-full object-cover" />
+              <button type="button" onClick={() => setFotos(prev => prev.filter((_, j) => j !== i))}
+                className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 rounded-full flex items-center justify-center">
+                <X className="w-2.5 h-2.5 text-white" />
+              </button>
+            </div>
+          ))}
+          <label className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer text-gray-400 hover:border-brand-300 hover:text-brand-500">
+            {uploadingFoto ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
+            <input type="file" accept="image/*" capture="environment" onChange={handleFotoUpload} disabled={uploadingFoto} className="hidden" />
+          </label>
+        </div>
       </div>
 
       <div>

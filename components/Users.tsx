@@ -38,7 +38,7 @@ const INITIAL_PERMISSIONS: PermissionSet = {
   canManageUsers: false, canManageSettings: false, canManageSectors: false, canViewLogs: false,
   canRegisterAttendance: true, canViewAttendanceReports: false, canManageAttendance: false, requiresTimeClock: false,
   canViewTasks: true, canCreateTasks: false, canEditTasks: false, canDeleteTasks: false,
-  canManageProjects: false, canViewSchedule: false, canViewFullSchedule: false, canViewMySchedule: true,
+  canManageProjects: false, canManageChamados: false, canViewSchedule: false, canViewFullSchedule: false, canViewMySchedule: true,
   canViewFinancials: false, canManageClients: false,
   canViewInventory: false, canManageInventory: false,
   canViewRanking: true, canViewBI: false, canViewIntel: false, canViewVehicles: false,
@@ -95,6 +95,7 @@ const USER_MODULES: UM[] = [
   { id: 'os', label: 'Ordens de Serviço', color: 'bg-orange-50', txtColor: 'text-orange-700',
     actions: [
       { key: 'canViewTasks', label: 'Visualizar Tarefas' }, { key: 'canManageProjects', label: 'Pipeline / Kanban' },
+      { key: 'canManageChamados', label: 'Chamados de Clientes (SLA)', desc: 'Ver e converter em O.S. os chamados abertos por clientes no Portal' },
       { key: 'canViewMySchedule', label: 'Minha Agenda' }, { key: 'canViewFullSchedule', label: 'Agenda Completa' },
       { key: 'canViewSchedule', label: 'Agenda / Gantt' }, { key: 'canCreateTasks', label: 'Criar Nova O.S.' },
       { key: 'canEditTasks', label: 'Editar O.S.' },

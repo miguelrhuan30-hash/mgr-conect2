@@ -5,13 +5,19 @@
  * acompanhar e abrir chamados de contrato SLA.
  */
 import React, { useEffect, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, ShieldCheck, Download, X } from 'lucide-react';
+import { LogOut, ShieldCheck, Download, X, MessageSquareText, FileSignature, Thermometer } from 'lucide-react';
 import { verificarNovaVersaoSistema, VersaoSistemaInfo } from '../../services/notificationService';
 import NotificacoesBell from '../NotificacoesBell';
+
+const TABS = [
+  { to: '/portal',          label: 'Meus Chamados', icon: MessageSquareText, end: true,  gate: null as null | 'podeVerContrato' | 'podeVerAtivos' },
+  { to: '/portal/contrato', label: 'Meu Contrato',  icon: FileSignature,     end: false, gate: 'podeVerContrato' as const },
+  { to: '/portal/ativos',   label: 'Meus Ativos',   icon: Thermometer,       end: false, gate: 'podeVerAtivos' as const },
+];
 
 export default function PortalLayout() {
   const { userProfile, currentUser } = useAuth();
@@ -66,6 +72,27 @@ export default function PortalLayout() {
           </button>
         </div>
       )}
+
+      {(() => {
+        const visibleTabs = TABS.filter(t => !t.gate || (userProfile as any)?.[t.gate] !== false);
+        if (visibleTabs.length < 2) return null;
+        return (
+          <div className="max-w-2xl w-full mx-auto px-4 pt-3">
+            <nav className="flex bg-gray-100 rounded-xl p-1 gap-1">
+              {visibleTabs.map(t => (
+                <NavLink key={t.to} to={t.to} end={t.end}
+                  className={({ isActive }) =>
+                    `flex-1 flex items-center justify-center gap-1.5 text-xs font-bold py-2 rounded-lg transition-colors ${
+                      isActive ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`
+                  }>
+                  <t.icon size={13} /> {t.label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+        );
+      })()}
 
       <div className="flex-1 max-w-2xl w-full mx-auto p-4">
         <Outlet />
