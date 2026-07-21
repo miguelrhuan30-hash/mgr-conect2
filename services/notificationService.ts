@@ -307,6 +307,24 @@ export async function abrirConfiguracoesApp(): Promise<void> {
   }
 }
 
+/**
+ * Checa uma permissão Android diretamente pelo sistema, sem passar pela
+ * navigator.permissions.query() da WebView (que não reflete de forma
+ * confiável o estado real depois do usuário liberar manualmente pelas
+ * configurações do Android). Retorna null se não estiver em app nativo ou
+ * se o plugin não estiver disponível — quem chamar deve ter um fallback.
+ */
+export async function verificarPermissaoNativa(permissao: string): Promise<boolean | null> {
+  const plugin = await getNativeUtilPlugin();
+  if (!plugin?.verificarPermissaoAndroid) return null;
+  try {
+    const r = await plugin.verificarPermissaoAndroid({ permissao });
+    return !!r?.granted;
+  } catch {
+    return null;
+  }
+}
+
 /* ─── Registro de token de push (FCM) ─────────────────────────────────────── */
 
 /**

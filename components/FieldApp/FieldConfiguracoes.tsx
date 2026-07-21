@@ -10,7 +10,7 @@ import { Camera }              from '@capacitor/camera';
 import { Geolocation }         from '@capacitor/geolocation';
 import { LocalNotifications }  from '@capacitor/local-notifications';
 import { PushNotifications }   from '@capacitor/push-notifications';
-import { abrirConfiguracoesApp } from '../../services/notificationService';
+import { abrirConfiguracoesApp, verificarPermissaoNativa } from '../../services/notificationService';
 import {
   ChevronLeft, Camera as CameraIcon, Image, Mic, MapPin, MapPinOff,
   Bell, BellRing, Phone, PhoneCall, Settings, CheckCircle2,
@@ -114,10 +114,13 @@ const buildPermissoes = (): Omit<Permissao, 'status'>[] => [
     obrigatoria: false,
     check: async () => {
       if (!isNative) return webPermQuery('microphone' as PermissionName);
+      // Checa direto no Android (ContextCompat) — navigator.permissions.query()
+      // dentro da WebView não reflete de forma confiável o estado real e
+      // pode ficar preso em "negada" mesmo com a permissão já concedida.
+      const nativo = await verificarPermissaoNativa('android.permission.RECORD_AUDIO');
+      if (nativo !== null) return nativo ? 'granted' : 'denied';
       try {
-        // Capacitor Camera plugin includes microphone for video
         const r = await Camera.checkPermissions();
-        // Fallback para Web API se plugin não retornar
         if ('microphone' in r) return capStatus((r as any).microphone);
         return webPermQuery('microphone' as PermissionName);
       } catch { return webPermQuery('microphone' as PermissionName); }
@@ -261,7 +264,11 @@ const buildPermissoes = (): Omit<Permissao, 'status'>[] => [
     icon: <PhoneCall size={20} />,
     obrigatoria: false,
     manual: true,
-    check: async () => 'prompt',
+    check: async () => {
+      if (!isNative) return 'prompt';
+      const nativo = await verificarPermissaoNativa('android.permission.CALL_PHONE');
+      return nativo === null ? 'prompt' : nativo ? 'granted' : 'denied';
+    },
     solicitar: async () => {
       abrirConfigDispositivo();
       return 'prompt';

@@ -1,7 +1,7 @@
 {
-  "build": 7,
-  "version": "1.4.2",
-  "url": "https://mgr-connect-app.web.app/apk/app-debug-b7.apk",
-  "notas": "Correção: botão 'Abrir configurações' (Microfone, Sons, Chamadas) e instalador de atualização agora usam chamada nativa direta, sem depender de esquema de URL não suportado pela WebView.",
+  "build": 8,
+  "version": "1.4.3",
+  "url": "https://mgr-connect-app.web.app/apk/app-debug-b8.apk",
+  "notas": "Correção: status de permissões (Microfone, Realizar Chamadas) agora consulta o Android diretamente, corrigindo tela que mostrava 'negada' mesmo com a permissão já concedida manualmente.",
   "lancadoEm": "2026-07-20"
 }

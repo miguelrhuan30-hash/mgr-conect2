@@ -1,10 +1,14 @@
 package com.mgr.fieldapp;
 
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 
+import androidx.core.content.ContextCompat;
+
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -64,6 +68,27 @@ public class LocationPlugin extends Plugin {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(intent);
         call.resolve();
+    }
+
+    /**
+     * Checa uma permissão Android diretamente pelo sistema (ContextCompat),
+     * sem passar pela navigator.permissions.query() da WebView — essa API,
+     * em WebView embutida, não reflete de forma confiável o estado real da
+     * permissão do app (fica presa em "negada" mesmo depois do usuário
+     * liberar manualmente nas configurações do Android).
+     * permissao: nome completo, ex. "android.permission.RECORD_AUDIO".
+     */
+    @PluginMethod
+    public void verificarPermissaoAndroid(PluginCall call) {
+        String permissao = call.getString("permissao", "");
+        if (permissao.isEmpty()) {
+            call.reject("permissao é obrigatória");
+            return;
+        }
+        int result = ContextCompat.checkSelfPermission(getContext(), permissao);
+        JSObject ret = new JSObject();
+        ret.put("granted", result == PackageManager.PERMISSION_GRANTED);
+        call.resolve(ret);
     }
 
     /** Abre o instalador nativo do Android pra uma URL de APK, fora da WebView. */
