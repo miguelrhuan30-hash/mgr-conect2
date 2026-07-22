@@ -8,8 +8,18 @@
  * histórico de manutenção fica preso ao maquinário, não ao ativo final —
  * abrir um ativo final lista os maquinários que o atendem; escolher um
  * deles mostra o histórico de O.S. daquela peça específica.
+ *
+ * Componente único, usado em dois contextos:
+ *  - Módulo global "Ativos e Maquinários" (rota /app/ativos, sem clientId
+ *    fixo) — mostra o seletor de cliente pra filtrar.
+ *  - Embutido no card de um cliente (Clients.tsx, prop clientId fixa) ou no
+ *    Portal do Cliente (PortalAtivos.tsx, clientId fixa + readOnly) — mesma
+ *    tela, só que travada num cliente e sem o seletor.
+ * Antes disso existiam DUAS implementações (esta, e o antigo
+ * ClientAssets.tsx com formulário próprio) mostrando a mesma coisa de
+ * jeitos diferentes — unificado aqui; ClientAssets.tsx agora só delega.
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     collection, query, where, onSnapshot, addDoc, updateDoc,
     doc, serverTimestamp, orderBy, getDocs, Timestamp
@@ -17,14 +27,16 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import {
-    CollectionName, ClientAsset, Maquinario, Task, TIPOS_ATIVO_FINAL, TIPOS_MAQUINARIO
+    CollectionName, ClientAsset, Maquinario, Task, Client, RelatorioOS,
+    TIPOS_ATIVO_FINAL, TIPOS_MAQUINARIO
 } from '../types';
 import {
     Wrench, Plus, Loader2, X, Save, Camera, ChevronDown,
-    ChevronUp, Calendar, Search, Cog, Thermometer,
+    ChevronUp, Calendar, Search, Cog, Thermometer, FileText, Building2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { ConteudoSomenteLeitura, ConteudoEditavel } from './OSRelatorioConclusao';
 
 const STATUS_CONFIG = {
     ativo:      { label: 'Ativo',      color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -385,7 +397,7 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, initial, ativ
     );
 };
 
-// ── Histórico de manutenção de um maquinário ─────────────────────────────────
+// ── Histórico de manutenção de um maquinário (equipe interna) ───────────────
 const HistoricoMaquinario: React.FC<{ maquinarioId: string }> = ({ maquinarioId }) => {
     const [history, setHistory] = useState<Task[] | null>(null);
     useEffect(() => {
@@ -424,21 +436,64 @@ const HistoricoMaquinario: React.FC<{ maquinarioId: string }> = ({ maquinarioId 
     );
 };
 
+// ── Relatórios de O.S. enviados ao cliente, filtrados por ativo ─────────────
+// Lê a coleção espelho `relatorios_os` (só campos seguros — ver
+// OSRelatorioConclusao.tsx) — é o que o Portal do Cliente consegue ler.
+// Reaproveitado também no lado interno, pra staff conferir o que foi enviado.
+const RelatoriosDoAtivo: React.FC<{ ativoId: string }> = ({ ativoId }) => {
+    const [relatorios, setRelatorios] = useState<RelatorioOS[] | null>(null);
+    const [aberto, setAberto] = useState<string | null>(null);
+
+    useEffect(() => {
+        getDocs(query(collection(db, CollectionName.RELATORIOS_OS), where('ativoId', '==', ativoId), orderBy('enviadoEm', 'desc')))
+            .then(snap => setRelatorios(snap.docs.map(d => ({ id: d.id, ...d.data() } as RelatorioOS))))
+            .catch(() => setRelatorios([]));
+    }, [ativoId]);
+
+    if (relatorios === null) return <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>;
+    if (relatorios.length === 0) return <p className="text-xs text-gray-400 text-center py-3">Nenhum relatório de O.S. enviado para este equipamento ainda.</p>;
+
+    return (
+        <div className="space-y-2">
+            {relatorios.map(r => (
+                <div key={r.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <button onClick={() => setAberto(aberto === r.id ? null : r.id)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-50">
+                        <div>
+                            <p className="text-xs font-bold text-gray-800">{r.numeroOS} — {r.titulo || 'O.S.'}</p>
+                            <p className="text-[10px] text-gray-400">
+                                {r.enviadoEm && format((r.enviadoEm as Timestamp).toDate(), 'dd/MM/yyyy', { locale: ptBR })}
+                            </p>
+                        </div>
+                        {aberto === r.id ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                    </button>
+                    {aberto === r.id && (
+                        <div className="px-3 pb-3 border-t border-gray-100 pt-3">
+                            <ConteudoSomenteLeitura c={r.conteudo as ConteudoEditavel} />
+                        </div>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+};
+
 // ── Asset (Ativo Final) Card ─────────────────────────────────────────────────
-const AssetCard: React.FC<{ asset: ClientAsset; onEdit: () => void }> = ({ asset, onEdit }) => {
-    const [expanded, setExpanded] = useState(false);
+const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; onEdit?: () => void; readOnly?: boolean }> = ({ asset, clientNome, onEdit, readOnly }) => {
+    const [expandido, setExpandido] = useState<'maquinarios' | 'relatorios' | null>(null);
     const [maquinarios, setMaquinarios] = useState<Maquinario[] | null>(null);
     const [maquinarioAberto, setMaquinarioAberto] = useState<string | null>(null);
 
-    const toggle = () => {
-        if (expanded) { setExpanded(false); return; }
-        setExpanded(true);
+    const toggleMaquinarios = () => {
+        if (expandido === 'maquinarios') { setExpandido(null); return; }
+        setExpandido('maquinarios');
         if (maquinarios === null) {
             getDocs(query(collection(db, CollectionName.MAQUINARIOS), where('ativosFinaisAtendidos', 'array-contains', asset.id)))
                 .then(snap => setMaquinarios(snap.docs.map(d => ({ id: d.id, ...d.data() } as Maquinario))))
                 .catch(() => setMaquinarios([]));
         }
     };
+    const toggleRelatorios = () => setExpandido(expandido === 'relatorios' ? null : 'relatorios');
 
     const status = asset.status || 'ativo';
     const sc = STATUS_CONFIG[status];
@@ -456,6 +511,9 @@ const AssetCard: React.FC<{ asset: ClientAsset; onEdit: () => void }> = ({ asset
                     <div>
                         <p className="text-[10px] font-bold text-gray-400">{asset.tipo}</p>
                         <h3 className="font-bold text-gray-900">{asset.nome}</h3>
+                        {clientNome && (
+                            <p className="text-[10px] text-sky-600 flex items-center gap-1 mt-0.5"><Building2 className="w-3 h-3" /> {clientNome}</p>
+                        )}
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${sc.color}`}>
                         {sc.label}
@@ -471,20 +529,29 @@ const AssetCard: React.FC<{ asset: ClientAsset; onEdit: () => void }> = ({ asset
                     )}
                 </div>
 
-                <div className="flex gap-2">
-                    <button onClick={onEdit}
-                        className="flex-1 text-xs py-1.5 rounded-lg border border-brand-200 text-brand-700 font-bold hover:bg-brand-50">
-                        Editar
-                    </button>
-                    <button onClick={toggle}
+                <div className="flex gap-2 flex-wrap">
+                    {!readOnly && onEdit && (
+                        <button onClick={onEdit}
+                            className="flex-1 text-xs py-1.5 rounded-lg border border-brand-200 text-brand-700 font-bold hover:bg-brand-50">
+                            Editar
+                        </button>
+                    )}
+                    {!readOnly && (
+                        <button onClick={toggleMaquinarios}
+                            className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
+                            {expandido === 'maquinarios' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            Maquinários
+                        </button>
+                    )}
+                    <button onClick={toggleRelatorios}
                         className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
-                        {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        Maquinários
+                        {expandido === 'relatorios' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        <FileText className="w-3 h-3" /> Relatórios de O.S.
                     </button>
                 </div>
             </div>
 
-            {expanded && (
+            {expandido === 'maquinarios' && (
                 <div className="border-t border-gray-100 p-4 bg-gray-50">
                     <p className="text-[10px] font-bold text-gray-400 uppercase mb-3">Maquinários que atendem este ativo</p>
                     {maquinarios === null ? (
@@ -514,12 +581,19 @@ const AssetCard: React.FC<{ asset: ClientAsset; onEdit: () => void }> = ({ asset
                     )}
                 </div>
             )}
+
+            {expandido === 'relatorios' && (
+                <div className="border-t border-gray-100 p-4 bg-gray-50">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-3">Relatórios de O.S. enviados</p>
+                    <RelatoriosDoAtivo ativoId={asset.id} />
+                </div>
+            )}
         </div>
     );
 };
 
 // ── Maquinário Card (visão direta, sem passar pelo ativo final) ─────────────
-const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; onEdit: () => void }> = ({ m, ativos, onEdit }) => {
+const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNome?: string; onEdit: () => void }> = ({ m, ativos, clientNome, onEdit }) => {
     const [open, setOpen] = useState(false);
     const nomesAtivos = m.ativosFinaisAtendidos
         .map(id => ativos.find(a => a.id === id)?.nome)
@@ -534,6 +608,9 @@ const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; onEdit: (
                     <div>
                         <p className="text-[10px] font-bold text-gray-400">{m.tipo}</p>
                         <h3 className="font-bold text-gray-900">{m.nome}</h3>
+                        {clientNome && (
+                            <p className="text-[10px] text-sky-600 flex items-center gap-1 mt-0.5"><Building2 className="w-3 h-3" /> {clientNome}</p>
+                        )}
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${sc.color}`}>{sc.label}</span>
                 </div>
@@ -565,8 +642,16 @@ const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; onEdit: (
 };
 
 // ── Main Assets ─────────────────────────────────────────────────────────────
-const Assets: React.FC = () => {
-    const [tab, setTab] = useState<'finais' | 'maquinarios'>('maquinarios');
+interface AssetsProps {
+    clientId?: string;    // fixo — embutido no card de um cliente ou no Portal
+    clientName?: string;
+    readOnly?: boolean;   // Portal do Cliente — sem cadastro, sem aba Maquinários
+}
+
+const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: clientNameProp, readOnly }) => {
+    const embutido = !!clientIdProp;
+
+    const [tab, setTab] = useState<'finais' | 'maquinarios'>(embutido ? 'finais' : 'maquinarios');
     const [assets, setAssets] = useState<ClientAsset[]>([]);
     const [maquinarios, setMaquinarios] = useState<Maquinario[]>([]);
     const [loading, setLoading] = useState(true);
@@ -578,27 +663,47 @@ const Assets: React.FC = () => {
     });
     const [search, setSearch] = useState('');
 
-    const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
-    const clientIdFilter = params.get('clientId') || '';
+    // Seletor de cliente — só existe no módulo global (não embutido). Aceita
+    // deep-link via ?clientId= (ex: link vindo de outro módulo) como valor inicial.
+    const [clientes, setClientes] = useState<Client[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState(() => {
+        if (embutido) return '';
+        const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        return params.get('clientId') || '';
+    });
+
+    const effectiveClientId = clientIdProp || selectedClientId;
+    const clientesPorId = useMemo(() => new Map(clientes.map(c => [c.id, c.name])), [clientes]);
+    const effectiveClientName = clientNameProp || (selectedClientId ? clientesPorId.get(selectedClientId) : undefined);
 
     useEffect(() => {
-        const q = clientIdFilter
-            ? query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientIdFilter), orderBy('createdAt', 'desc'))
+        if (embutido) return;
+        getDocs(query(collection(db, CollectionName.CLIENTS), orderBy('name', 'asc')))
+            .then(snap => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client))))
+            .catch(() => setClientes([]));
+    }, [embutido]);
+
+    useEffect(() => {
+        const q = effectiveClientId
+            ? query(collection(db, CollectionName.ASSETS), where('clientId', '==', effectiveClientId), orderBy('createdAt', 'desc'))
             : query(collection(db, CollectionName.ASSETS), orderBy('createdAt', 'desc'));
         return onSnapshot(q, snap => {
             setAssets(snap.docs.map(d => ({ id: d.id, ...d.data() } as ClientAsset)));
             setLoading(false);
         }, () => setLoading(false));
-    }, [clientIdFilter]);
+    }, [effectiveClientId]);
 
+    // Maquinários — nunca carregados no Portal do Cliente (coleção bloqueada
+    // pras regras do Firestore pra role 'cliente'; nem tenta a leitura).
     useEffect(() => {
-        const q = clientIdFilter
-            ? query(collection(db, CollectionName.MAQUINARIOS), where('clientId', '==', clientIdFilter), orderBy('createdAt', 'desc'))
+        if (readOnly) { setMaquinarios([]); return; }
+        const q = effectiveClientId
+            ? query(collection(db, CollectionName.MAQUINARIOS), where('clientId', '==', effectiveClientId), orderBy('createdAt', 'desc'))
             : query(collection(db, CollectionName.MAQUINARIOS), orderBy('createdAt', 'desc'));
         return onSnapshot(q, snap => {
             setMaquinarios(snap.docs.map(d => ({ id: d.id, ...d.data() } as Maquinario)));
         }, () => {});
-    }, [clientIdFilter]);
+    }, [effectiveClientId, readOnly]);
 
     const filteredAssets = assets.filter(a =>
         a.nome.toLowerCase().includes(search.toLowerCase()) || a.tipo?.toLowerCase().includes(search.toLowerCase())
@@ -610,51 +715,88 @@ const Assets: React.FC = () => {
     const ativosDoClienteDoModal = assets.filter(a => a.clientId === modalMaquinario.clientId);
 
     return (
-        <div className="max-w-6xl mx-auto space-y-6 pb-12">
+        <div className={embutido ? 'space-y-4' : 'max-w-6xl mx-auto space-y-6 pb-12'}>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Wrench className="w-6 h-6 text-brand-600" /> Ativos e Maquinários
+                        <Wrench className="w-6 h-6 text-brand-600" />
+                        {effectiveClientName ? `Ativos de ${effectiveClientName}` : 'Ativos e Maquinários'}
                     </h1>
-                    <p className="text-gray-500 text-sm mt-0.5">
-                        Cadastre o maquinário primeiro, depois vincule a quais ativos finais (câmaras) ele atende.
-                    </p>
+                    {!readOnly && (
+                        <p className="text-gray-500 text-sm mt-0.5">
+                            Cadastre o maquinário primeiro, depois vincule a quais ativos finais (câmaras) ele atende.
+                        </p>
+                    )}
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setModal({ open: true, asset: null, clientId: clientIdFilter })}
-                        className="flex items-center gap-2 px-3 py-2 bg-white border border-brand-200 text-brand-700 rounded-lg text-sm font-bold hover:bg-brand-50">
-                        <Thermometer className="w-4 h-4" /> Novo Ativo Final
-                    </button>
-                    <button onClick={() => setModalMaquinario({ open: true, maquinario: null, clientId: clientIdFilter })}
-                        className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700">
-                        <Plus className="w-4 h-4" /> Novo Maquinário
-                    </button>
-                </div>
+                {!readOnly && (
+                    <div className="flex gap-2">
+                        <button onClick={() => setModal({ open: true, asset: null, clientId: effectiveClientId })}
+                            disabled={!effectiveClientId}
+                            title={!effectiveClientId ? 'Selecione um cliente primeiro' : undefined}
+                            className="flex items-center gap-2 px-3 py-2 bg-white border border-brand-200 text-brand-700 rounded-lg text-sm font-bold hover:bg-brand-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <Thermometer className="w-4 h-4" /> Novo Ativo Final
+                        </button>
+                        <button onClick={() => setModalMaquinario({ open: true, maquinario: null, clientId: effectiveClientId })}
+                            disabled={!effectiveClientId}
+                            title={!effectiveClientId ? 'Selecione um cliente primeiro' : undefined}
+                            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <Plus className="w-4 h-4" /> Novo Maquinário
+                        </button>
+                    </div>
+                )}
             </div>
 
-            <div className="flex items-center gap-4 border-b border-gray-200">
-                {([{ id: 'maquinarios', label: `Maquinários (${maquinarios.length})`, icon: Cog },
-                   { id: 'finais', label: `Ativos Finais (${assets.length})`, icon: Thermometer }] as const).map(t => (
-                    <button key={t.id} onClick={() => setTab(t.id)}
-                        className={`flex items-center gap-1.5 pb-2.5 px-1 text-sm font-bold border-b-2 transition-colors ${
-                            tab === t.id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-400 hover:text-gray-600'
-                        }`}>
-                        <t.icon className="w-4 h-4" /> {t.label}
-                    </button>
-                ))}
-            </div>
+            {!embutido && (
+                <div className="relative">
+                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)}
+                        className="w-full sm:w-80 pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                        <option value="">Todos os clientes</option>
+                        {clientes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                </div>
+            )}
+
+            {!readOnly && (
+                <div className="flex items-center gap-4 border-b border-gray-200">
+                    {([{ id: 'maquinarios', label: `Maquinários (${maquinarios.length})`, icon: Cog },
+                       { id: 'finais', label: `Ativos Finais (${assets.length})`, icon: Thermometer }] as const).map(t => (
+                        <button key={t.id} onClick={() => setTab(t.id)}
+                            className={`flex items-center gap-1.5 pb-2.5 px-1 text-sm font-bold border-b-2 transition-colors ${
+                                tab === t.id ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-400 hover:text-gray-600'
+                            }`}>
+                            <t.icon className="w-4 h-4" /> {t.label}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)}
+                    type="text" name="busca-ativos" autoComplete="off"
                     placeholder="Buscar por nome ou tipo..."
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
             </div>
 
             {loading ? (
                 <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-brand-600" /></div>
-            ) : tab === 'maquinarios' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            ) : (readOnly || tab === 'finais') ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {filteredAssets.length === 0 && (
+                        <div className="col-span-full text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+                            <Thermometer className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500">{effectiveClientId ? 'Nenhum ativo cadastrado para este cliente.' : 'Nenhum ativo final encontrado.'}</p>
+                        </div>
+                    )}
+                    {filteredAssets.map(asset => (
+                        <AssetCard key={asset.id} asset={asset} readOnly={readOnly}
+                            clientNome={!effectiveClientId ? clientesPorId.get(asset.clientId) : undefined}
+                            onEdit={() => setModal({ open: true, asset, clientId: asset.clientId })} />
+                    ))}
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {filteredMaquinarios.length === 0 && (
                         <div className="col-span-full text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
                             <Cog className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -663,29 +805,17 @@ const Assets: React.FC = () => {
                     )}
                     {filteredMaquinarios.map(m => (
                         <MaquinarioCard key={m.id} m={m} ativos={assets}
+                            clientNome={!effectiveClientId ? clientesPorId.get(m.clientId) : undefined}
                             onEdit={() => setModalMaquinario({ open: true, maquinario: m, clientId: m.clientId })} />
-                    ))}
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {filteredAssets.length === 0 && (
-                        <div className="col-span-full text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                            <Thermometer className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                            <p className="text-gray-500">Nenhum ativo final encontrado.</p>
-                        </div>
-                    )}
-                    {filteredAssets.map(asset => (
-                        <AssetCard key={asset.id} asset={asset}
-                            onEdit={() => setModal({ open: true, asset, clientId: asset.clientId })} />
                     ))}
                 </div>
             )}
 
-            {modal.open && (
+            {!readOnly && modal.open && (
                 <AssetForm clientId={modal.clientId} initial={modal.asset}
                     onClose={() => setModal({ open: false, asset: null, clientId: '' })} />
             )}
-            {modalMaquinario.open && (
+            {!readOnly && modalMaquinario.open && (
                 <MaquinarioForm
                     clientId={modalMaquinario.clientId}
                     initial={modalMaquinario.maquinario}

@@ -16,10 +16,10 @@ import {
   Printer, Share2, Check, Send, Loader2, User, Building2, Save, Plus, Trash2, X,
   Calendar, Wrench, AlertTriangle, MessageSquare, Image as ImageIcon, Hash,
 } from 'lucide-react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Task, OSItemTarefa, OSObservacao } from '../types';
+import { Task, OSItemTarefa, OSObservacao, CollectionName } from '../types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -52,7 +52,7 @@ const getFotosDaTarefa = (t: OSItemTarefa): FotoComComentario[] => {
 };
 
 interface ItemRelatorio { id: string; descricao: string; comentario: string; fotos: string[]; }
-interface ConteudoEditavel {
+export interface ConteudoEditavel {
   descricaoServico: string;
   pendencia: string;
   recomendacao: string;
@@ -194,7 +194,9 @@ const gerarPDF = (task: Task, c: ConteudoEditavel) => {
 };
 
 // ── Visão somente leitura do registro original (bruto) da execução ───────────
-const ConteudoSomenteLeitura: React.FC<{ c: ConteudoEditavel }> = ({ c }) => (
+// Também reaproveitada pelo Portal do Cliente (RelatoriosDoAtivo, em
+// Assets.tsx) pra mostrar o relatório curado — mesmo shape (ConteudoEditavel).
+export const ConteudoSomenteLeitura: React.FC<{ c: ConteudoEditavel }> = ({ c }) => (
   <div className="space-y-4">
     <div>
       <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Serviço Executado</p>
@@ -293,6 +295,33 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const removeFotoDoItem = (idx: number, fotoIdx: number) =>
     setItens(prev => prev.map((it, i) => i === idx ? { ...it, fotos: it.fotos.filter((_, fi) => fi !== fotoIdx) } : it));
 
+  // Espelha só os campos seguros (sem financeiro/identidade de técnico/notas
+  // internas) na coleção que o Portal do Cliente lê — ver RelatoriosDoAtivo
+  // em components/Assets.tsx. Chamado ao marcar como enviado, e de novo em
+  // qualquer "Salvar" posterior (mantém o relatório do cliente atualizado).
+  const sincronizarRelatorioCliente = async (conteudo: ConteudoEditavel, nome: string) => {
+    const clientId = (task as any).clientId;
+    if (!clientId) return;
+    await setDoc(doc(db, CollectionName.RELATORIOS_OS, task.id), {
+      id: task.id,
+      taskId: task.id,
+      clientId,
+      clientName: task.clientName || null,
+      ativoId: (task as any).ativoId || null,
+      ativoNome: (task as any).ativoNome || null,
+      numeroOS,
+      titulo: task.title || null,
+      tipoServico: (task as any).tipoServico || null,
+      assigneeName: task.assigneeName || null,
+      inicio: (task as any).execution?.actualStartTime || null,
+      fim: (task as any).execution?.actualEndTime || null,
+      conteudo,
+      enviadoEm: serverTimestamp(),
+      enviadoPor: currentUser?.uid,
+      enviadoPorNome: nome,
+    }, { merge: true });
+  };
+
   const salvarConteudo = async (): Promise<Task> => {
     const nome = userProfile?.nomeCompleto || userProfile?.displayName || 'Gestor';
     const relatorioOSConteudo = {
@@ -300,6 +329,7 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
       editadoPor: currentUser?.uid, editadoPorNome: nome, editadoEm: serverTimestamp(),
     };
     await updateDoc(doc(db, 'tasks', task.id), { relatorioOSConteudo });
+    if (enviado) await sincronizarRelatorioCliente(conteudoAtual(), nome);
     return { ...task, relatorioOSConteudo } as any as Task;
   };
 
@@ -328,6 +358,7 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
           enviadoPorNome: nome,
         },
       });
+      await sincronizarRelatorioCliente(conteudoAtual(), nome);
       onSave?.({ ...task, relatorioOSEnvio: { status: 'relatorio_enviado', enviadoPor: currentUser.uid, enviadoPorNome: nome } } as Task);
     } finally { setSaving(false); }
   };

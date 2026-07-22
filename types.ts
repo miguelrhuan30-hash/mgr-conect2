@@ -1023,6 +1023,36 @@ export interface Maquinario {
 export const TIPOS_ATIVO_FINAL = ['Câmara Fria', 'Câmara de Congelamento', 'Câmara Walk-in', 'Outro'] as const;
 export const TIPOS_MAQUINARIO = ['Evaporador', 'Condensadora', 'Compressor', 'Rack de Refrigeração', 'Controlador', 'Split', 'Chiller', 'Outro'] as const;
 
+// Espelho seguro de Task.relatorioOSConteudo — só os campos sem risco de
+// vazar dado interno (financeiro, identidade de técnico, notas privadas).
+// Escrito em components/OSRelatorioConclusao.tsx quando o gestor marca o
+// relatório como enviado; lido pelo Portal do Cliente por ativoId.
+export interface RelatorioOS {
+  id: string;              // = task.id
+  taskId: string;
+  clientId: string;
+  clientName?: string;
+  ativoId?: string | null;
+  ativoNome?: string | null;
+  numeroOS: string;
+  titulo?: string;
+  tipoServico?: string;
+  assigneeName?: string;   // já sai no PDF/WhatsApp hoje — não é dado sensível
+  inicio?: Timestamp | null;
+  fim?: Timestamp | null;
+  conteudo: {
+    descricaoServico: string;
+    pendencia: string;
+    recomendacao: string;
+    itens: Array<{ id: string; descricao: string; comentario: string; fotos: string[] }>;
+    fotosAntes: string[];
+    fotosDepois: string[];
+  };
+  enviadoEm: Timestamp;
+  enviadoPor: string;
+  enviadoPorNome: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -1584,6 +1614,7 @@ const _BASE_COLLECTIONS = {
   // Sprint 30-34
   ASSETS: 'client_assets',
   MAQUINARIOS: 'maquinarios',
+  RELATORIOS_OS: 'relatorios_os',
   RECEIVABLES: 'receivables',
   // Sprint Veículos
   VEHICLE_CHECKS: 'vehicle_checks',

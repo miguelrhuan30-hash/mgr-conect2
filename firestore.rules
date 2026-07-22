@@ -303,6 +303,15 @@ service cloud.firestore {
       allow write: if isAuthenticated() && !isCliente();
     }
 
+    // ── Relatórios de O.S. (espelho seguro pro Portal do Cliente) — só os
+    //    campos curados em Task.relatorioOSConteudo, nunca o documento
+    //    completo da O.S. (que tem dado financeiro/interno) ──
+    match /relatorios_os/{relatorioId} {
+      allow read: if isAuthenticated() && (!isCliente() ||
+        resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId);
+      allow write: if isAuthenticated() && isManager();
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // GANTT COMPLETO — WBS, ADVERSIDADES, BASELINES
     // ══════════════════════════════════════════════════════════════════════
