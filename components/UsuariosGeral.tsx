@@ -70,6 +70,8 @@ const UsuariosGeral: React.FC = () => {
     });
   }, [users, search, tipo]);
 
+  const managingUser = useMemo(() => users.find(u => u.uid === managingUid) || null, [users, managingUid]);
+
   const handleAbrir = (u: UserProfile) => {
     if (u.role === 'cliente') {
       setManagingUid(managingUid === u.uid ? null : u.uid);
@@ -96,7 +98,7 @@ const UsuariosGeral: React.FC = () => {
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome, e-mail ou cliente..."
-            type="search" name="busca-usuarios-geral" autoComplete="off"
+            type="text" name="busca-usuarios-geral" autoComplete="off" autoCorrect="off" spellCheck={false}
             className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm" />
         </div>
         <div className="flex bg-gray-100 rounded-xl p-1">
@@ -129,33 +131,39 @@ const UsuariosGeral: React.FC = () => {
             const inativo = u.ativo === false;
             const nome = u.nomeCompleto || u.displayName || u.email;
             return (
-              <div key={u.uid}>
-                <div className={`bg-white rounded-2xl border p-4 flex items-center gap-4 ${inativo ? 'border-gray-200 opacity-60' : 'border-gray-200 hover:shadow-sm hover:border-brand-200'}`}>
-                  <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold flex-shrink-0">
-                    {(nome || 'U').charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{nome}</p>
-                    <p className="text-xs text-gray-500 truncate">{u.email}</p>
-                    {u.role === 'cliente' && u.clientName && (
-                      <p className="text-[10px] text-purple-600 flex items-center gap-1 mt-0.5"><Building2 size={10} /> {u.clientName}</p>
-                    )}
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full border flex-shrink-0 ${info.className}`}>{info.label}</span>
-                  {inativo && <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">Inativo</span>}
-                  <button onClick={() => handleAbrir(u)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-brand-50 text-brand-700 border border-brand-200 rounded-xl text-xs font-bold hover:bg-brand-100 flex-shrink-0">
-                    Abrir <ArrowRight size={13} />
-                  </button>
+              <div key={u.uid} className={`bg-white rounded-2xl border p-4 flex items-center gap-4 ${inativo ? 'border-gray-200 opacity-60' : 'border-gray-200 hover:shadow-sm hover:border-brand-200'}`}>
+                <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold flex-shrink-0">
+                  {(nome || 'U').charAt(0).toUpperCase()}
                 </div>
-                {managingUid === u.uid && (
-                  <div className="mt-2">
-                    <GerenciarUsuarioPortal user={u} onClose={() => setManagingUid(null)} />
-                  </div>
-                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{nome}</p>
+                  <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                  {u.role === 'cliente' && u.clientName && (
+                    <p className="text-[10px] text-purple-600 flex items-center gap-1 mt-0.5"><Building2 size={10} /> {u.clientName}</p>
+                  )}
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-1 rounded-full border flex-shrink-0 ${info.className}`}>{info.label}</span>
+                {inativo && <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">Inativo</span>}
+                <button onClick={() => handleAbrir(u)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-brand-50 text-brand-700 border border-brand-200 rounded-xl text-xs font-bold hover:bg-brand-100 flex-shrink-0">
+                  Abrir <ArrowRight size={13} />
+                </button>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Painel de gestão — fora da lista filtrada de propósito: assim, se a
+          busca mudar por qualquer motivo enquanto o painel está aberto (ex.:
+          autofill do navegador no campo de busca), o usuário sendo gerenciado
+          não some junto por deixar de bater com o filtro. */}
+      {managingUser && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-16">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setManagingUid(null)} />
+          <div className="relative w-full max-w-md">
+            <GerenciarUsuarioPortal user={managingUser} onClose={() => setManagingUid(null)} />
+          </div>
         </div>
       )}
     </div>
