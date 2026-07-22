@@ -15,6 +15,7 @@ import { db } from '../firebase';
 import { CollectionName, UserProfile, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { Search, ArrowRight, Loader2, Users2, Building2, ShieldOff } from 'lucide-react';
+import GerenciarUsuarioPortal from './GerenciarUsuarioPortal';
 
 const ROLE_INFO: Partial<Record<UserRole, { label: string; className: string }>> = {
   admin:         { label: 'Admin',      className: 'bg-red-50 text-red-700 border-red-200' },
@@ -44,6 +45,7 @@ const UsuariosGeral: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [tipo, setTipo] = useState<TipoFiltro>('todos');
+  const [managingUid, setManagingUid] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
@@ -70,7 +72,7 @@ const UsuariosGeral: React.FC = () => {
 
   const handleAbrir = (u: UserProfile) => {
     if (u.role === 'cliente') {
-      navigate('/app/clientes', { state: { expandClientId: u.clientId, tab: 'portal' } });
+      setManagingUid(managingUid === u.uid ? null : u.uid);
     } else {
       navigate('/app/usuarios', { state: { openUid: u.uid } });
     }
@@ -126,23 +128,30 @@ const UsuariosGeral: React.FC = () => {
             const inativo = u.ativo === false;
             const nome = u.nomeCompleto || u.displayName || u.email;
             return (
-              <div key={u.uid} className={`bg-white rounded-2xl border p-4 flex items-center gap-4 ${inativo ? 'border-gray-200 opacity-60' : 'border-gray-200 hover:shadow-sm hover:border-brand-200'}`}>
-                <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold flex-shrink-0">
-                  {(nome || 'U').charAt(0).toUpperCase()}
+              <div key={u.uid}>
+                <div className={`bg-white rounded-2xl border p-4 flex items-center gap-4 ${inativo ? 'border-gray-200 opacity-60' : 'border-gray-200 hover:shadow-sm hover:border-brand-200'}`}>
+                  <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold flex-shrink-0">
+                    {(nome || 'U').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">{nome}</p>
+                    <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                    {u.role === 'cliente' && u.clientName && (
+                      <p className="text-[10px] text-purple-600 flex items-center gap-1 mt-0.5"><Building2 size={10} /> {u.clientName}</p>
+                    )}
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full border flex-shrink-0 ${info.className}`}>{info.label}</span>
+                  {inativo && <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">Inativo</span>}
+                  <button onClick={() => handleAbrir(u)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-brand-50 text-brand-700 border border-brand-200 rounded-xl text-xs font-bold hover:bg-brand-100 flex-shrink-0">
+                    Abrir <ArrowRight size={13} />
+                  </button>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-gray-900 truncate">{nome}</p>
-                  <p className="text-xs text-gray-500 truncate">{u.email}</p>
-                  {u.role === 'cliente' && u.clientName && (
-                    <p className="text-[10px] text-purple-600 flex items-center gap-1 mt-0.5"><Building2 size={10} /> {u.clientName}</p>
-                  )}
-                </div>
-                <span className={`text-[10px] font-bold px-2 py-1 rounded-full border flex-shrink-0 ${info.className}`}>{info.label}</span>
-                {inativo && <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">Inativo</span>}
-                <button onClick={() => handleAbrir(u)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-brand-50 text-brand-700 border border-brand-200 rounded-xl text-xs font-bold hover:bg-brand-100 flex-shrink-0">
-                  Abrir <ArrowRight size={13} />
-                </button>
+                {managingUid === u.uid && (
+                  <div className="mt-2">
+                    <GerenciarUsuarioPortal user={u} onClose={() => setManagingUid(null)} />
+                  </div>
+                )}
               </div>
             );
           })}

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import {
   collection, addDoc, deleteDoc, doc, serverTimestamp,
   query, orderBy, onSnapshot, updateDoc, Timestamp, getDocs, where
@@ -511,8 +510,6 @@ const ClientModal: React.FC<ClientModalProps> = ({ initial, onClose }) => {
 
 // ── Main Clients ──────────────────────────────────────────────────────────────
 const Clients: React.FC = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<{ open: boolean; client: Client | null }>({ open: false, client: null });
@@ -532,17 +529,6 @@ const Clients: React.FC = () => {
       setLoading(false);
     }, err => { console.error('Clients:', err); setLoading(false); });
   }, []);
-
-  // Deep-link vindo de "Gestão Geral de Usuários" (/app/usuarios-geral) — abre
-  // direto o card do cliente na aba indicada, uma única vez por navegação.
-  useEffect(() => {
-    const state = location.state as { expandClientId?: string; tab?: 'ativos' | 'projetos' | 'contrato' | 'portal' } | null;
-    if (!state?.expandClientId || clients.length === 0) return;
-    if (!clients.some(c => c.id === state.expandClientId)) return;
-    setExpandedId(state.expandClientId);
-    if (state.tab) setTab(state.expandClientId, state.tab);
-    navigate(location.pathname, { replace: true, state: {} });
-  }, [clients, location.state]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Remover este cliente permanentemente?')) return;
