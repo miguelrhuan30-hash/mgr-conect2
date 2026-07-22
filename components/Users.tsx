@@ -1602,7 +1602,7 @@ const Users: React.FC = () => {
       <div className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input type="text" placeholder="Buscar colaborador..." value={search} onChange={e => setSearch(e.target.value)}
+          <input type="search" name="busca-colaboradores" autoComplete="off" placeholder="Buscar colaborador..." value={search} onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl" />
         </div>
         <span className="text-xs text-gray-500 font-bold">{filteredUsers.length} colaboradores</span>

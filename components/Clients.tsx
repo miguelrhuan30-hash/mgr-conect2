@@ -563,6 +563,7 @@ const Clients: React.FC = () => {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+            type="search" name="busca-clientes" autoComplete="off"
             className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-400"
             placeholder="Buscar por nome, contato ou segmento..." />
         </div>

@@ -96,6 +96,7 @@ const UsuariosGeral: React.FC = () => {
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome, e-mail ou cliente..."
+            type="search" name="busca-usuarios-geral" autoComplete="off"
             className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm" />
         </div>
         <div className="flex bg-gray-100 rounded-xl p-1">
