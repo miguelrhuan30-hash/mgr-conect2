@@ -20,6 +20,7 @@ import {
   ArrowRight, Briefcase, AlertCircle, LayoutGrid,
   Settings, Check, Users, Pencil, Printer, Eye,
   FolderOpen, Zap, ClipboardList, Trash2, ExternalLink, Hash,
+  Filter, X, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import {
   doc, getDoc, setDoc, collection, getDocs, onSnapshot, Timestamp,
@@ -46,7 +47,7 @@ import {
   Task, WorkflowStatus as WS, WORKFLOW_LABELS, WORKFLOW_COLORS,
   STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal,
 } from '../types';
-import { normalizeStatusOS, isOSLiberada } from '../services/osService';
+import { normalizeStatusOS, isOSLiberada, getTipoOrigemOS } from '../services/osService';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -422,8 +423,10 @@ const OSTaskCard: React.FC<{
 
 // ── Fase 7 — Relatório de conclusão por O.S. (avulsa + projeto + contrato) ───
 
+const TIPO_OS_LABEL: Record<string, string> = { projeto: 'Projeto', contrato_sla: 'Contrato SLA', avulsa: 'Avulsa' };
+
 const OSRelatorioCard: React.FC<{ task: Task; onOpen: (task: Task) => void }> = ({ task, onOpen }) => {
-  const hasProject = !!(task as any).projectId;
+  const tipoOrigem = getTipoOrigemOS(task);
   const enviado = (task as any).relatorioOSEnvio?.status === 'relatorio_enviado';
 
   return (
@@ -441,7 +444,7 @@ const OSRelatorioCard: React.FC<{ task: Task; onOpen: (task: Task) => void }> = 
               <Hash className="w-2.5 h-2.5" />{(task as any).numeroOS || task.code || task.id.slice(0, 8)}
             </span>
             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200">
-              {hasProject ? 'Projeto' : 'Avulsa'}
+              {TIPO_OS_LABEL[tipoOrigem]}
             </span>
             {enviado ? (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-700 border-emerald-200 flex items-center gap-0.5">
@@ -465,28 +468,304 @@ const OSRelatorioCard: React.FC<{ task: Task; onOpen: (task: Task) => void }> = 
   );
 };
 
+// Data de referência de uma O.S. concluída, pra ordenar e filtrar por período —
+// mesmo fallback usado na ordenação de osRelatorioTasks (relatorioFinal → execução → criação).
+const dataConclusaoTask = (task: Task): Date | null => {
+  const ts = (task as any).relatorioFinal?.finalizadoEm ?? (task as any).execution?.actualEndTime ?? task.createdAt;
+  if (!ts) return null;
+  try { return ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000); } catch { return null; }
+};
+
+interface OSGrupo { id: string; nome: string; tasks: Task[] }
+
+// Card de grupo (Projeto ou Contrato SLA) — colapsável, agrupa as O.S. do mesmo pai.
+const GrupoOSCard: React.FC<{ grupo: OSGrupo; icon: React.ElementType; corIcone: string; onOpen: (task: Task) => void }> = ({ grupo, icon: Icon, corIcone, onOpen }) => {
+  const [aberto, setAberto] = useState(true);
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      <button onClick={() => setAberto(v => !v)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${corIcone}`}>
+            <Icon className="w-4 h-4" />
+          </div>
+          <p className="text-sm font-bold text-gray-800 truncate">{grupo.nome}</p>
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 flex-shrink-0">{grupo.tasks.length}</span>
+        </div>
+        {aberto ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+      </button>
+      {aberto && (
+        <div className="px-4 pb-4 pt-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {grupo.tasks.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const FaseRelatorioOSList: React.FC<{
   tasks: Task[];
   loading: boolean;
   onOpen: (task: Task) => void;
-}> = ({ tasks, loading, onOpen }) => {
-  if (loading) {
-    return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-brand-600" /></div>;
-  }
+  contratosSlaNomes: Record<string, string>;
+  search: string;
+  onSearch: (v: string) => void;
+  fase: FlowFase;
+  projects: ProjectV2[];
+  canManage?: boolean;
+  onArchiveProject?: (project: ProjectV2) => void;
+  onDeleteProject?: (project: ProjectV2) => void;
+}> = ({ tasks, loading, onOpen, contratosSlaNomes, search, onSearch, fase, projects, canManage, onArchiveProject, onDeleteProject }) => {
+  const navigate = useNavigate();
+  const [viewTab, setViewTab] = useState<'relatorios' | 'projetos'>('relatorios');
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroColaborador, setFiltroColaborador] = useState('');
+  const [filtroDataInicio, setFiltroDataInicio] = useState(''); // 'YYYY-MM-DD'
+  const [filtroDataFim, setFiltroDataFim] = useState('');
+
+  // Só O.S. ainda sem relatório enviado — uma vez enviado, sai daqui e passa a
+  // aparecer na fase Faturamento (ver FaseFaturamentoOSList mais abaixo).
+  const pendentes = useMemo(
+    () => tasks.filter(t => (t as any).relatorioOSEnvio?.status !== 'relatorio_enviado'),
+    [tasks]
+  );
+
+  // Busca livre (mesmo padrão de FaseOSList) — número, título, cliente, técnico
+  const q = search.toLowerCase();
+  const buscadas = useMemo(() => pendentes.filter(t =>
+    !q
+    || (t.title || '').toLowerCase().includes(q)
+    || (t.clientName || '').toLowerCase().includes(q)
+    || ((t as any).numeroOS || '').toLowerCase().includes(q)
+    || (t.assigneeName || '').toLowerCase().includes(q)
+  ), [pendentes, q]);
+
+  const clientesDisponiveis = useMemo(
+    () => Array.from(new Set(pendentes.map(t => t.clientName).filter(Boolean) as string[])).sort(),
+    [pendentes]
+  );
+  const colaboradoresDisponiveis = useMemo(() => {
+    const nomes = new Set<string>();
+    pendentes.forEach(t => {
+      if (t.assigneeName) nomes.add(t.assigneeName);
+      ((t as any).assignedUserNames as string[] | undefined)?.forEach(n => n && nomes.add(n));
+    });
+    return Array.from(nomes).sort();
+  }, [pendentes]);
+
+  const filtrosAtivos = !!(filtroCliente || filtroColaborador || filtroDataInicio || filtroDataFim);
+
+  const tasksFiltradas = useMemo(() => buscadas.filter(t => {
+    if (filtroCliente && t.clientName !== filtroCliente) return false;
+    if (filtroColaborador) {
+      const participa = t.assigneeName === filtroColaborador
+        || ((t as any).assignedUserNames as string[] | undefined)?.includes(filtroColaborador);
+      if (!participa) return false;
+    }
+    if (filtroDataInicio || filtroDataFim) {
+      const d = dataConclusaoTask(t);
+      if (!d) return false;
+      const dStr = d.toISOString().slice(0, 10);
+      if (filtroDataInicio && dStr < filtroDataInicio) return false;
+      if (filtroDataFim && dStr > filtroDataFim) return false;
+    }
+    return true;
+  }), [buscadas, filtroCliente, filtroColaborador, filtroDataInicio, filtroDataFim]);
+
+  const limparFiltros = () => {
+    setFiltroCliente(''); setFiltroColaborador(''); setFiltroDataInicio(''); setFiltroDataFim('');
+  };
+
+  // Avulsas ficam soltas (bem visíveis, pra criar relatório e mandar pra cobrança).
+  // Projeto e Contrato SLA ficam agrupadas dentro de um card com o nome do pai.
+  const { avulsas, gruposProjeto, gruposContrato } = useMemo(() => {
+    const avulsas: Task[] = [];
+    const projetoMap = new Map<string, OSGrupo>();
+    const contratoMap = new Map<string, OSGrupo>();
+    tasksFiltradas.forEach(t => {
+      const tipo = getTipoOrigemOS(t);
+      if (tipo === 'projeto') {
+        const pid = (t as any).projectId as string;
+        if (!projetoMap.has(pid)) projetoMap.set(pid, { id: pid, nome: (t as any).projectName || 'Projeto sem nome', tasks: [] });
+        projetoMap.get(pid)!.tasks.push(t);
+      } else if (tipo === 'contrato_sla') {
+        const cid = (t as any).contratoSlaId as string;
+        if (!contratoMap.has(cid)) contratoMap.set(cid, { id: cid, nome: contratosSlaNomes[cid] || `Contrato SLA — ${t.clientName || ''}`, tasks: [] });
+        contratoMap.get(cid)!.tasks.push(t);
+      } else {
+        avulsas.push(t);
+      }
+    });
+    return { avulsas, gruposProjeto: Array.from(projetoMap.values()), gruposContrato: Array.from(contratoMap.values()) };
+  }, [tasksFiltradas, contratosSlaNomes]);
+
+  const filteredProjects = useMemo(() =>
+    projects.filter(p => p.nome.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q)),
+    [projects, q]
+  );
+
+  const handleOpenProject = (project: ProjectV2) => {
+    navigate(fase.tabHint
+      ? `/app/projetos-v2/${project.id}?tab=${fase.tabHint}&from=flow`
+      : `/app/projetos-v2/${project.id}?from=flow`);
+  };
+
   return (
-    <div className="space-y-3">
-      <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
-        <FileText className="w-3.5 h-3.5" /> Relatórios de Conclusão por O.S. ({tasks.length})
-      </p>
-      {tasks.length === 0 ? (
-        <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-          <p className="text-xs text-gray-400">Nenhuma O.S. concluída aguardando relatório.</p>
+    <div className="space-y-4">
+      {/* Barra de busca + navegação — mesmo padrão das fases Planejamento/Execução */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Buscar O.S. por número, título, cliente, técnico..."
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-400 outline-none" />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {tasks.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+        <button onClick={() => navigate('/app/os')}
+          className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+          <LayoutGrid className="w-3.5 h-3.5" /> Módulo O.S.
+        </button>
+      </div>
+
+      {/* Tabs toggle */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
+        <button onClick={() => setViewTab('relatorios')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all ${viewTab === 'relatorios' ? 'bg-white text-pink-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <FileText className="w-3.5 h-3.5" /> Relatórios de O.S. <span className="text-[10px] font-extrabold bg-pink-100 text-pink-600 px-1.5 py-0.5 rounded-full">{tasksFiltradas.length}</span>
+        </button>
+        <button onClick={() => setViewTab('projetos')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all ${viewTab === 'projetos' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <FolderOpen className="w-3.5 h-3.5" /> Projetos <span className="text-[10px] font-extrabold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full">{filteredProjects.length}</span>
+        </button>
+      </div>
+
+      {loading && (
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-brand-600" /></div>
+      )}
+
+      {viewTab === 'relatorios' && !loading && (
+        <div className="space-y-4">
+          {/* Filtros extras — cliente, colaborador, período */}
+          <div className="flex items-center gap-2 flex-wrap bg-gray-50 border border-gray-200 rounded-xl p-2.5">
+            <Filter className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+            <select value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)}
+              className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-pink-300">
+              <option value="">Todos os clientes</option>
+              {clientesDisponiveis.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={filtroColaborador} onChange={e => setFiltroColaborador(e.target.value)}
+              className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-pink-300">
+              <option value="">Todos os colaboradores</option>
+              {colaboradoresDisponiveis.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <div className="flex items-center gap-1">
+              <input type="date" value={filtroDataInicio} onChange={e => setFiltroDataInicio(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-pink-300" />
+              <span className="text-[10px] text-gray-400">até</span>
+              <input type="date" value={filtroDataFim} onChange={e => setFiltroDataFim(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-pink-300" />
+            </div>
+            {filtrosAtivos && (
+              <button onClick={limparFiltros}
+                className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-bold text-gray-500 hover:text-gray-700">
+                <X className="w-3 h-3" /> Limpar filtros
+              </button>
+            )}
+          </div>
+
+          {tasksFiltradas.length === 0 ? (
+            <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+              <p className="text-xs text-gray-400">
+                {search || filtrosAtivos ? 'Nenhuma O.S. encontrada com esses filtros.' : 'Nenhuma O.S. concluída aguardando relatório.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {avulsas.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-extrabold text-pink-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" /> O.S. Avulsas <span className="text-[10px] bg-pink-100 px-1.5 py-0.5 rounded-full">{avulsas.length}</span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {avulsas.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+                  </div>
+                </div>
+              )}
+
+              {gruposProjeto.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <FolderOpen className="w-3.5 h-3.5" /> O.S. de Projetos
+                  </h3>
+                  <div className="space-y-2">
+                    {gruposProjeto.map(g => <GrupoOSCard key={g.id} grupo={g} icon={FolderOpen} corIcone="bg-indigo-50 text-indigo-600" onOpen={onOpen} />)}
+                  </div>
+                </div>
+              )}
+
+              {gruposContrato.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-extrabold text-cyan-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5" /> O.S. de Contrato SLA
+                  </h3>
+                  <div className="space-y-2">
+                    {gruposContrato.map(g => <GrupoOSCard key={g.id} grupo={g} icon={Briefcase} corIcone="bg-cyan-50 text-cyan-600" onOpen={onOpen} />)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
+
+      {viewTab === 'projetos' && !loading && (
+        <div>
+          {filteredProjects.length === 0 ? (
+            <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+              <AlertCircle className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm font-bold text-gray-400">{search ? 'Nenhum projeto encontrado' : 'Nenhum projeto com relatório final ainda'}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filteredProjects.map(project => (
+                <ProjectMiniCard
+                  key={project.id}
+                  project={project}
+                  fase={fase}
+                  onOpen={() => handleOpenProject(project)}
+                  canManage={canManage}
+                  onArchive={() => onArchiveProject?.(project)}
+                  onDelete={() => onDeleteProject?.(project)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Fase 8 (Faturamento) — O.S. avulsas com relatório já enviado, aguardando faturar/pagar.
+// Some da lista assim que a O.S. é faturada/paga (workflowStatus deixa de ser
+// AGUARDANDO_FATURAMENTO/AGUARDANDO_PAGAMENTO).
+const FaseFaturamentoOSList: React.FC<{
+  tasks: Task[];
+  onOpen: (task: Task) => void;
+}> = ({ tasks, onOpen }) => {
+  const pendentes = useMemo(() => tasks.filter(t =>
+    getTipoOrigemOS(t) === 'avulsa'
+    && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
+    && (t.workflowStatus === WS.AGUARDANDO_FATURAMENTO || t.workflowStatus === WS.AGUARDANDO_PAGAMENTO)
+  ), [tasks]);
+
+  if (pendentes.length === 0) return null;
+
+  return (
+    <div className="space-y-2 mb-6">
+      <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+        <DollarSign className="w-3.5 h-3.5" /> O.S. Avulsas — Relatório Enviado, Aguardando Faturamento ({pendentes.length})
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {pendentes.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+      </div>
     </div>
   );
 };
@@ -820,6 +1099,20 @@ const FlowAtendimento: React.FC = () => {
     return () => unsub();
   }, []);
 
+  // Nomes de Contrato SLA — pra agrupar as O.S. de contrato pelo nome do contrato pai
+  const [contratosSlaNomes, setContratosSlaNomes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, CollectionName.CONTRATOS_SLA), snap => {
+      const map: Record<string, string> = {};
+      snap.docs.forEach(d => {
+        const data = d.data() as any;
+        map[d.id] = data.identificador || `Contrato SLA — ${data.clientName || ''}`;
+      });
+      setContratosSlaNomes(map);
+    }, () => {});
+    return () => unsub();
+  }, []);
+
   // ── Filtros de Concluídos ────────────────────────────────────────────────────
   const [concFilterMes, setConcFilterMes] = useState<string>('');       // 'YYYY-MM'
   const [concFilterInicio, setConcFilterInicio] = useState<string>(''); // 'YYYY-MM-DD'
@@ -925,9 +1218,19 @@ const FlowAtendimento: React.FC = () => {
       counts['execucao'] = (counts['execucao'] || 0) + allOSTasks.filter(t => isOSLiberada(t)).length;
     }
     // Fase Relatório — soma O.S. individuais ainda aguardando envio de relatório
+    // (uma vez enviado, a O.S. sai daqui e passa a contar em Faturamento — ver abaixo)
     if (osRelatorioTasks.length > 0) {
       counts['relatorio'] = (counts['relatorio'] || 0)
         + osRelatorioTasks.filter(t => (t as any).relatorioOSEnvio?.status !== 'relatorio_enviado').length;
+    }
+    // Fase Faturamento — soma O.S. avulsas com relatório já enviado, aguardando faturar/pagar
+    if (osRelatorioTasks.length > 0) {
+      counts['faturamento'] = (counts['faturamento'] || 0)
+        + osRelatorioTasks.filter(t =>
+            getTipoOrigemOS(t) === 'avulsa'
+            && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
+            && (t.workflowStatus === WS.AGUARDANDO_FATURAMENTO || t.workflowStatus === WS.AGUARDANDO_PAGAMENTO)
+          ).length;
     }
     return counts;
   }, [projects, allOSTasks, osRelatorioTasks]);
@@ -1360,22 +1663,21 @@ const FlowAtendimento: React.FC = () => {
               tasks={osRelatorioTasks}
               loading={osRelatorioLoading}
               onOpen={setRelatorioOSTask}
+              contratosSlaNomes={contratosSlaNomes}
+              search={search}
+              onSearch={setSearch}
+              fase={faseAtual}
+              projects={projetosDaFase}
+              canManage={canManageProjects}
+              onArchiveProject={handleArchiveProject}
+              onDeleteProject={setConfirmDelete}
             />
-            <div>
-              <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5 mb-3">
-                <FolderOpen className="w-3.5 h-3.5" /> Projetos com Relatório Final
-              </p>
-              <FaseProjectList
-                fase={faseAtual}
-                projects={projetosDaFase}
-                search={search}
-                onSearch={setSearch}
-                canManage={canManageProjects}
-                onArchiveProject={handleArchiveProject}
-                onDeleteProject={setConfirmDelete}
-              />
-            </div>
           </div>
+        )}
+
+        {/* Fase 8 — Faturamento: O.S. avulsas com relatório já enviado, aguardando faturar/pagar */}
+        {faseSelecionada === 'faturamento' && !loading && (
+          <FaseFaturamentoOSList tasks={osRelatorioTasks} onOpen={(task) => navigate(`/app/os/${task.id}`)} />
         )}
 
         {/* Fases restantes (faturamento, concluídos) */}
