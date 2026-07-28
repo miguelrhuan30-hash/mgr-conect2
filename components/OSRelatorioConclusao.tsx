@@ -19,7 +19,8 @@ import {
 import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Task, OSItemTarefa, OSObservacao, CollectionName } from '../types';
+import { Task, OSItemTarefa, OSObservacao, CollectionName, WorkflowStatus } from '../types';
+import { getTipoOrigemOS } from '../services/osService';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -274,6 +275,15 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const numeroOS = (task as any).numeroOS || task.code || task.id.slice(0, 8).toUpperCase();
   const envio = (task as any).relatorioOSEnvio as { status: 'aguardando_relatorio' | 'relatorio_enviado'; enviadoEm?: any } | undefined;
   const enviado = envio?.status === 'relatorio_enviado';
+  // O.S. avulsa já marcada como enviada antes do gatilho automático existir
+  // (ou com workflowStatus desincronizado) — oferece um jeito manual de
+  // avançar pra Faturamento sem precisar reabrir/reenviar o relatório.
+  const precisaAvancarFaturamento = enviado
+    && getTipoOrigemOS(task) === 'avulsa'
+    && task.workflowStatus !== WorkflowStatus.AGUARDANDO_FATURAMENTO
+    && task.workflowStatus !== WorkflowStatus.AGUARDANDO_PAGAMENTO
+    && task.workflowStatus !== WorkflowStatus.CONCLUIDO;
+  const [avancando, setAvancando] = useState(false);
   const observacoes = ((task as any).observacoes || []) as OSObservacao[];
   const inicio = (task as any).execution?.actualStartTime;
   const fim = (task as any).execution?.actualEndTime;
@@ -350,6 +360,10 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
     try {
       const nome = userProfile?.nomeCompleto || userProfile?.displayName || 'Gestor';
       await salvarConteudo();
+      // Gatilho automático: O.S. avulsa que ainda não foi faturada avança direto
+      // pra "Aguardando Faturamento" assim que o relatório é marcado como enviado —
+      // é o que a move da fase Relatório pra fase Faturamento no Flow de Atendimento.
+      const avancaParaFaturamento = getTipoOrigemOS(task) === 'avulsa' && task.workflowStatus !== WorkflowStatus.CONCLUIDO;
       await updateDoc(doc(db, 'tasks', task.id), {
         relatorioOSEnvio: {
           status: 'relatorio_enviado',
@@ -357,10 +371,27 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
           enviadoPor: currentUser.uid,
           enviadoPorNome: nome,
         },
+        ...(avancaParaFaturamento ? { workflowStatus: WorkflowStatus.AGUARDANDO_FATURAMENTO, status: 'completed' } : {}),
       });
       await sincronizarRelatorioCliente(conteudoAtual(), nome);
-      onSave?.({ ...task, relatorioOSEnvio: { status: 'relatorio_enviado', enviadoPor: currentUser.uid, enviadoPorNome: nome } } as Task);
+      onSave?.({
+        ...task,
+        relatorioOSEnvio: { status: 'relatorio_enviado', enviadoPor: currentUser.uid, enviadoPorNome: nome },
+        ...(avancaParaFaturamento ? { workflowStatus: WorkflowStatus.AGUARDANDO_FATURAMENTO } : {}),
+      } as Task);
     } finally { setSaving(false); }
+  };
+
+  const handleAvancarFaturamento = async () => {
+    if (!currentUser) return;
+    setAvancando(true);
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), {
+        workflowStatus: WorkflowStatus.AGUARDANDO_FATURAMENTO,
+        status: 'completed',
+      });
+      onSave?.({ ...task, workflowStatus: WorkflowStatus.AGUARDANDO_FATURAMENTO } as Task);
+    } finally { setAvancando(false); }
   };
 
   const handleWhatsApp = () => {
@@ -403,6 +434,17 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
           {enviado && (
             <div className="flex items-center gap-2 text-xs font-bold px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl">
               <Check className="w-3.5 h-3.5" /> Relatório enviado ao cliente {envio?.enviadoEm && `em ${fmtDateTime(envio.enviadoEm)}`}
+            </div>
+          )}
+
+          {precisaAvancarFaturamento && (
+            <div className="flex items-center justify-between gap-2 flex-wrap text-xs font-bold px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl">
+              <span className="flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> Essa O.S. ainda não avançou pra Faturamento.</span>
+              <button onClick={handleAvancarFaturamento} disabled={avancando}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 disabled:opacity-50">
+                {avancando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                Avançar para Faturamento
+              </button>
             </div>
           )}
 
