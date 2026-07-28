@@ -704,7 +704,7 @@ export type EvidenceType = 'NONE' | 'PHOTO' | 'TEXT' | 'BOTH';
 
 export interface ChecklistItem {
   id: string;
-  text: string; 
+  text: string;
   completed: boolean;
   description?: string;
   evidenceRequired?: EvidenceType;
@@ -712,6 +712,23 @@ export interface ChecklistItem {
     text?: string;
     photoUrl?: string;
   };
+}
+
+/**
+ * ReagendamentoEntry — uma entrada no histórico de reagendamentos de uma O.S.
+ * Reagendar NÃO cria uma O.S. nova (ver services/osService.ts::reagendarOS) —
+ * fica tudo registrado aqui, na mesma Task, pra dar lastro de quanto tempo a
+ * O.S. ficou aberta e por quais motivos foi adiada.
+ */
+export interface ReagendamentoEntry {
+  id: string;
+  motivo: string;                            // um de REAGENDAMENTO_MOTIVOS, ou texto livre se 'Outro'
+  dataAnteriorPrevista?: Timestamp | null;    // o que estava agendado antes do reagendamento
+  dataNovaPrevista: Timestamp;                // nova data/hora agendada
+  reagendadoEm: Timestamp;
+  reagendadoPor: string;                      // uid
+  reagendadoPorNome?: string;
+  origem: 'gestor_web' | 'gestor_app' | 'pipeline_revisao';
 }
 
 export interface Task {
@@ -803,10 +820,12 @@ export interface Task {
   archived?: boolean;
   archivedAt?: Timestamp;
   archivedBy?: string;
-  // Reagendamento
+  // Reagendamento — campos legados (só leitura, pra O.S. criadas antes da unificação abaixo)
   reagendamentoMotivo?: string;     // motivo que levou ao reagendamento
   reagendamentoDe?: string;         // ID da O.S. original (nesta é a nova)
   reagendamentoPara?: string;       // ID da nova O.S. criada (nesta é a original)
+  // Reagendamento — modelo atual: fica tudo na mesma O.S., ver reagendarOS() em services/osService.ts
+  historicoReagendamentos?: ReagendamentoEntry[];
   // Orçamento vinculado
   orcamentoId?: string;
 

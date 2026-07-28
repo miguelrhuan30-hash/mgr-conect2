@@ -12,11 +12,11 @@
  */
 import React, { useState, useEffect } from 'react';
 import {
-  doc, updateDoc, deleteDoc, addDoc, serverTimestamp, Timestamp, getDocs,
+  doc, updateDoc, deleteDoc, serverTimestamp, Timestamp, getDocs,
   collection, query, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { gerarNumeroOS } from '../services/osService';
+import { reagendarOS } from '../services/osService';
 import { registrarAtividade } from '../services/activityFeedService';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -461,82 +461,25 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
     }
   };
 
-  // ── Reagendar ─────────────────────────────────────────────────────────────
+  // ── Reagendar (mesma O.S., ver services/osService.ts::reagendarOS) ─────────
   const handleReagendar = async () => {
     if (!currentUser || !reagendamentoData) return;
     setReagendando(true);
     try {
-      const motivo = reagendamentoMotivo === 'Outro' ? reagendamentoOutro : (reagendamentoMotivo as string);
+      const motivoBase = reagendamentoMotivo === 'Outro' ? reagendamentoOutro : (reagendamentoMotivo as string);
+      const motivo = reagendamentoDesc.trim() ? `${motivoBase} — ${reagendamentoDesc.trim()}` : motivoBase;
 
-      // Create new OS linked to original
-      const tarefasPendentes = tarefasOS
-        .filter((t: any) => t.status !== 'concluida')
-        .map((t: any) => ({ ...t, id: `tarefa_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, status: 'pendente' }));
-
-      // Gerar número sequencial para a nova OS reagendada
-      const numeroOS = await gerarNumeroOS();
-
-      const novaOS: Record<string, any> = {
-        numeroOS,
-        title: `${numeroOS} — [Reag.] ${titulo}`,
-        description: reagendamentoDesc || descricao,
-        dadosCompletos: true,
-        status: 'pending',
-        priority: prioridade,
-        clientId, clientName,
-        assignedTo: assigneeId, assigneeName, assigneeId,
-        assignedUsers,
-        tipoServico,
-        ativoId, ativoNome,
-        projectId, projectName,
-        scheduling: {
-          dataPrevista: Timestamp.fromDate(new Date(reagendamentoData)),
-          tempoEstimado: tempoEstimado || undefined,
-        },
-        startDate: Timestamp.fromDate(new Date(reagendamentoData)),
-        tarefasOS: tarefasPendentes.length > 0 ? tarefasPendentes : [{
-          id: `tarefa_${Date.now()}`,
-          descricao: 'Continuação do serviço',
-          status: 'pendente',
-          fotoSlots: [
-            { id: 'antes', titulo: 'Foto Antes', instrucao: 'Antes de iniciar', obrigatoria: true, ordem: 0 },
-            { id: 'depois', titulo: 'Foto Depois', instrucao: 'Após concluir', obrigatoria: true, ordem: 1 },
-          ],
-          fotosEvidencia: [],
-        }],
-        ferramentasUtilizadas: ferramentas,
-        ponto: { permiteEntrada: pontoEntrada, permiteSaida: pontoSaida },
-        reagendamentoDe: task.id,
-        reagendamentoMotivo: motivo,
-        workflowStatus: WorkflowStatus.AGUARDANDO_APROVACAO,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      const novaRef = await addDoc(collection(db, CollectionName.TASKS), novaOS);
-
-      // Finalize original OS
-      await updateDoc(doc(db, CollectionName.TASKS, task.id), {
-        status: 'completed',
-        statusOS: 'REAGENDAR',
-        workflowStatus: WorkflowStatus.CONCLUIDO, // encerra a O.S. antiga no Kanban/Flow — substituída pela nova
-        reagendamentoMotivo: motivo,
-        reagendamentoPara: novaRef.id,
-        updatedAt: serverTimestamp(),
+      await reagendarOS({
+        taskId: task.id,
+        task: { scheduling: (task as any).scheduling, startDate: task.startDate, numeroOS: (task as any).numeroOS, title: task.title, clientName },
+        motivo,
+        novaData: new Date(reagendamentoData),
+        usuarioId: currentUser.uid,
+        usuarioNome: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor',
+        origem: 'gestor_web',
       });
 
-      registrarAtividade({
-        tipo: 'os_reagendada',
-        autorId: currentUser.uid,
-        autorNome: (userProfile as any)?.nomeCompleto || userProfile?.displayName || 'Gestor',
-        titulo: `O.S. reagendada para ${new Date(reagendamentoData).toLocaleDateString('pt-BR')}`,
-        descricao: motivo || undefined,
-        osId: task.id, osNumero: (task as any).numeroOS, osTitulo: task.title,
-        clienteNome: clientName || task.clientName,
-        meta: { ambiente: 'web', novaOsId: novaRef.id, motivo },
-      });
-
-      onSaved({ ...task, status: 'completed', statusOS: 'REAGENDAR' } as unknown as Task);
+      onSaved({ ...task, workflowStatus: WorkflowStatus.AGENDADO, statusOS: undefined } as Task);
     } catch (e: any) {
       setError(e.message || 'Erro ao reagendar');
     } finally {
@@ -957,7 +900,7 @@ const OSEditModal: React.FC<OSEditModalProps> = ({ task, onClose, onSaved }) => 
               {showReagendar && (
                 <div className="px-4 py-3 space-y-3 bg-orange-50/30">
                   <p className="text-[10px] text-orange-600">
-                    Ao reagendar, esta O.S. será finalizada e uma nova será criada com vínculo à original.
+                    Ao reagendar, a data é atualizada nesta mesma O.S. (mesmo número) e o motivo fica registrado no histórico de reagendamentos.
                   </p>
                   <div>
                     <label className="text-xs text-orange-700 font-bold block mb-1">Motivo *</label>

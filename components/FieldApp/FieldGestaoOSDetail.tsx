@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import {
-  doc, updateDoc, deleteDoc, collection, getDocs, addDoc, Timestamp,
+  doc, updateDoc, deleteDoc, collection, getDocs, Timestamp,
 } from 'firebase/firestore';
 import { CollectionName, WorkflowStatus, REAGENDAMENTO_MOTIVOS } from '../../types';
 import { db } from '../../firebase';
@@ -12,7 +12,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { OSField } from './FieldOS';
 import FieldOSEditModal from './FieldOSEditModal';
 import { registrarAtividade } from '../../services/activityFeedService';
-import { gerarNumeroOS } from '../../services/osService';
+import { reagendarOS } from '../../services/osService';
 import { isVideoUrl } from './photoUtils';
 import CalendarioPicker from './CalendarioPicker';
 import {
@@ -58,25 +58,13 @@ const PRIORITY_OPTIONS = [
   { value: 'critica', label: 'Crítica', color: 'border-red-700 bg-red-700/20 text-red-300'            },
 ];
 
-const tsToLocal = (ts: Timestamp | undefined): string => {
-  if (!ts) return '';
-  const d = ts.toDate();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-const localToTs = (v: string): Timestamp | null => {
-  if (!v) return null;
-  return Timestamp.fromDate(new Date(v));
-};
-
 const diasEmAberto = (os: OSField): number => {
   const criado = (os as any).criadoEm?.toDate?.() ?? (os as any).createdAt?.toDate?.();
   if (!criado) return 0;
   return Math.floor((Date.now() - criado.getTime()) / 86400000);
 };
 
-type Painel = 'none' | 'status' | 'reagendar' | 'reagendar_motivo' | 'reatribuir' | 'excluir';
+type Painel = 'none' | 'status' | 'reagendar_motivo' | 'reatribuir' | 'excluir';
 
 export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }: Props) {
   const { currentUser, userProfile } = useAuth();
@@ -84,10 +72,6 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
   const [saving, setSaving]     = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
-
-  // ── Reagendar ──
-  const [novaStart, setNovaStart] = useState(tsToLocal(os.startDate));
-  const [novaEnd, setNovaEnd]     = useState(tsToLocal((os as any).endDate));
 
   // ── Reatribuir ──
   const [users, setUsers]         = useState<{ uid: string; nome: string }[]>([]);
@@ -179,72 +163,29 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
   };
 
   /* ─── Reagendar com motivo ──────────────────────────
-   * Para O.S. não concluídas: cria uma NOVA O.S. carregando as tarefas
-   * ainda pendentes/não executadas, e encerra a atual como REAGENDAR
-   * (mesma lógica usada no web em OSEditModal.handleReagendar). */
+   * Atualiza a data na MESMA O.S. e registra o motivo em
+   * historicoReagendamentos (ver services/osService.ts::reagendarOS) —
+   * não cria mais uma O.S. nova. */
   const handleReagendarComMotivo = async () => {
     if (!currentUser) return;
     const motivo = motivoReagendamento === 'Outro' ? motivoOutro : motivoReagendamento;
     if (!motivo.trim()) { alert('Selecione ou descreva o motivo do reagendamento.'); return; }
+    if (!dataReagendamento) { alert('Selecione a nova data prevista.'); return; }
     setReagendando(true);
     try {
-      const tarefasPendentes = (os.tarefasOS ?? [])
-        .filter((t: any) => t.status !== 'concluida')
-        .map((t: any) => ({
-          ...t,
-          id: `tarefa_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          status: 'pendente',
-          fotosApp: [],
-          observacaoApp: '',
-        }));
-
-      const numeroOS = await gerarNumeroOS();
-      const novaOS: Record<string, any> = {
-        numeroOS,
-        title: `${numeroOS} — [Reag.] ${os.title ?? ''}`,
-        description: os.description || '',
-        status: 'pending',
-        priority: (os as any).priority || 'medium',
-        clientId: (os as any).clientId || '',
-        clientName: os.clientName || '',
-        assignedTo: os.assignedTo || '',
-        assigneeName: os.assigneeName || '',
-        projectId: (os as any).projectId || '',
-        projectName: (os as any).projectName || '',
-        tipoServico: os.tipoServico || '',
-        ...(dataReagendamento ? { startDate: Timestamp.fromDate(new Date(`${dataReagendamento}T09:00:00`)) } : {}),
-        tarefasOS: tarefasPendentes.length > 0 ? tarefasPendentes : undefined,
-        reagendamentoDe: os.id,
-        reagendamentoMotivo: motivo,
-        workflowStatus: WorkflowStatus.AGUARDANDO_APROVACAO,
-        createdAt: Timestamp.now(),
-      };
-      const novaRef = await addDoc(collection(db, CollectionName.TASKS), novaOS);
-
-      await updateDoc(doc(db, 'tasks', os.id), {
-        status: 'completed',
-        statusOS: 'REAGENDAR',
-        workflowStatus: WorkflowStatus.CONCLUIDO, // encerra a O.S. antiga no Kanban/Flow — substituída pela nova
-        reagendamentoMotivo: motivo,
-        reagendamentoPara: novaRef.id,
-        atualizadoEm: Timestamp.now(),
-      });
-
       const autorNome = (userProfile as any)?.nomeCompleto || (userProfile as any)?.displayName || 'Gestor';
-      registrarAtividade({
-        tipo: 'os_reagendada',
-        autorId: currentUser.uid,
-        autorNome,
-        titulo: dataReagendamento
-          ? `O.S. reagendada para ${new Date(`${dataReagendamento}T12:00:00`).toLocaleDateString('pt-BR')}`
-          : 'O.S. reagendada (sem data definida)',
-        descricao: motivo,
-        osId: os.id, osNumero: os.numeroOS, osTitulo: os.title,
-        clienteNome: os.clientName,
-        meta: { ambiente: 'app_gestor', novaOsId: novaRef.id, motivo },
+
+      await reagendarOS({
+        taskId: os.id,
+        task: { scheduling: (os as any).scheduling, startDate: os.startDate, numeroOS: os.numeroOS, title: os.title || '', clientName: os.clientName },
+        motivo,
+        novaData: new Date(`${dataReagendamento}T09:00:00`),
+        usuarioId: currentUser.uid,
+        usuarioNome: autorNome,
+        origem: 'gestor_app',
       });
 
-      onUpdate({ ...os, status: 'completed' } as OSField);
+      onUpdate({ ...os, workflowStatus: WorkflowStatus.AGENDADO, status: 'pending' } as OSField);
       setPainel('none');
     } catch (e) {
       console.error('[FieldGestaoOSDetail] reagendar com motivo:', e);
@@ -584,60 +525,13 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
           </div>
         )}
 
-        {/* Reagendar */}
-        {painel === 'reagendar' && (
-          <div className="mx-4 my-4 bg-gray-900 border border-gray-700 rounded-2xl p-4 space-y-4">
-            <p className="text-xs font-bold text-white">Reagendar O.S.</p>
-            <div>
-              <label className="text-[10px] text-gray-500 uppercase font-bold">Data / hora de início</label>
-              <input
-                type="datetime-local"
-                value={novaStart}
-                onChange={e => setNovaStart(e.target.value)}
-                className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-500 uppercase font-bold">Data / hora de encerramento</label>
-              <input
-                type="datetime-local"
-                value={novaEnd}
-                onChange={e => setNovaEnd(e.target.value)}
-                className="w-full mt-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
-              />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => {
-                  const updates: Record<string, any> = {};
-                  const ts = localToTs(novaStart);
-                  const te = localToTs(novaEnd);
-                  if (ts) updates.startDate = ts;
-                  if (te) updates.endDate   = te;
-                  if (Object.keys(updates).length === 0) return;
-                  save(updates, 'reagendar');
-                }}
-                disabled={saving || !novaStart}
-                className="flex-1 py-2.5 bg-orange-600 text-white font-bold text-xs rounded-xl disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <Calendar size={13} />}
-                Confirmar datas
-              </button>
-              <button onClick={() => setPainel('none')} disabled={saving}
-                className="px-4 py-2.5 bg-gray-800 text-gray-400 font-bold text-xs rounded-xl">
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Reagendar com motivo — para O.S. não concluídas: cria nova O.S. */}
+        {/* Reagendar com motivo — atualiza a mesma O.S., registra no histórico */}
         {painel === 'reagendar_motivo' && (
           <div className="mx-4 my-4 bg-gray-900 border border-gray-700 rounded-2xl p-4 space-y-4">
             <div>
-              <p className="text-xs font-bold text-white">Reagendar O.S. (com motivo)</p>
+              <p className="text-xs font-bold text-white">Reagendar O.S.</p>
               <p className="text-[10px] text-gray-500 mt-1">
-                Cria uma nova O.S. com as tarefas pendentes e encerra esta como "Reagendada".
+                Atualiza a data desta mesma O.S. (mesmo número) e registra o motivo no histórico de reagendamentos.
               </p>
             </div>
             <div>
@@ -668,7 +562,7 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
             </div>
             <div>
               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1.5 block">
-                Nova data prevista <span className="text-gray-600 font-normal normal-case">(opcional)</span>
+                Nova data prevista *
               </label>
               <CalendarioPicker
                 value={dataReagendamento}
@@ -679,7 +573,7 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
             <div className="flex gap-2 pt-1">
               <button
                 onClick={handleReagendarComMotivo}
-                disabled={reagendando || !motivoReagendamento}
+                disabled={reagendando || !motivoReagendamento || !dataReagendamento}
                 className="flex-1 py-2.5 bg-orange-600 text-white font-bold text-xs rounded-xl disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 {reagendando ? <Loader2 size={13} className="animate-spin" /> : <Calendar size={13} />}
@@ -800,7 +694,7 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
               <RefreshCw size={13} /> Status
             </button>
             <button
-              onClick={() => { setNovaStart(tsToLocal(os.startDate)); setNovaEnd(tsToLocal((os as any).endDate)); setPainel('reagendar'); }}
+              onClick={() => { setMotivoReagendamento(''); setMotivoOutro(''); setDataReagendamento(''); setPainel('reagendar_motivo'); }}
               className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-800 border border-gray-700 text-gray-200 font-bold text-xs rounded-xl active:bg-gray-700"
             >
               <Calendar size={13} /> Reagendar
@@ -812,15 +706,6 @@ export default function FieldGestaoOSDetail({ os, onClose, onUpdate, onDelete }:
               <UserCog size={13} /> Reatribuir
             </button>
           </div>
-
-          {os.status !== 'completed' && (
-            <button
-              onClick={() => { setMotivoReagendamento(''); setMotivoOutro(''); setDataReagendamento(''); setPainel('reagendar_motivo'); }}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-xs rounded-xl active:bg-orange-500/20"
-            >
-              <Calendar size={13} /> Reagendar O.S. (com motivo)
-            </button>
-          )}
 
           <button
             onClick={() => setPainel('excluir')}

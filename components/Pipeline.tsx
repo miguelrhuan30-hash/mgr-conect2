@@ -14,9 +14,10 @@ import { db } from '../firebase';
 import {
     Task, WorkflowStatus as WS, WORKFLOW_ORDER, WORKFLOW_LEGACY_PHASES,
     WORKFLOW_LABELS, WORKFLOW_COLORS, PriorityLevel,
-    CollectionName, STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal
+    CollectionName, STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal,
+    REAGENDAMENTO_MOTIVOS,
 } from '../types';
-import { normalizeStatusOS, getSlaBadgeInfo } from '../services/osService';
+import { normalizeStatusOS, getSlaBadgeInfo, reagendarOS } from '../services/osService';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -24,7 +25,7 @@ import {
     Loader2, ChevronLeft, ChevronRight, AlertTriangle, Clock,
     User, Building2, Calendar, Zap, ChevronDown, ChevronUp,
     ArrowRight, DollarSign, CheckCircle2, Save, X, Kanban, Eye, Plus,
-    Printer, Pencil, Play, Trash2, Briefcase
+    Printer, Pencil, Play, Trash2, Briefcase, RefreshCw
 } from 'lucide-react';
 import { Suspense, lazy } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -42,18 +43,22 @@ const PRIORITY_PILL: Record<PriorityLevel, string> = {
 };
 
 // ── Revisao Modal — resolução de OS bloqueadas ─────────────────────────────
-type RevisaoAction = 'faturar' | 'reenviar' | 'cancelar';
+type RevisaoAction = 'faturar' | 'reenviar' | 'cancelar' | 'reagendar';
 const RevisaoModal: React.FC<{
     task: Task;
-    onResolve: (action: RevisaoAction) => Promise<void>;
+    onResolve: (action: RevisaoAction, reagendamento?: { motivo: string; novaData: Date }) => Promise<void>;
     onClose: () => void;
 }> = ({ task, onResolve, onClose }) => {
     const [loading, setLoading] = useState(false);
+    const [showReagendar, setShowReagendar] = useState(false);
+    const [motivo, setMotivo] = useState<string>(REAGENDAMENTO_MOTIVOS[0]);
+    const [motivoOutro, setMotivoOutro] = useState('');
+    const [novaData, setNovaData] = useState('');
     const statusLabel = STATUS_OS_LABELS[(task as any).statusOS as OSStatusFinal] || (task as any).statusOS || 'Pendente';
     const statusColor = STATUS_OS_COLORS[(task as any).statusOS as OSStatusFinal] || 'bg-gray-100 text-gray-700';
-    const handle = async (action: RevisaoAction) => {
+    const handle = async (action: RevisaoAction, reagendamento?: { motivo: string; novaData: Date }) => {
         setLoading(true);
-        try { await onResolve(action); } finally { setLoading(false); }
+        try { await onResolve(action, reagendamento); } finally { setLoading(false); }
     };
     return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -66,20 +71,63 @@ const RevisaoModal: React.FC<{
                 </div>
                 <p className="text-xs text-gray-500 mb-2">{(task as any).numeroOS || task.id.slice(0,8)} — {task.title}</p>
                 <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-4 ${statusColor}`}>{statusLabel}</span>
-                <div className="space-y-2">
-                    <button disabled={loading} onClick={() => handle('faturar')}
-                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-sm font-bold text-emerald-700 transition-colors disabled:opacity-50">
-                        <CheckCircle2 className="w-4 h-4" /> Resolver e faturar
-                    </button>
-                    <button disabled={loading} onClick={() => handle('reenviar')}
-                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-sky-200 hover:bg-sky-50 text-sm font-bold text-sky-700 transition-colors disabled:opacity-50">
-                        <Play className="w-4 h-4" /> Reenviar para execução
-                    </button>
-                    <button disabled={loading} onClick={() => handle('cancelar')}
-                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-red-200 hover:bg-red-50 text-sm font-bold text-red-600 transition-colors disabled:opacity-50">
-                        <Trash2 className="w-4 h-4" /> Cancelar O.S.
-                    </button>
-                </div>
+
+                {!showReagendar ? (
+                    <div className="space-y-2">
+                        <button disabled={loading} onClick={() => handle('faturar')}
+                            className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-sm font-bold text-emerald-700 transition-colors disabled:opacity-50">
+                            <CheckCircle2 className="w-4 h-4" /> Resolver e faturar
+                        </button>
+                        <button disabled={loading} onClick={() => handle('reenviar')}
+                            className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-sky-200 hover:bg-sky-50 text-sm font-bold text-sky-700 transition-colors disabled:opacity-50">
+                            <Play className="w-4 h-4" /> Reenviar para execução
+                        </button>
+                        <button disabled={loading} onClick={() => setShowReagendar(true)}
+                            className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-orange-200 hover:bg-orange-50 text-sm font-bold text-orange-700 transition-colors disabled:opacity-50">
+                            <Calendar className="w-4 h-4" /> Reagendar
+                        </button>
+                        <button disabled={loading} onClick={() => handle('cancelar')}
+                            className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-red-200 hover:bg-red-50 text-sm font-bold text-red-600 transition-colors disabled:opacity-50">
+                            <Trash2 className="w-4 h-4" /> Cancelar O.S.
+                        </button>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        <p className="text-[10px] text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                            Atualiza a data desta mesma O.S. e registra o motivo no histórico de reagendamentos.
+                        </p>
+                        <div>
+                            <label className="text-xs font-bold text-gray-600 block mb-1">Motivo *</label>
+                            <select value={motivo} onChange={e => setMotivo(e.target.value)}
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm">
+                                {REAGENDAMENTO_MOTIVOS.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                            {motivo === 'Outro' && (
+                                <input value={motivoOutro} onChange={e => setMotivoOutro(e.target.value)}
+                                    placeholder="Descreva o motivo..."
+                                    className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                            )}
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-600 block mb-1">Nova data prevista *</label>
+                            <input type="datetime-local" value={novaData} onChange={e => setNovaData(e.target.value)}
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                disabled={loading || !novaData || (motivo === 'Outro' && !motivoOutro.trim())}
+                                onClick={() => handle('reagendar', { motivo: motivo === 'Outro' ? motivoOutro : motivo, novaData: new Date(novaData) })}
+                                className="flex-1 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-bold hover:bg-orange-700 disabled:opacity-50">
+                                Confirmar Reagendamento
+                            </button>
+                            <button disabled={loading} onClick={() => setShowReagendar(false)}
+                                className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50">
+                                Voltar
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 <button onClick={onClose} className="w-full mt-3 py-2 text-xs font-bold text-gray-400 hover:text-gray-600">Fechar</button>
             </div>
         </div>
@@ -264,6 +312,12 @@ const OSCard: React.FC<OSCardProps> = ({ task, allTasks, onMove, onPaymentConfir
                     {slaBadge && (
                         <span className={`inline-block mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${slaBadge.cor} ${slaBadge.vencido ? 'animate-pulse' : ''}`}>
                             {slaBadge.label}
+                        </span>
+                    )}
+                    {((task as any).historicoReagendamentos?.length > 0) && (
+                        <span className="inline-flex items-center gap-0.5 mt-1 ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-orange-100 text-orange-700 border-orange-200"
+                          title="Quantidade de vezes que esta O.S. foi reagendada">
+                            <RefreshCw size={9} /> {(task as any).historicoReagendamentos.length}
                         </span>
                     )}
                 </div>
@@ -749,7 +803,7 @@ const Pipeline: React.FC = () => {
             )}
             {revisaoModal && (
                 <RevisaoModal task={revisaoModal}
-                    onResolve={async (action) => {
+                    onResolve={async (action, reagendamento) => {
                         const task = revisaoModal;
                         setRevisaoModal(null);
                         setMoving(task.id);
@@ -772,6 +826,16 @@ const Pipeline: React.FC = () => {
                                     status: 'completed', updatedAt: serverTimestamp(),
                                 });
                                 await recordStatusHistory(task.id, WS.CONCLUIDO);
+                            } else if (action === 'reagendar' && reagendamento && currentUser) {
+                                await reagendarOS({
+                                    taskId: task.id,
+                                    task: { scheduling: (task as any).scheduling, startDate: task.startDate, numeroOS: (task as any).numeroOS, title: task.title, clientName: task.clientName },
+                                    motivo: reagendamento.motivo,
+                                    novaData: reagendamento.novaData,
+                                    usuarioId: currentUser.uid,
+                                    usuarioNome: userProfile?.nomeCompleto || userProfile?.displayName || 'Gestor',
+                                    origem: 'pipeline_revisao',
+                                });
                             }
                             if ((action === 'faturar' || action === 'cancelar') && (task as any).projectId) {
                                 syncProjectOSCount((task as any).projectId);

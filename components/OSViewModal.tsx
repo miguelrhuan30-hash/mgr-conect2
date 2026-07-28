@@ -22,6 +22,7 @@ import {
   X, Edit2, Printer, CheckCircle2, Circle, Clock, MapPin, User,
   Wrench, ClipboardList, Camera, MessageSquare, ChevronDown, ChevronUp,
   AlertTriangle, Loader2, Plus, Navigation, CheckSquare, Square, FileText,
+  Calendar, RefreshCw,
 } from 'lucide-react';
 
 const OSEditModal          = lazy(() => import('./OSEditModal'));
@@ -47,6 +48,9 @@ const PRIO_LABELS: Record<string, { label: string; cls: string }> = {
 
 const fmtDate = (ts?: Timestamp | null) =>
   ts ? new Date(ts.toMillis()).toLocaleDateString('pt-BR') : '—';
+
+const fmtDateTime = (ts?: Timestamp | null) =>
+  ts ? new Date(ts.toMillis()).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
 // ── Checklist tarefa row ──────────────────────────────────────────────────────
 interface TarefaRowProps {
@@ -321,6 +325,51 @@ const OSViewModal: React.FC<OSViewModalProps> = ({ taskId, onClose }) => {
                 </div>
                 {task.description && (
                   <p className="text-sm text-gray-600 border-t border-gray-100 pt-2">{task.description}</p>
+                )}
+              </div>
+            )}
+
+            {/* Histórico de Reagendamentos — lastro de quanto tempo a O.S. ficou aberta e por quê */}
+            {isGestor && (((task as any).historicoReagendamentos?.length > 0) || (task as any).reagendamentoDe) && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <RefreshCw size={13} /> Histórico de Reagendamentos
+                  </h3>
+                  {(task as any).historicoReagendamentos?.length > 0 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                      {(task as any).historicoReagendamentos.length}x
+                    </span>
+                  )}
+                </div>
+
+                {task.createdAt && (
+                  <p className="text-xs text-gray-500">
+                    Aberta desde <strong>{fmtDate(task.createdAt)}</strong> — {Math.floor((Date.now() - task.createdAt.toMillis()) / 86400000)} dia(s) no total
+                  </p>
+                )}
+
+                {(task as any).historicoReagendamentos?.length > 0 && (
+                  <div className="space-y-2">
+                    {[...(task as any).historicoReagendamentos].reverse().map((r: any) => (
+                      <div key={r.id} className="flex items-start gap-2 bg-orange-50/60 border border-orange-100 rounded-xl px-3 py-2">
+                        <Calendar size={13} className="text-orange-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0 text-xs">
+                          <p className="font-bold text-gray-800">{r.motivo}</p>
+                          <p className="text-gray-500 mt-0.5">
+                            {fmtDateTime(r.dataAnteriorPrevista)} → <strong>{fmtDateTime(r.dataNovaPrevista)}</strong>
+                          </p>
+                          <p className="text-gray-400 mt-0.5">{r.reagendadoPorNome || 'Gestor'} · {fmtDateTime(r.reagendadoEm)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(task as any).reagendamentoDe && (
+                  <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Esta O.S. veio de um reagendamento anterior (registro antigo, de antes do histórico unificado).
+                  </p>
                 )}
               </div>
             )}

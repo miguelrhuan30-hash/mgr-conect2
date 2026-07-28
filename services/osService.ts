@@ -1,10 +1,11 @@
 import { db } from '../firebase';
 import {
   doc, runTransaction, collection,
-  addDoc, serverTimestamp
+  addDoc, updateDoc, arrayUnion, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { WorkflowStatus, OSStatusFinal, Task } from '../types';
+import { WorkflowStatus, OSStatusFinal, Task, ReagendamentoEntry, CollectionName } from '../types';
+import { registrarAtividade } from './activityFeedService';
 
 /**
  * Deriva a origem da O.S. (avulsa | projeto | contrato_sla) sem exigir
@@ -153,3 +154,63 @@ export const criarOSRapida = async (params?: {
 
   return { osId: docRef.id, numeroOS };
 };
+
+/**
+ * Reagenda uma O.S. — SEM criar uma O.S. nova. Antes disso, cada reagendamento
+ * (falta de peça, sem tempo no dia, etc.) gerava uma O.S. inteira nova e fechava
+ * a original como CONCLUIDO, inflando a numeração e mentindo sobre conclusão.
+ * Agora fica tudo na mesma Task: nova data agendada + uma entrada em
+ * `historicoReagendamentos` com o motivo, pra dar lastro de quanto tempo a O.S.
+ * ficou aberta e por quê. Usada por OSEditModal, FieldGestaoOSDetail e
+ * Pipeline::RevisaoModal — ponto único, evita as implementações duplicadas
+ * que existiam antes em cada tela.
+ */
+export async function reagendarOS(params: {
+  taskId: string;
+  task: Pick<Task, 'scheduling' | 'startDate' | 'numeroOS' | 'title' | 'clientName'>;
+  motivo: string;
+  novaData: Date;
+  usuarioId: string;
+  usuarioNome: string;
+  origem: ReagendamentoEntry['origem'];
+}): Promise<void> {
+  const { taskId, task, motivo, novaData, usuarioId, usuarioNome, origem } = params;
+
+  const dataAnteriorPrevista = task.scheduling?.dataPrevista ?? task.startDate ?? null;
+  const novaDataTs = Timestamp.fromDate(novaData);
+
+  const entry: ReagendamentoEntry = {
+    id: `reag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    motivo,
+    dataAnteriorPrevista,
+    dataNovaPrevista: novaDataTs,
+    reagendadoEm: Timestamp.now(),
+    reagendadoPor: usuarioId,
+    reagendadoPorNome: usuarioNome,
+    origem,
+  };
+
+  await updateDoc(doc(db, CollectionName.TASKS, taskId), {
+    'scheduling.dataPrevista': novaDataTs,
+    startDate: novaDataTs,
+    workflowStatus: WorkflowStatus.AGENDADO,
+    statusOS: null,
+    status: 'pending',
+    historicoReagendamentos: arrayUnion(entry),
+    statusHistory: arrayUnion({ status: WorkflowStatus.AGENDADO, changedAt: Timestamp.now(), changedBy: usuarioId }),
+    updatedAt: serverTimestamp(),
+  });
+
+  registrarAtividade({
+    tipo: 'os_reagendada',
+    autorId: usuarioId,
+    autorNome: usuarioNome,
+    titulo: `O.S. reagendada para ${novaData.toLocaleDateString('pt-BR')}`,
+    descricao: motivo,
+    osId: taskId,
+    osNumero: task.numeroOS,
+    osTitulo: task.title,
+    clienteNome: task.clientName,
+    meta: { motivo, origem },
+  });
+}

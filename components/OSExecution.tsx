@@ -473,7 +473,7 @@ const OSExecution: React.FC = () => {
         if (fImpedimento === 'falta_peca' || fImpedimento === 'falta_ferramenta') {
           statusOS = 'PENDENTE_ADMIN';
         } else if (fImpedimento === 'tempo_insuficiente') {
-          statusOS = 'REAGENDAR';
+          statusOS = fOSFicaAberta ? 'REAGENDAR' : 'NAO_CONCLUIDA';
         } else if (fImpedimento === 'problema_diferente') {
           statusOS = 'EM_REVISAO_TECNICA';
         } else {
