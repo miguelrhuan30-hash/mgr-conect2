@@ -46,7 +46,7 @@ import {
   Task, WorkflowStatus as WS, WORKFLOW_LABELS, WORKFLOW_COLORS,
   STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal,
 } from '../types';
-import { normalizeStatusOS } from '../services/osService';
+import { normalizeStatusOS, isOSLiberada } from '../services/osService';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -77,8 +77,8 @@ const FLOW_FASES: FlowFase[] = [
   { id: 'cotacao',      numero: 2,  label: 'Cotação',       descricao: 'Materiais e fornecedores',              icon: Calculator,   cor: 'bg-cyan-600 text-white',   corBg: 'bg-cyan-50 text-cyan-700',       fases: ['em_cotacao', 'cotacao_recebida'],    tabHint: 'cotacao' },
   { id: 'proposta',     numero: 3,  label: 'Proposta',      descricao: 'Apresentação comercial',                icon: Presentation, cor: 'bg-indigo-600 text-white', corBg: 'bg-indigo-50 text-indigo-700',   fases: ['proposta_enviada'],                 tabHint: 'proposta' },
   { id: 'contrato',     numero: 4,  label: 'Contrato',      descricao: 'Assinatura e gate de execução',         icon: FileSignature,cor: 'bg-amber-600 text-white',  corBg: 'bg-amber-50 text-amber-700',     fases: ['contrato_enviado'], tabHint: 'contrato' },
-  { id: 'os',           numero: 5,  label: 'Planejamento',  descricao: 'Tarefas, distribuição em O.S. e cronograma Gantt', icon: ClipboardList, cor: 'bg-orange-600 text-white', corBg: 'bg-orange-50 text-orange-700',   fases: ['contrato_assinado', 'em_planejamento', 'cronograma_aprovado', 'os_distribuidas'],  tabHint: 'os' },
-  { id: 'execucao',     numero: 6,  label: 'Execução',      descricao: 'Equipe em campo — criar/ajustar O.S. e Gantt', icon: HardHat, cor: 'bg-yellow-600 text-white', corBg: 'bg-yellow-50 text-yellow-700',   fases: ['em_execucao'],                     tabHint: 'os' },
+  { id: 'os',           numero: 5,  label: 'Planejamento',  descricao: 'Tarefas, distribuição em O.S. e cronograma Gantt', icon: ClipboardList, cor: 'bg-orange-600 text-white', corBg: 'bg-orange-50 text-orange-700',   fases: ['contrato_assinado', 'em_planejamento', 'cronograma_aprovado', 'os_distribuidas'],  tabHint: 'planejamento' },
+  { id: 'execucao',     numero: 6,  label: 'Execução',      descricao: 'Equipe em campo — criar/ajustar O.S. e Gantt', icon: HardHat, cor: 'bg-yellow-600 text-white', corBg: 'bg-yellow-50 text-yellow-700',   fases: ['em_execucao'],                     tabHint: 'execucao' },
   { id: 'relatorio',    numero: 7,  label: 'Relatório',     descricao: 'Relatório final ao cliente',            icon: FileText,     cor: 'bg-pink-600 text-white',   corBg: 'bg-pink-50 text-pink-700',       fases: ['relatorio_enviado'],               tabHint: 'relatorio' },
   { id: 'faturamento',  numero: 8,  label: 'Faturamento',   descricao: 'Cobrança e recebimento',                icon: CreditCard,   cor: 'bg-rose-600 text-white',   corBg: 'bg-rose-50 text-rose-700',       fases: ['em_faturamento', 'aguardando_recebimento'], tabHint: 'faturamento' },
   { id: 'historico',    numero: 9,  label: 'Concluídos',    descricao: 'Projetos finalizados',                  icon: Archive,      cor: 'bg-emerald-600 text-white',corBg: 'bg-emerald-50 text-emerald-700', fases: ['concluido'],                       tabHint: 'historico' },
@@ -663,7 +663,7 @@ const FaseOSList: React.FC<{
       <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
         <button onClick={() => setViewTab('todas')}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all ${viewTab === 'todas' ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-          <Wrench className="w-3.5 h-3.5" /> Todas as O.S. <span className="text-[10px] font-extrabold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">{filteredTasks.length}</span>
+          <Wrench className="w-3.5 h-3.5" /> {fase.id === 'execucao' ? 'O.S. em Campo' : 'O.S. Aguardando Liberação'} <span className="text-[10px] font-extrabold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">{filteredTasks.length}</span>
         </button>
         <button onClick={() => setViewTab('projetos')}
           className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all ${viewTab === 'projetos' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -711,7 +711,9 @@ const FaseOSList: React.FC<{
           {filteredTasks.length === 0 && (
             <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
               <AlertCircle className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-              <p className="text-sm font-bold text-gray-400">{search ? 'Nenhuma O.S. encontrada' : 'Nenhuma O.S. ativa no sistema'}</p>
+              <p className="text-sm font-bold text-gray-400">
+                {search ? 'Nenhuma O.S. encontrada' : fase.id === 'execucao' ? 'Nenhuma O.S. liberada pra campo ainda' : 'Nenhuma O.S. aguardando liberação'}
+              </p>
               <p className="text-xs text-gray-300 mt-1">Crie uma O.S. no módulo Ordens de Serviço para visualizá-la aqui.</p>
             </div>
           )}
@@ -916,10 +918,11 @@ const FlowAtendimento: React.FC = () => {
     projects.forEach(p => {
       FLOW_FASES.forEach(f => { if (f.fases?.includes(p.fase)) counts[f.id]++; });
     });
-    // Fases O.S. e Execução — incluir count de OS ativas no badge
+    // Fases Planejamento e Execução — incluir count de OS ativas no badge,
+    // usando o mesmo gate de liberação da aba (ver services/osService.ts::isOSLiberada)
     if (allOSTasks.length > 0) {
-      counts['os'] = (counts['os'] || 0) + allOSTasks.filter(t => t.workflowStatus !== WS.EM_EXECUCAO).length;
-      counts['execucao'] = (counts['execucao'] || 0) + allOSTasks.filter(t => t.workflowStatus === WS.EM_EXECUCAO).length;
+      counts['os'] = (counts['os'] || 0) + allOSTasks.filter(t => !isOSLiberada(t)).length;
+      counts['execucao'] = (counts['execucao'] || 0) + allOSTasks.filter(t => isOSLiberada(t)).length;
     }
     // Fase Relatório — soma O.S. individuais ainda aguardando envio de relatório
     if (osRelatorioTasks.length > 0) {
@@ -960,6 +963,14 @@ const FlowAtendimento: React.FC = () => {
 
     return lista;
   }, [projects, faseSelecionada, concFilterMes, concFilterInicio, concFilterFim]);
+
+  // O.S. exibidas em FaseOSList: Planejamento só as ainda não liberadas pra campo,
+  // Execução só as já liberadas — mesmo gate usado em ProjectOSDistribuicao.
+  const osTasksParaFase = useMemo(() => {
+    if (faseSelecionada === 'os') return allOSTasks.filter(t => !isOSLiberada(t));
+    if (faseSelecionada === 'execucao') return allOSTasks.filter(t => isOSLiberada(t));
+    return allOSTasks;
+  }, [allOSTasks, faseSelecionada]);
 
   const faseAtual = FLOW_FASES.find(f => f.id === faseSelecionada)!;
 
@@ -1315,13 +1326,13 @@ const FlowAtendimento: React.FC = () => {
             <FaseOSList
               fase={faseAtual}
               projects={projetosDaFase}
-              osTasks={allOSTasks}
+              osTasks={osTasksParaFase}
               osLoading={osTasksLoading}
               search={search}
               onSearch={setSearch}
               onEditOS={setEditingOSTask}
               onPrintOS={(task) => window.open(`/#/app/os/${task.id}/print`, '_blank')}
-              onOpenProject={(projectId) => navigate(`/app/projetos-v2/${projectId}?tab=os&from=flow`)}
+              onOpenProject={(projectId) => navigate(`/app/projetos-v2/${projectId}?tab=${faseSelecionada === 'execucao' ? 'execucao' : 'planejamento'}&from=flow`)}
               canManage={canManageProjects}
               onArchiveProject={handleArchiveProject}
               onDeleteProject={setConfirmDelete}

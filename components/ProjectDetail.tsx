@@ -220,7 +220,7 @@ const ProjectAdendoMudancasWrapper: React.FC<{ projectId: string }> = ({ project
 };
 
 // ── Tabs avançadas (por fase) — Lead/Prancheta/Atividades/Histórico são seções de scroll ──
-type TabKey = 'cotacao' | 'proposta' | 'contrato' | 'gantt' | 'os' | 'relatorio' | 'faturamento';
+type TabKey = 'cotacao' | 'proposta' | 'contrato' | 'gantt' | 'planejamento' | 'execucao' | 'relatorio' | 'faturamento';
 
 const ALL_LATER_PHASES: ProjectPhase[] = ['em_planejamento', 'cronograma_aprovado', 'os_distribuidas', 'em_execucao', 'relatorio_enviado', 'em_faturamento', 'aguardando_recebimento', 'concluido'];
 const ALL_PHASES: ProjectPhase[] = ['lead_capturado', 'em_levantamento', 'em_cotacao', 'cotacao_recebida', 'proposta_enviada', 'contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES, 'nao_aprovado'];
@@ -230,7 +230,8 @@ const ADVANCED_TABS: { key: TabKey; label: string; phases: ProjectPhase[] }[] = 
   { key: 'proposta',   label: '🎨 Proposta',   phases: ['proposta_enviada', 'contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
   { key: 'contrato',   label: '📝 Contrato',   phases: ['contrato_enviado', 'contrato_assinado', ...ALL_LATER_PHASES] },
   { key: 'gantt',      label: '📅 Gantt',      phases: ['contrato_assinado', ...ALL_LATER_PHASES] },
-  { key: 'os',         label: '🔧 O.S.',        phases: ALL_LATER_PHASES },
+  { key: 'planejamento', label: '🗂️ Planejamento', phases: ALL_LATER_PHASES },
+  { key: 'execucao',     label: '🔧 Execução',     phases: ALL_LATER_PHASES },
   { key: 'faturamento',label: '💳 Faturamento', phases: ['em_faturamento', 'aguardando_recebimento', 'concluido'] },
   { key: 'relatorio',  label: '📋 Relatório',  phases: ['relatorio_enviado', 'em_faturamento', 'aguardando_recebimento', 'concluido'] },
 ];
@@ -330,8 +331,8 @@ const ProjectDetail: React.FC = () => {
     if (['em_cotacao', 'cotacao_recebida'].includes(project.fase)) setActiveTab('cotacao');
     else if (project.fase === 'proposta_enviada') setActiveTab('proposta');
     else if (['contrato_enviado', 'contrato_assinado'].includes(project.fase)) setActiveTab('contrato');
-    else if (['em_planejamento', 'cronograma_aprovado'].includes(project.fase)) setActiveTab('gantt');
-    else if (['os_distribuidas', 'em_execucao'].includes(project.fase)) setActiveTab('os');
+    else if (['em_planejamento', 'cronograma_aprovado'].includes(project.fase)) setActiveTab('planejamento');
+    else if (['os_distribuidas', 'em_execucao'].includes(project.fase)) setActiveTab('execucao');
     else if (project.fase === 'relatorio_enviado') setActiveTab('relatorio');
     else if (['em_faturamento', 'aguardando_recebimento', 'concluido'].includes(project.fase)) setActiveTab('faturamento');
     // Para fases base (lead_capturado, em_levantamento, nao_aprovado), não há tab avançada para selecionar
@@ -856,10 +857,15 @@ const ProjectDetail: React.FC = () => {
               <ProjectGantt projectId={project.id} />
             )}
 
-            {/* O.S. */}
-            {activeTab === 'os' && (
+            {/* Planejamento — O.S. do projeto ainda não liberadas pra equipe de campo */}
+            {activeTab === 'planejamento' && (
+              <ProjectOSDistribuicao project={project} mode="planejamento" />
+            )}
+
+            {/* Execução — O.S. já liberadas, equipe em campo */}
+            {activeTab === 'execucao' && (
               <div className="space-y-6">
-                <ProjectOSDistribuicao project={project} />
+                <ProjectOSDistribuicao project={project} mode="execucao" />
                 <div className="border-t border-gray-200 pt-6">
                   <ProjectAdendoMudancasWrapper projectId={project.id} />
                 </div>

@@ -16,6 +16,28 @@ export function getTipoOrigemOS(task: Pick<Task, 'tipoOrigemOS' | 'projectId'>):
   return task.projectId ? 'projeto' : 'avulsa';
 }
 
+/**
+ * Diz se a O.S. já foi liberada para a equipe de campo — o gate que separa
+ * a aba Planejamento da aba Execução no ProjectDetail (ProjectOSDistribuicao).
+ * Usa o flag explícito `liberadaParaCampo` quando presente. O.S. criadas antes
+ * dessa feature não têm o flag: nesse caso infere pelo workflowStatus — se já
+ * passou de "aguardando agendamento", trata como liberada, sem precisar de
+ * migração/backfill no Firestore.
+ */
+export function isOSLiberada(task: Pick<Task, 'liberadaParaCampo' | 'workflowStatus'>): boolean {
+  if (task.liberadaParaCampo === true) return true;
+  if (task.liberadaParaCampo === false) return false;
+  const jaAvancou: WorkflowStatus[] = [
+    WorkflowStatus.AGENDADO,
+    WorkflowStatus.EM_EXECUCAO,
+    WorkflowStatus.REVISAO,
+    WorkflowStatus.AGUARDANDO_FATURAMENTO,
+    WorkflowStatus.AGUARDANDO_PAGAMENTO,
+    WorkflowStatus.CONCLUIDO,
+  ];
+  return !!task.workflowStatus && jaAvancou.includes(task.workflowStatus);
+}
+
 export interface SlaBadgeInfo { label: string; vencido: boolean; cor: string; }
 
 /** Deduz o tipo de anexo (OSArquivoApoio) a partir da extensão do arquivo. */

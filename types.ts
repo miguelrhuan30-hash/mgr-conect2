@@ -832,6 +832,14 @@ export interface Task {
 
   // ─── Módulo de Relatório de O.S. Avulsa ────────────────────────────────────
   tipoOrigemOS?: 'avulsa' | 'projeto' | 'contrato_sla'; // auto-computado — ver getTipoOrigemOS() em services/osService.ts
+
+  // ─── Planejamento x Execução (Flow de Atendimento) ─────────────────────────
+  // Flag explícito de liberação para a equipe de campo — decide se a O.S. aparece
+  // na aba Planejamento ou na aba Execução do projeto. Ver isOSLiberada() em
+  // services/osService.ts (O.S. antigas sem este campo caem por fallback de workflowStatus).
+  liberadaParaCampo?: boolean;
+  liberadaParaCampoEm?: Timestamp;
+  liberadaParaCampoPor?: string; // uid do gestor
   fotosFinais?: string[]; // fotos "depois" — gravadas no encerramento (FieldOSEncerramentoModal → FieldOSDetail)
   relatorioFinal?: {
     pendencia: string | null;
@@ -1421,6 +1429,9 @@ export interface OSItemTarefa {
   fotosApp?: string[];
   observacaoApp?: string;
   fasesAnteriores?: Array<{ status: string; fotos: string[]; observacao: string; finalizadaEm: any }>;
+  // Hub de Tarefas por Frente — origem e exigência de evidência quando o item veio do backlog do projeto
+  backlogId?: string;
+  evidenciaExigida?: string;
 }
 
 export interface OSCheckin {
@@ -1539,6 +1550,20 @@ export type BacklogTarefaStatus = 'backlog' | 'em_os' | 'concluida';
 export type BacklogTarefaOrigem = 'planejada' | 'nao_concluida';
 
 /**
+ * ProjetoFrente — lista fechada de "frentes de trabalho" de um projeto
+ * (ex: "Montagem de Isopainéis" / Equipe 1). Cadastrada pelo gestor ao
+ * planejar; cada BacklogTarefa referencia uma frente via frenteId.
+ * Guardada embutida no doc do projeto (ProjectV2.frentes), mesmo padrão
+ * usado para ganttFases (ver hooks/useProjectOS.ts).
+ */
+export interface ProjetoFrente {
+  id: string;
+  nome: string;   // ex: "Montagem de Isopainéis"
+  equipe: string; // ex: "Equipe 1" ou nome do responsável/empreiteiro
+  cor?: string;   // classe Tailwind pro badge, atribuída por índice na criação
+}
+
+/**
  * BacklogTarefa — pool de tarefas do projeto, independente de O.S.
  * Gestor cadastra ao planejar o projeto; distribui em O.S. quando quiser;
  * técnico pode "pegar" uma avulsa (cria uma O.S. mínima automaticamente);
@@ -1556,6 +1581,8 @@ export interface BacklogTarefa {
   origem: BacklogTarefaOrigem;
   osOrigemId?: string;        // se origem = nao_concluida: de qual O.S. veio
   osDestinoId?: string;       // se status = em_os/concluida: para qual O.S. foi
+  frenteId?: string;          // referencia ProjetoFrente.id
+  evidenciaExigida?: string;  // texto livre: o que precisa ser fotografado/comprovado pra fechar a tarefa
   motivoNaoConclusao?: string;
   executorId?: string;
   executorNome?: string;
@@ -2780,6 +2807,7 @@ export interface ProjectV2 {
   osIds: string[];
   totalOSPrevistas?: number;
   totalOSConcluidas?: number;
+  frentes?: ProjetoFrente[]; // Hub de Tarefas por Frente — lista fechada de frentes de trabalho do projeto
 
   // F8 — Relatório
   relatorioFinalUrl?: string;

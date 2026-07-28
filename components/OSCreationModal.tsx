@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs, query, where, Timestamp, updateDoc, doc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus, BacklogTarefa, ProjectDocument, OSArquivoApoio, ContratoSLA, PrioridadeSLA } from '../types';
+import { CollectionName, PriorityLevel, ChecklistItem, TaskTemplate, WorkflowStatus, BacklogTarefa, ProjetoFrente, ProjectDocument, OSArquivoApoio, ContratoSLA, PrioridadeSLA } from '../types';
 import { gerarNumeroOS, tipoArquivoFromName } from '../services/osService';
 import { registrarAtividade } from '../services/activityFeedService';
 import { useAuth } from '../contexts/AuthContext';
@@ -122,6 +122,23 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
   const [projects, setProjects] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+
+  const frentesDoProjeto: ProjetoFrente[] = useMemo(
+    () => (projects.find(p => p.id === projectId)?.frentes as ProjetoFrente[]) || [],
+    [projects, projectId]
+  );
+  const backlogPorFrente = useMemo(() => {
+    const map = new Map<string, BacklogTarefa[]>();
+    for (const item of backlogItens) {
+      const key = item.frenteId && frentesDoProjeto.some(f => f.id === item.frenteId) ? item.frenteId : '__sem_frente__';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    const ordenado: [string, BacklogTarefa[]][] = [];
+    for (const f of frentesDoProjeto) if (map.has(f.id)) ordenado.push([f.id, map.get(f.id)!]);
+    if (map.has('__sem_frente__')) ordenado.push(['__sem_frente__', map.get('__sem_frente__')!]);
+    return ordenado;
+  }, [backlogItens, frentesDoProjeto]);
   
   const [loadingData, setLoadingData] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -232,6 +249,16 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
     setBacklogSelecionados(prev => {
       const n = new Set(prev);
       n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  // Marca/desmarca todos os itens de uma Frente de uma vez — "uma Frente = uma O.S. do início ao fim"
+  const toggleFrenteInteira = (itensDaFrente: BacklogTarefa[]) => {
+    const todosSelecionados = itensDaFrente.every(i => backlogSelecionados.has(i.id));
+    setBacklogSelecionados(prev => {
+      const n = new Set(prev);
+      itensDaFrente.forEach(i => todosSelecionados ? n.delete(i.id) : n.add(i.id));
       return n;
     });
   };
@@ -369,6 +396,9 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
         projectId: tipoOSSelecionado === 'projeto' ? projectId : '',
         projectName: tipoOSSelecionado === 'projeto' ? projectName : '',
         faturamentoPeloProjeto: tipoOSSelecionado === 'projeto' && !!(projectId && faturamentoPeloProjeto),
+        // O.S. de projeto sempre nascem aguardando liberação — passam pela aba Planejamento
+        // do Flow de Atendimento antes de ir pra Execução (ver services/osService.ts::isOSLiberada).
+        ...(tipoOSSelecionado === 'projeto' ? { liberadaParaCampo: false } : {}),
         ...(tipoOSSelecionado === 'contrato' && contratoSelecionado ? {
           tipoOrigemOS: 'contrato_sla' as const,
           contratoSlaId: contratoSelecionado.id,
@@ -398,6 +428,7 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
             concluidaEm: null,
             fotoSlots:   [],
             backlogId:   b.id,
+            ...(b.evidenciaExigida ? { evidenciaExigida: b.evidenciaExigida } : {}),
           })),
         ],
         tools,
@@ -769,21 +800,42 @@ const OSCreationModal: React.FC<OSCreationModalProps> = ({ isOpen, onClose, onSu
                       <p className="text-xs font-bold text-brand-700 flex items-center gap-1.5 mb-2">
                         <ListTodo size={13} /> Tarefas do backlog do projeto ({backlogSelecionados.size} selecionada{backlogSelecionados.size !== 1 ? 's' : ''})
                       </p>
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        {backlogItens.map(item => (
-                          <label key={item.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={backlogSelecionados.has(item.id)}
-                              onChange={() => toggleBacklogItem(item.id)}
-                              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                            />
-                            <span className="text-sm text-gray-700 flex-1">{item.descricao}</span>
-                            {item.origem === 'nao_concluida' && (
-                              <span className="text-[9px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">retomada</span>
-                            )}
-                          </label>
-                        ))}
+                      <div className="space-y-2.5 max-h-56 overflow-y-auto">
+                        {backlogPorFrente.map(([key, itensDaFrente]) => {
+                          const frente = key !== '__sem_frente__' ? frentesDoProjeto.find(f => f.id === key) : null;
+                          const todosSelecionados = itensDaFrente.every(i => backlogSelecionados.has(i.id));
+                          return (
+                            <div key={key}>
+                              <label className="flex items-center gap-2 px-2 py-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={todosSelecionados}
+                                  onChange={() => toggleFrenteInteira(itensDaFrente)}
+                                  className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                                />
+                                <span className="text-[10px] font-bold text-brand-800 uppercase tracking-wide">
+                                  {frente ? `${frente.nome} — ${frente.equipe}` : 'Sem Frente'} ({itensDaFrente.length})
+                                </span>
+                              </label>
+                              <div className="space-y-1 pl-5">
+                                {itensDaFrente.map(item => (
+                                  <label key={item.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={backlogSelecionados.has(item.id)}
+                                      onChange={() => toggleBacklogItem(item.id)}
+                                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                                    />
+                                    <span className="text-sm text-gray-700 flex-1">{item.descricao}</span>
+                                    {item.origem === 'nao_concluida' && (
+                                      <span className="text-[9px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">retomada</span>
+                                    )}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

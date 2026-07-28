@@ -16,9 +16,9 @@ import React, { useState, useMemo, useCallback } from 'react';
 import {
   Plus, Check, X, Edit3, AlertTriangle, ClipboardList,
   Calendar, User, Loader2, ChevronDown, ChevronUp,
-  ExternalLink, RefreshCw, Send, Building2, Clock,
+  ExternalLink, RefreshCw, Send, Building2, Clock, Rocket, Undo2,
 } from 'lucide-react';
-import { Timestamp, addDoc, collection, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { Timestamp, addDoc, collection, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { format, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
@@ -27,7 +27,8 @@ import { useProjectOS } from '../hooks/useProjectOS';
 import { useProjectGantt } from '../hooks/useProjectGantt';
 import { CollectionName, ProjectV2, Task, PriorityLevel, WorkflowStatus } from '../types';
 import { db } from '../firebase';
-import { gerarNumeroOS } from '../services/osService';
+import { gerarNumeroOS, isOSLiberada } from '../services/osService';
+import ProjectPlanoExecucao from './ProjectPlanoExecucao';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -117,17 +118,26 @@ const SugestaoForm: React.FC<{
 // ── Componente principal ──────────────────────────────────────────────────────
 interface Props {
   project: ProjectV2;
+  mode: 'planejamento' | 'execucao';
 }
 
-const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
+const ProjectOSDistribuicao: React.FC<Props> = ({ project, mode }) => {
   const { currentUser, userProfile } = useAuth();
   const navigate = useNavigate();
-  const { ordens, vincularOS, loading: loadingOS } = useProjectOS(project.id);
+  const { ordens: todasOrdens, vincularOS, loading: loadingOS } = useProjectOS(project.id);
   const { tasks: ganttTasks } = useProjectGantt(project.id);
+
+  // Planejamento mostra só O.S. ainda não liberadas pra campo; Execução só as já liberadas.
+  const ordens = useMemo(
+    () => todasOrdens.filter(os => mode === 'planejamento' ? !isOSLiberada(os) : isOSLiberada(os)),
+    [todasOrdens, mode]
+  );
 
   const [sugestoes, setSugestoes] = useState<SugestaoOS[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
+  const [liberandoId, setLiberandoId] = useState<string | null>(null);
+  const [liberandoTodas, setLiberandoTodas] = useState(false);
   const [showSugestoes, setShowSugestoes] = useState(true);
   const [gerando, setGerando] = useState(false);
 
@@ -218,6 +228,7 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
 
       (taskData as any).faturamentoPeloProjeto = true;
       (taskData as any).projectName = project.nome;
+      (taskData as any).liberadaParaCampo = false;
 
       const ref = await addDoc(collection(db, CollectionName.TASKS), taskData);
 
@@ -254,7 +265,57 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
 
   const removerSugestao = (id: string) => setSugestoes(prev => prev.filter(s => s.id !== id));
 
-  // Stats das O.S. existentes
+  // Liberar para Campo — sai do Planejamento, passa a aparecer na Execução
+  const liberarParaCampo = useCallback(async (osId: string) => {
+    if (!currentUser) return;
+    setLiberandoId(osId);
+    try {
+      await updateDoc(doc(db, CollectionName.TASKS, osId), {
+        liberadaParaCampo: true,
+        liberadaParaCampoEm: serverTimestamp(),
+        liberadaParaCampoPor: currentUser.uid,
+      });
+    } catch (err) {
+      console.error('Erro ao liberar O.S. para campo:', err);
+    } finally {
+      setLiberandoId(null);
+    }
+  }, [currentUser]);
+
+  const liberarTodas = async () => {
+    if (!ordens.length) return;
+    setLiberandoTodas(true);
+    try {
+      const batch = writeBatch(db);
+      ordens.forEach(os => {
+        batch.update(doc(db, CollectionName.TASKS, os.id), {
+          liberadaParaCampo: true,
+          liberadaParaCampoEm: serverTimestamp(),
+          liberadaParaCampoPor: currentUser?.uid,
+        });
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error('Erro ao liberar todas as O.S.:', err);
+    } finally {
+      setLiberandoTodas(false);
+    }
+  };
+
+  // Devolver ao Planejamento — corrige liberação feita por engano
+  const devolverAoPlanejamento = useCallback(async (osId: string) => {
+    if (!currentUser) return;
+    setLiberandoId(osId);
+    try {
+      await updateDoc(doc(db, CollectionName.TASKS, osId), { liberadaParaCampo: false });
+    } catch (err) {
+      console.error('Erro ao devolver O.S. ao planejamento:', err);
+    } finally {
+      setLiberandoId(null);
+    }
+  }, [currentUser]);
+
+  // Stats das O.S. exibidas neste modo
   const stats = {
     total: ordens.length,
     concluidas: ordens.filter(o => o.status === 'completed').length,
@@ -267,10 +328,13 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
 
   return (
     <div className="space-y-5">
+      {/* ── Plano de Execução (só no Planejamento) ── */}
+      {mode === 'planejamento' && <ProjectPlanoExecucao projectId={project.id} />}
+
       {/* ── Painel de KPIs de O.S. ── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         {[
-          { label: 'Total',      value: stats.total,        color: 'bg-gray-50 text-gray-700 border-gray-200' },
+          { label: mode === 'planejamento' ? 'Aguardando Liberação' : 'Em Campo', value: stats.total, color: 'bg-gray-50 text-gray-700 border-gray-200' },
           { label: 'Pendentes',  value: stats.pendentes,    color: 'bg-amber-50 text-amber-700 border-amber-200' },
           { label: 'Andamento',  value: stats.emAndamento,  color: 'bg-blue-50 text-blue-700 border-blue-200' },
           { label: 'Concluídas', value: stats.concluidas,   color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -283,7 +347,8 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
         ))}
       </div>
 
-      {/* ── Geração de Sugestões ── */}
+      {/* ── Geração de Sugestões (só no Planejamento — Execução só acompanha o que já foi liberado) ── */}
+      {mode === 'planejamento' && (
       <div className="bg-brand-50 border border-brand-200 rounded-2xl p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
@@ -396,20 +461,35 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
           </div>
         )}
       </div>
+      )}
 
-      {/* ── O.S. já vinculadas ── */}
+      {/* ── O.S. do projeto neste modo ── */}
       <div>
-        <p className="text-xs font-extrabold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-          <ClipboardList className="w-3.5 h-3.5" /> O.S. Vinculadas ao Projeto ({ordens.length})
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-extrabold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
+            <ClipboardList className="w-3.5 h-3.5" />
+            {mode === 'planejamento' ? `O.S. Aguardando Liberação (${ordens.length})` : `O.S. em Campo (${ordens.length})`}
+          </p>
+          {mode === 'planejamento' && ordens.length > 0 && (
+            <button onClick={liberarTodas} disabled={liberandoTodas}
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 disabled:opacity-50">
+              {liberandoTodas ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Rocket className="w-3.5 h-3.5" />}
+              Liberar Todas ({ordens.length})
+            </button>
+          )}
+        </div>
 
         {loadingOS ? (
           <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-brand-500" /></div>
         ) : ordens.length === 0 ? (
           <div className="text-center py-8 bg-gray-50 rounded-2xl border border-gray-200">
             <ClipboardList className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-            <p className="text-xs text-gray-400">Nenhuma O.S. vinculada ainda.</p>
-            <p className="text-[10px] text-gray-300 mt-1">Use o painel acima para gerar e confirmar sugestões.</p>
+            <p className="text-xs text-gray-400">
+              {mode === 'planejamento' ? 'Nenhuma O.S. aguardando liberação.' : 'Nenhuma O.S. liberada pra campo ainda.'}
+            </p>
+            <p className="text-[10px] text-gray-300 mt-1">
+              {mode === 'planejamento' ? 'Use o Hub de Tarefas ou o painel acima para criar O.S.' : 'Libere O.S. no Planejamento pra elas aparecerem aqui.'}
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -434,6 +514,19 @@ const ProjectOSDistribuicao: React.FC<Props> = ({ project }) => {
                       {os.code && <span className="font-bold text-gray-500">#{os.code}</span>}
                     </div>
                   </div>
+                  {mode === 'planejamento' ? (
+                    <button onClick={() => liberarParaCampo(os.id)} disabled={liberandoId === os.id}
+                      title="Liberar para a equipe de campo"
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 disabled:opacity-50 flex-shrink-0">
+                      {liberandoId === os.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Rocket className="w-3 h-3" />}
+                      Liberar
+                    </button>
+                  ) : (
+                    <button onClick={() => devolverAoPlanejamento(os.id)} disabled={liberandoId === os.id}
+                      title="Devolver ao Planejamento" className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors flex-shrink-0">
+                      {liberandoId === os.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
                   <button onClick={() => navigate(`/app/os/${os.id}`)}
                     className="p-1.5 rounded-lg hover:bg-brand-50 text-gray-400 hover:text-brand-600 transition-colors flex-shrink-0">
                     <ExternalLink className="w-3.5 h-3.5" />
