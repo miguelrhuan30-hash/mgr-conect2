@@ -750,10 +750,14 @@ const FaseFaturamentoOSList: React.FC<{
   tasks: Task[];
   onOpen: (task: Task) => void;
 }> = ({ tasks, onOpen }) => {
+  // Não trava em AGUARDANDO_FATURAMENTO/AGUARDANDO_PAGAMENTO especificamente —
+  // O.S. antigas podem estar com workflowStatus desincronizado (ver "Manutenção
+  // — O.S. desincronizadas" na fase Relatório). Único critério real: relatório
+  // já enviado e ainda não CONCLUIDO (ou seja, ainda não foi de fato faturada).
   const pendentes = useMemo(() => tasks.filter(t =>
     getTipoOrigemOS(t) === 'avulsa'
     && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
-    && (t.workflowStatus === WS.AGUARDANDO_FATURAMENTO || t.workflowStatus === WS.AGUARDANDO_PAGAMENTO)
+    && t.workflowStatus !== WS.CONCLUIDO
   ), [tasks]);
 
   if (pendentes.length === 0) return null;
@@ -1224,12 +1228,14 @@ const FlowAtendimento: React.FC = () => {
         + osRelatorioTasks.filter(t => (t as any).relatorioOSEnvio?.status !== 'relatorio_enviado').length;
     }
     // Fase Faturamento — soma O.S. avulsas com relatório já enviado, aguardando faturar/pagar
+    // (mesmo critério de FaseFaturamentoOSList — não trava em workflowStatus específico
+    // pra não esconder O.S. antigas com status desincronizado)
     if (osRelatorioTasks.length > 0) {
       counts['faturamento'] = (counts['faturamento'] || 0)
         + osRelatorioTasks.filter(t =>
             getTipoOrigemOS(t) === 'avulsa'
             && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
-            && (t.workflowStatus === WS.AGUARDANDO_FATURAMENTO || t.workflowStatus === WS.AGUARDANDO_PAGAMENTO)
+            && t.workflowStatus !== WS.CONCLUIDO
           ).length;
     }
     return counts;
