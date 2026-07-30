@@ -20,7 +20,7 @@ import {
   ArrowRight, Briefcase, AlertCircle, LayoutGrid,
   Settings, Check, Users, Pencil, Printer, Eye,
   FolderOpen, Zap, ClipboardList, Trash2, ExternalLink, Hash,
-  Filter, X, ChevronUp, ChevronDown,
+  Filter, X, ChevronUp, ChevronDown, RotateCcw,
 } from 'lucide-react';
 import {
   doc, getDoc, setDoc, collection, getDocs, onSnapshot, Timestamp,
@@ -873,6 +873,35 @@ const FaseFaturamentoOSList: React.FC<{
 // Fase 9 (Concluídos) — O.S. avulsas que já quitaram 100% da cobrança (CONCLUIDO).
 // Sem isso elas saem de Faturamento e ficam sem nenhum lugar visível no Flow.
 const FaseConcluidosOSList: React.FC<{ tasks: Task[]; onOpen: (task: Task) => void }> = ({ tasks, onOpen }) => {
+  // taskIds que já têm (ou já tiveram) uma cobrança de verdade — pra distinguir
+  // "concluída porque pagou 100%" de "concluída sem nunca ter passado pelo
+  // faturamento" (ex.: empurrada direto pela ferramenta de Manutenção abaixo).
+  const [taskIdsComFaturamento, setTaskIdsComFaturamento] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, CollectionName.PROJECT_FATURAMENTOS), snap => {
+      const set = new Set<string>();
+      snap.docs.forEach(d => {
+        ((d.data() as any).taskIds || []).forEach((id: string) => set.add(id));
+      });
+      setTaskIdsComFaturamento(set);
+    }, () => {});
+    return () => unsub();
+  }, []);
+
+  const [reabrindoId, setReabrindoId] = useState<string | null>(null);
+  const reabrirFaturamento = async (taskId: string) => {
+    setReabrindoId(taskId);
+    try {
+      await updateDoc(doc(db, CollectionName.TASKS, taskId), {
+        workflowStatus: WS.AGUARDANDO_FATURAMENTO,
+        status: 'in-progress',
+        updatedAt: Timestamp.now(),
+      });
+    } finally {
+      setReabrindoId(null);
+    }
+  };
+
   const concluidas = useMemo(() => tasks.filter(t =>
     getTipoOrigemOS(t) === 'avulsa'
     && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
@@ -887,7 +916,25 @@ const FaseConcluidosOSList: React.FC<{ tasks: Task[]; onOpen: (task: Task) => vo
         <Archive className="w-3.5 h-3.5" /> O.S. Avulsas Concluídas ({concluidas.length})
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {concluidas.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+        {concluidas.map(task => {
+          const semFaturamento = !taskIdsComFaturamento.has(task.id);
+          return (
+            <div key={task.id} className="relative">
+              <OSRelatorioCard task={task} onOpen={onOpen} />
+              {semFaturamento && (
+                <button
+                  onClick={e => { e.stopPropagation(); reabrirFaturamento(task.id); }}
+                  disabled={reabrindoId === task.id}
+                  title="Essa O.S. nunca passou pelo faturamento — reabrir"
+                  className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-amber-500 text-white rounded-lg text-[9px] font-bold hover:bg-amber-600 disabled:opacity-50 shadow-md"
+                >
+                  {reabrindoId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                  Reabrir p/ Faturar
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -895,10 +942,10 @@ const FaseConcluidosOSList: React.FC<{ tasks: Task[]; onOpen: (task: Task) => vo
 
 // ── Ferramenta de manutenção: corrige O.S. concluídas com workflowStatus
 // desatualizado (ex.: marcadas via painel "Mudar status" do FieldApp antes
-// da correção de sincronização). Sistema ainda em fase de testes, sem O.S.
-// em faturamento/pagamento real — destino é sempre CONCLUIDO; a granularidade
-// de faturamento (AGUARDANDO_FATURAMENTO/AGUARDANDO_PAGAMENTO) fica para
-// quando esse fluxo for desenhado e testado à parte. ──────────────────────
+// da correção de sincronização). Destino respeita o mesmo gate de faturamento
+// usado no resto do app (ver skipBilling em OSExecution.tsx::finalizarOS):
+// O.S. que precisa de faturamento individual vai pra AGUARDANDO_FATURAMENTO,
+// não direto pra CONCLUIDO — senão pula o faturamento de verdade. ─────────
 
 interface DiagnosticoItem { task: Task; atual: string; destino: WS; }
 
@@ -918,9 +965,11 @@ const OSDiagnosticoWorkflow: React.FC = () => {
         const t = { id: d.id, ...d.data() } as Task;
         if ((t as any).archived === true) return;
         const ws = t.workflowStatus;
-        if (ws === WS.CONCLUIDO) return; // já correto
+        if (ws === WS.CONCLUIDO || ws === WS.AGUARDANDO_FATURAMENTO || ws === WS.AGUARDANDO_PAGAMENTO) return; // já correto
 
-        itens.push({ task: t, atual: ws ? (WORKFLOW_LABELS[ws] || ws) : '(vazio)', destino: WS.CONCLUIDO });
+        const skipBilling = (t as any).faturamentoPeloProjeto === true || getTipoOrigemOS(t) === 'contrato_sla';
+        const destino = skipBilling ? WS.CONCLUIDO : WS.AGUARDANDO_FATURAMENTO;
+        itens.push({ task: t, atual: ws ? (WORKFLOW_LABELS[ws] || ws) : '(vazio)', destino });
       });
       setDiagnostico(itens);
     } finally {
