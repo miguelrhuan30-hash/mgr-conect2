@@ -11,12 +11,12 @@
  * cliente. Na primeira abertura, a cópia editável é derivada do registro bruto;
  * depois de salva, edições futuras partem sempre da última versão salva.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Printer, Share2, Check, Send, Loader2, User, Building2, Save, Plus, Trash2, X,
   Calendar, Wrench, AlertTriangle, MessageSquare, Image as ImageIcon, Hash,
 } from 'lucide-react';
-import { doc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Task, OSItemTarefa, OSObservacao, CollectionName, WorkflowStatus } from '../types';
@@ -275,15 +275,27 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
   const numeroOS = (task as any).numeroOS || task.code || task.id.slice(0, 8).toUpperCase();
   const envio = (task as any).relatorioOSEnvio as { status: 'aguardando_relatorio' | 'relatorio_enviado'; enviadoEm?: any } | undefined;
   const enviado = envio?.status === 'relatorio_enviado';
+  const [avancando, setAvancando] = useState(false);
+
+  // Já existe um Receivable CONFIRMADO (Billing.tsx) pra essa O.S.? Esse é o
+  // sinal confiável de "já foi paga de verdade" — workflowStatus sozinho não
+  // dá pra confiar (O.S. antigas podem estar desincronizadas).
+  const [jaFaturado, setJaFaturado] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!enviado || getTipoOrigemOS(task) !== 'avulsa') { setJaFaturado(null); return; }
+    getDocs(query(
+      collection(db, CollectionName.RECEIVABLES),
+      where('taskId', '==', task.id),
+      where('status', '==', 'confirmado'),
+    )).then(snap => setJaFaturado(!snap.empty)).catch(() => setJaFaturado(false));
+  }, [task.id, enviado]);
+
   // O.S. avulsa já marcada como enviada antes do gatilho automático existir
   // (ou com workflowStatus desincronizado) — oferece um jeito manual de
   // avançar pra Faturamento sem precisar reabrir/reenviar o relatório.
   const precisaAvancarFaturamento = enviado
     && getTipoOrigemOS(task) === 'avulsa'
-    && task.workflowStatus !== WorkflowStatus.AGUARDANDO_FATURAMENTO
-    && task.workflowStatus !== WorkflowStatus.AGUARDANDO_PAGAMENTO
-    && task.workflowStatus !== WorkflowStatus.CONCLUIDO;
-  const [avancando, setAvancando] = useState(false);
+    && jaFaturado === false;
   const observacoes = ((task as any).observacoes || []) as OSObservacao[];
   const inicio = (task as any).execution?.actualStartTime;
   const fim = (task as any).execution?.actualEndTime;

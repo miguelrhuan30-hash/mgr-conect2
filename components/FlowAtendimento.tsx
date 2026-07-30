@@ -748,17 +748,18 @@ const FaseRelatorioOSList: React.FC<{
 // AGUARDANDO_FATURAMENTO/AGUARDANDO_PAGAMENTO).
 const FaseFaturamentoOSList: React.FC<{
   tasks: Task[];
+  taskIdsFaturados: Set<string>;
   onOpen: (task: Task) => void;
-}> = ({ tasks, onOpen }) => {
-  // Não trava em AGUARDANDO_FATURAMENTO/AGUARDANDO_PAGAMENTO especificamente —
-  // O.S. antigas podem estar com workflowStatus desincronizado (ver "Manutenção
-  // — O.S. desincronizadas" na fase Relatório). Único critério real: relatório
-  // já enviado e ainda não CONCLUIDO (ou seja, ainda não foi de fato faturada).
+}> = ({ tasks, taskIdsFaturados, onOpen }) => {
+  // Não usa workflowStatus como gate — O.S. antigas podem estar desincronizadas
+  // (ver "Manutenção — O.S. desincronizadas" na fase Relatório). O sinal
+  // confiável de "já foi paga de verdade" é ter um Receivable CONFIRMADO
+  // (Billing.tsx); sem isso, a O.S. continua aparecendo aqui até ser resolvida.
   const pendentes = useMemo(() => tasks.filter(t =>
     getTipoOrigemOS(t) === 'avulsa'
     && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
-    && t.workflowStatus !== WS.CONCLUIDO
-  ), [tasks]);
+    && !taskIdsFaturados.has(t.id)
+  ), [tasks, taskIdsFaturados]);
 
   if (pendentes.length === 0) return null;
 
@@ -1117,6 +1118,18 @@ const FlowAtendimento: React.FC = () => {
     return () => unsub();
   }, []);
 
+  // taskIds com faturamento já CONFIRMADO (Billing.tsx) — sinal confiável de
+  // "já foi paga de verdade", já que workflowStatus sozinho não é confiável
+  // (O.S. antigas podem estar com status desincronizado, ver OSDiagnosticoWorkflow).
+  const [taskIdsFaturados, setTaskIdsFaturados] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const q4 = query(collection(db, CollectionName.RECEIVABLES), where('status', '==', 'confirmado'));
+    const unsub = onSnapshot(q4, snap => {
+      setTaskIdsFaturados(new Set(snap.docs.map(d => (d.data() as any).taskId).filter(Boolean)));
+    }, () => {});
+    return () => unsub();
+  }, []);
+
   // ── Filtros de Concluídos ────────────────────────────────────────────────────
   const [concFilterMes, setConcFilterMes] = useState<string>('');       // 'YYYY-MM'
   const [concFilterInicio, setConcFilterInicio] = useState<string>(''); // 'YYYY-MM-DD'
@@ -1227,19 +1240,20 @@ const FlowAtendimento: React.FC = () => {
       counts['relatorio'] = (counts['relatorio'] || 0)
         + osRelatorioTasks.filter(t => (t as any).relatorioOSEnvio?.status !== 'relatorio_enviado').length;
     }
-    // Fase Faturamento — soma O.S. avulsas com relatório já enviado, aguardando faturar/pagar
-    // (mesmo critério de FaseFaturamentoOSList — não trava em workflowStatus específico
-    // pra não esconder O.S. antigas com status desincronizado)
+    // Fase Faturamento — soma O.S. avulsas com relatório já enviado, ainda sem
+    // faturamento CONFIRMADO (mesmo critério de FaseFaturamentoOSList — usa o
+    // Receivable confirmado como sinal, não o workflowStatus, que pode estar
+    // desincronizado em O.S. antigas)
     if (osRelatorioTasks.length > 0) {
       counts['faturamento'] = (counts['faturamento'] || 0)
         + osRelatorioTasks.filter(t =>
             getTipoOrigemOS(t) === 'avulsa'
             && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
-            && t.workflowStatus !== WS.CONCLUIDO
+            && !taskIdsFaturados.has(t.id)
           ).length;
     }
     return counts;
-  }, [projects, allOSTasks, osRelatorioTasks]);
+  }, [projects, allOSTasks, osRelatorioTasks, taskIdsFaturados]);
 
   const projetosDaFase = useMemo(() => {
     if (!projects) return [];
@@ -1683,7 +1697,7 @@ const FlowAtendimento: React.FC = () => {
 
         {/* Fase 8 — Faturamento: O.S. avulsas com relatório já enviado, aguardando faturar/pagar */}
         {faseSelecionada === 'faturamento' && !loading && (
-          <FaseFaturamentoOSList tasks={osRelatorioTasks} onOpen={(task) => navigate(`/app/os/${task.id}`)} />
+          <FaseFaturamentoOSList tasks={osRelatorioTasks} taskIdsFaturados={taskIdsFaturados} onOpen={(task) => navigate(`/app/os/${task.id}`)} />
         )}
 
         {/* Fases restantes (faturamento, concluídos) */}
