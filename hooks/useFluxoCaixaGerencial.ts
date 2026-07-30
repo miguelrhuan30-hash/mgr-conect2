@@ -21,8 +21,10 @@ import {
 import { ptBR } from 'date-fns/locale';
 
 export interface ParcelaEnriquecida extends FaturamentoParcela {
-  projectId: string;
-  projectNome: string;
+  projectId?: string;
+  projectNome?: string;
+  taskIds?: string[];
+  referenciaLabel: string; // nome do projeto, ou "O.S. avulsa (N)" quando não é projeto
   clientId: string;
   clientName: string;
   faturamentoId: string;
@@ -72,12 +74,15 @@ export const useFluxoCaixaGerencial = () => {
   const { kpis, timeline, vencidas, proximasVencer } = useMemo(() => {
     const hoje = new Date();
 
-    // Flatten de todas as parcelas enriquecidas
+    // Flatten de todas as parcelas enriquecidas — cobre tanto faturamento de
+    // projeto quanto de O.S. avulsa/agrupada (fat.taskIds em vez de projectId)
     const todasParcelas: ParcelaEnriquecida[] = faturamentos.flatMap(fat =>
       (fat.parcelas || []).map(p => ({
         ...p,
         projectId: fat.projectId,
         projectNome: fat.projectNome,
+        taskIds: fat.taskIds,
+        referenciaLabel: fat.projectNome || (fat.taskIds ? `O.S. avulsa (${fat.taskIds.length})` : 'Faturamento'),
         clientId: fat.clientId,
         clientName: fat.clientName,
         faturamentoId: fat.id,

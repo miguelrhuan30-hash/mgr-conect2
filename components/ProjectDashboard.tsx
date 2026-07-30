@@ -475,7 +475,7 @@ const ProjectDashboard: React.FC = () => {
           <h3 className="font-bold text-gray-900 flex items-center gap-2">
             <span>💳</span> Fluxo de Caixa
           </h3>
-          <p className="text-xs text-gray-500 mt-0.5">Recebimentos consolidados de todos os projetos</p>
+          <p className="text-xs text-gray-500 mt-0.5">Recebimentos consolidados de projetos e O.S. avulsas</p>
         </div>
         <div className="p-5">
           <FluxoCaixaGerencial />

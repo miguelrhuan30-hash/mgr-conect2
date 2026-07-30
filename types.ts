@@ -3029,8 +3029,22 @@ export interface ProjectContrato {
   atualizadoEm?: Timestamp;
 }
 
-// ── Faturamento de Projeto ──
+// ── Faturamento (Projeto ou O.S. avulsa/agrupada) ──
 export type ParcelaStatus = 'pendente' | 'pago' | 'atrasado';
+export type MetodoPagamento = 'pix' | 'boleto' | 'dinheiro' | 'cartao' | 'transferencia' | 'outro';
+export type TipoPlanoFaturamento = 'a_vista' | 'parcelado';
+export type TipoDocumentoFaturamento = 'comprovante' | 'boleto' | 'nf';
+
+export interface FaturamentoDocumento {
+  id: string;
+  tipo: TipoDocumentoFaturamento;
+  url: string;
+  nome: string;
+  parcelaId?: string;        // opcional: documento específico de uma parcela
+  enviadoEm: Timestamp;
+  enviadoPor: string;
+  enviadoPorNome?: string;
+}
 
 export interface FaturamentoParcela {
   id: string;
@@ -3040,18 +3054,28 @@ export interface FaturamentoParcela {
   dataVencimento: Timestamp;
   dataPagamento?: Timestamp;
   status: ParcelaStatus;
+  metodoPagamento?: MetodoPagamento;
   comprovanteUrl?: string;
   observacoes?: string;
 }
 
+/**
+ * ProjectFaturamento — cobrança com plano de parcelas. Origem é OU um projeto
+ * (projectId) OU uma ou mais O.S. avulsas agrupadas (taskIds) — nunca os dois.
+ * Ver hooks/useFaturamento.ts e components/FaturamentoPanel.tsx.
+ */
 export interface ProjectFaturamento {
   id: string;
-  projectId: string;
-  projectNome: string;
+  projectId?: string;
+  projectNome?: string;
+  taskIds?: string[];        // O.S. avulsa única ou agrupada nessa cobrança
   clientId: string;
   clientName: string;
   valorTotal: number;
+  tipoPlano: TipoPlanoFaturamento;
   parcelas: FaturamentoParcela[];
+  documentos?: FaturamentoDocumento[];
+  status: 'aberto' | 'concluido' | 'cancelado';
   totalPago: number;
   totalPendente: number;
   totalAtrasado: number;
@@ -3059,6 +3083,7 @@ export interface ProjectFaturamento {
   criadoPor: string;
   criadoPorNome: string;
   atualizadoEm?: Timestamp;
+  concluidoEm?: Timestamp;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

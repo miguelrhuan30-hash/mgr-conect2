@@ -39,13 +39,14 @@ import FunilConversao from './FunilConversao';
 import { Suspense, lazy } from 'react';
 const OSEditModal = lazy(() => import('./OSEditModal'));
 const OSRelatorioConclusao = lazy(() => import('./OSRelatorioConclusao'));
+const OSFaturamentoModal = lazy(() => import('./OSFaturamentoModal'));
 import {
   ProjectV2, ProjectPhase, Sector,
   PROJECT_PHASE_LABELS, PROJECT_PHASE_COLORS,
   PROJECT_TYPES, CollectionName,
   RaciFlowEntry, RaciFlowConfig,
   Task, WorkflowStatus as WS, WORKFLOW_LABELS, WORKFLOW_COLORS,
-  STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal,
+  STATUS_OS_LABELS, STATUS_OS_COLORS, OSStatusFinal, ProjectFaturamento,
 } from '../types';
 import { normalizeStatusOS, isOSLiberada, getTipoOrigemOS } from '../services/osService';
 import { format } from 'date-fns';
@@ -744,33 +745,127 @@ const FaseRelatorioOSList: React.FC<{
 };
 
 // Fase 8 (Faturamento) — O.S. avulsas com relatório já enviado, aguardando faturar/pagar.
-// Some da lista assim que a O.S. é faturada/paga (workflowStatus deixa de ser
-// AGUARDANDO_FATURAMENTO/AGUARDANDO_PAGAMENTO).
+// Some da lista assim que a cobrança é 100% paga (workflowStatus vira CONCLUIDO
+// pra todas as O.S. do grupo — ver hooks/useFaturamento.ts::registrarPagamento).
 const FaseFaturamentoOSList: React.FC<{
   tasks: Task[];
   taskIdsFaturados: Set<string>;
-  onOpen: (task: Task) => void;
-}> = ({ tasks, taskIdsFaturados, onOpen }) => {
-  // Não usa workflowStatus como gate — O.S. antigas podem estar desincronizadas
-  // (ver "Manutenção — O.S. desincronizadas" na fase Relatório). O sinal
-  // confiável de "já foi paga de verdade" é ter um Receivable CONFIRMADO
-  // (Billing.tsx); sem isso, a O.S. continua aparecendo aqui até ser resolvida.
-  const pendentes = useMemo(() => tasks.filter(t =>
+  onOpenGroup: (tasks: Task[]) => void;
+}> = ({ tasks, taskIdsFaturados, onOpenGroup }) => {
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+
+  // Cobranças de O.S. já abertas (taskIds preenchido) — pra agrupar visualmente
+  // as O.S. que já foram reunidas numa mesma cobrança.
+  const [faturamentosOS, setFaturamentosOS] = useState<ProjectFaturamento[]>([]);
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, CollectionName.PROJECT_FATURAMENTOS), snap => {
+      setFaturamentosOS(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as ProjectFaturamento))
+          .filter(f => (f.taskIds?.length ?? 0) > 0 && f.status !== 'concluido')
+      );
+    }, () => {});
+    return () => unsub();
+  }, []);
+
+  // taskIdsFaturados (Receivable confirmado, fluxo antigo) continua como rede de
+  // segurança pra O.S. antigas — o critério principal agora é workflowStatus,
+  // mantido corretamente pelo novo hooks/useFaturamento.ts.
+  const candidatas = useMemo(() => tasks.filter(t =>
     getTipoOrigemOS(t) === 'avulsa'
     && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
+    && t.workflowStatus !== WS.CONCLUIDO
     && !taskIdsFaturados.has(t.id)
   ), [tasks, taskIdsFaturados]);
 
-  if (pendentes.length === 0) return null;
+  const taskIdToFaturamento = useMemo(() => {
+    const map = new Map<string, ProjectFaturamento>();
+    faturamentosOS.forEach(f => f.taskIds!.forEach(id => map.set(id, f)));
+    return map;
+  }, [faturamentosOS]);
+
+  const semCobranca = useMemo(() => candidatas.filter(t => !taskIdToFaturamento.has(t.id)), [candidatas, taskIdToFaturamento]);
+
+  const grupos = useMemo(() => {
+    const porFaturamento = new Map<string, Task[]>();
+    candidatas.forEach(t => {
+      const fat = taskIdToFaturamento.get(t.id);
+      if (!fat) return;
+      if (!porFaturamento.has(fat.id)) porFaturamento.set(fat.id, []);
+      porFaturamento.get(fat.id)!.push(t);
+    });
+    return Array.from(porFaturamento.entries()).filter(([, gTasks]) => gTasks.length > 0);
+  }, [candidatas, taskIdToFaturamento]);
+
+  const toggleSelecao = (id: string) => setSelecionadas(prev => {
+    const n = new Set(prev);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
+
+  const tarefasSelecionadas = semCobranca.filter(t => selecionadas.has(t.id));
+  const clientesDistintos = new Set(tarefasSelecionadas.map(t => t.clientId || t.clientName));
+  const podeAgrupar = tarefasSelecionadas.length >= 2 && clientesDistintos.size === 1;
+
+  if (candidatas.length === 0) return null;
 
   return (
-    <div className="space-y-2 mb-6">
-      <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
-        <DollarSign className="w-3.5 h-3.5" /> O.S. Avulsas — Relatório Enviado, Aguardando Faturamento ({pendentes.length})
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {pendentes.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+    <div className="space-y-3 mb-6">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+          <DollarSign className="w-3.5 h-3.5" /> O.S. Avulsas — Relatório Enviado, Aguardando Faturamento ({candidatas.length})
+        </p>
+        {tarefasSelecionadas.length > 0 && (
+          <button
+            onClick={() => { if (podeAgrupar) { onOpenGroup(tarefasSelecionadas); setSelecionadas(new Set()); } }}
+            disabled={!podeAgrupar}
+            title={tarefasSelecionadas.length >= 2 && clientesDistintos.size > 1 ? 'Selecione O.S. do mesmo cliente pra agrupar' : undefined}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 disabled:opacity-50"
+          >
+            <DollarSign className="w-3.5 h-3.5" /> Agrupar em uma Cobrança ({tarefasSelecionadas.length})
+          </button>
+        )}
       </div>
+
+      {/* Cobranças já agrupadas */}
+      {grupos.length > 0 && (
+        <div className="space-y-2">
+          {grupos.map(([faturamentoId, gTasks]) => (
+            <button key={faturamentoId} onClick={() => onOpenGroup(gTasks)}
+              className="w-full text-left bg-white border border-brand-200 rounded-2xl p-4 hover:shadow-md transition-all">
+              <div className="flex items-center gap-2 mb-1">
+                <DollarSign className="w-4 h-4 text-brand-600 flex-shrink-0" />
+                <span className="text-sm font-bold text-gray-900">Cobrança — {gTasks[0].clientName}</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 flex-shrink-0">{gTasks.length} O.S.</span>
+              </div>
+              <p className="text-xs text-gray-500 truncate">{gTasks.map(t => (t as any).numeroOS || t.id.slice(0, 8)).join(', ')}</p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* O.S. ainda sem cobrança — seleciona (checkbox) pra agrupar, ou clica pra faturar sozinha */}
+      {semCobranca.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {semCobranca.map(task => (
+            <div key={task.id}
+              className={`bg-white rounded-2xl border p-4 transition-all ${selecionadas.has(task.id) ? 'border-brand-400 ring-2 ring-brand-100' : 'border-gray-200 hover:border-pink-300'}`}>
+              <div className="flex items-start gap-2">
+                <input type="checkbox" checked={selecionadas.has(task.id)} onChange={() => toggleSelecao(task.id)}
+                  className="mt-1 rounded border-gray-300 text-brand-600 focus:ring-brand-500 flex-shrink-0" />
+                <button onClick={() => onOpenGroup([task])} className="flex-1 min-w-0 text-left">
+                  <p className="text-[10px] font-extrabold text-gray-500 mb-1">{(task as any).numeroOS || task.id.slice(0, 8)}</p>
+                  <h4 className="text-sm font-bold text-gray-900 truncate">{task.title}</h4>
+                  <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400 flex-wrap">
+                    {task.clientName && <span className="flex items-center gap-0.5"><Building2 className="w-3 h-3" />{task.clientName}</span>}
+                    {task.assigneeName && <span className="flex items-center gap-0.5"><Users className="w-3 h-3" />{task.assigneeName}</span>}
+                  </div>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -1083,6 +1178,7 @@ const FlowAtendimento: React.FC = () => {
   const [osRelatorioTasks, setOsRelatorioTasks] = useState<Task[]>([]);
   const [osRelatorioLoading, setOsRelatorioLoading] = useState(false);
   const [relatorioOSTask, setRelatorioOSTask] = useState<Task | null>(null);
+  const [osFaturamentoTasks, setOsFaturamentoTasks] = useState<Task[] | null>(null);
 
   useEffect(() => {
     // Carrega desde o início (mesmo motivo do efeito de allOSTasks acima) —
@@ -1697,7 +1793,7 @@ const FlowAtendimento: React.FC = () => {
 
         {/* Fase 8 — Faturamento: O.S. avulsas com relatório já enviado, aguardando faturar/pagar */}
         {faseSelecionada === 'faturamento' && !loading && (
-          <FaseFaturamentoOSList tasks={osRelatorioTasks} taskIdsFaturados={taskIdsFaturados} onOpen={(task) => navigate(`/app/os/${task.id}`)} />
+          <FaseFaturamentoOSList tasks={osRelatorioTasks} taskIdsFaturados={taskIdsFaturados} onOpenGroup={setOsFaturamentoTasks} />
         )}
 
         {/* Fases restantes (faturamento, concluídos) */}
@@ -1719,6 +1815,15 @@ const FlowAtendimento: React.FC = () => {
               task={relatorioOSTask}
               onClose={() => setRelatorioOSTask(null)}
               onSave={updated => setRelatorioOSTask(updated)}
+            />
+          </Suspense>
+        )}
+
+        {osFaturamentoTasks && (
+          <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}>
+            <OSFaturamentoModal
+              tasks={osFaturamentoTasks}
+              onClose={() => setOsFaturamentoTasks(null)}
             />
           </Suspense>
         )}

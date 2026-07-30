@@ -208,7 +208,7 @@ const FluxoCaixaGerencial: React.FC = () => {
                     <p className="text-xs font-bold text-gray-900 truncate">
                       Parcela {p.numero}: {p.descricao}
                     </p>
-                    <p className="text-[10px] text-gray-500 truncate">{p.projectNome} · {p.clientName}</p>
+                    <p className="text-[10px] text-gray-500 truncate">{p.referenciaLabel} · {p.clientName}</p>
                     <p className="text-[10px] text-red-600 font-bold">Venc: {fmtDate(p.dataVencimento)}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
@@ -253,7 +253,7 @@ const FluxoCaixaGerencial: React.FC = () => {
                     <p className="text-xs font-bold text-gray-900 truncate">
                       Parcela {p.numero}: {p.descricao}
                     </p>
-                    <p className="text-[10px] text-gray-500 truncate">{p.projectNome} · {p.clientName}</p>
+                    <p className="text-[10px] text-gray-500 truncate">{p.referenciaLabel} · {p.clientName}</p>
                     <p className="text-[10px] text-yellow-600 font-bold">Venc: {fmtDate(p.dataVencimento)}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
