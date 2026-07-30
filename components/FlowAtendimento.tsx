@@ -870,6 +870,29 @@ const FaseFaturamentoOSList: React.FC<{
   );
 };
 
+// Fase 9 (Concluídos) — O.S. avulsas que já quitaram 100% da cobrança (CONCLUIDO).
+// Sem isso elas saem de Faturamento e ficam sem nenhum lugar visível no Flow.
+const FaseConcluidosOSList: React.FC<{ tasks: Task[]; onOpen: (task: Task) => void }> = ({ tasks, onOpen }) => {
+  const concluidas = useMemo(() => tasks.filter(t =>
+    getTipoOrigemOS(t) === 'avulsa'
+    && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
+    && t.workflowStatus === WS.CONCLUIDO
+  ), [tasks]);
+
+  if (concluidas.length === 0) return null;
+
+  return (
+    <div className="space-y-2 mb-6">
+      <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+        <Archive className="w-3.5 h-3.5" /> O.S. Avulsas Concluídas ({concluidas.length})
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {concluidas.map(task => <OSRelatorioCard key={task.id} task={task} onOpen={onOpen} />)}
+      </div>
+    </div>
+  );
+};
+
 // ── Ferramenta de manutenção: corrige O.S. concluídas com workflowStatus
 // desatualizado (ex.: marcadas via painel "Mudar status" do FieldApp antes
 // da correção de sincronização). Sistema ainda em fase de testes, sem O.S.
@@ -1337,15 +1360,25 @@ const FlowAtendimento: React.FC = () => {
         + osRelatorioTasks.filter(t => (t as any).relatorioOSEnvio?.status !== 'relatorio_enviado').length;
     }
     // Fase Faturamento — soma O.S. avulsas com relatório já enviado, ainda sem
-    // faturamento CONFIRMADO (mesmo critério de FaseFaturamentoOSList — usa o
-    // Receivable confirmado como sinal, não o workflowStatus, que pode estar
-    // desincronizado em O.S. antigas)
+    // faturamento concluído. Mesmo critério exato de FaseFaturamentoOSList::candidatas
+    // (workflowStatus !== CONCLUIDO + sem Receivable confirmado antigo) — os dois
+    // têm que bater, senão o badge conta O.S. que a lista já escondeu por estarem pagas.
     if (osRelatorioTasks.length > 0) {
       counts['faturamento'] = (counts['faturamento'] || 0)
         + osRelatorioTasks.filter(t =>
             getTipoOrigemOS(t) === 'avulsa'
             && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
+            && t.workflowStatus !== WS.CONCLUIDO
             && !taskIdsFaturados.has(t.id)
+          ).length;
+    }
+    // Fase Concluídos — soma O.S. avulsas que já quitaram a cobrança
+    if (osRelatorioTasks.length > 0) {
+      counts['historico'] = (counts['historico'] || 0)
+        + osRelatorioTasks.filter(t =>
+            getTipoOrigemOS(t) === 'avulsa'
+            && (t as any).relatorioOSEnvio?.status === 'relatorio_enviado'
+            && t.workflowStatus === WS.CONCLUIDO
           ).length;
     }
     return counts;
@@ -1794,6 +1827,11 @@ const FlowAtendimento: React.FC = () => {
         {/* Fase 8 — Faturamento: O.S. avulsas com relatório já enviado, aguardando faturar/pagar */}
         {faseSelecionada === 'faturamento' && !loading && (
           <FaseFaturamentoOSList tasks={osRelatorioTasks} taskIdsFaturados={taskIdsFaturados} onOpenGroup={setOsFaturamentoTasks} />
+        )}
+
+        {/* Fase 9 — Concluídos: O.S. avulsas que já quitaram a cobrança */}
+        {faseSelecionada === 'historico' && !loading && (
+          <FaseConcluidosOSList tasks={osRelatorioTasks} onOpen={(task) => navigate(`/app/os/${task.id}`)} />
         )}
 
         {/* Fases restantes (faturamento, concluídos) */}
