@@ -36,8 +36,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       setCurrentUser(user);
-      
+
       if (user) {
+        // Reseta loading=true sempre que um novo user aparece (login interativo
+        // na mesma sessão do SPA, sem reload de página) — sem isso, `loading`
+        // fica preso no `false` de uma resolução anterior (ex: sessão anônima
+        // inicial) e o guard de App.tsx não bloqueia o render enquanto o perfil
+        // ainda não carregou, deixando a tela cair no branch padrão (Layout
+        // interno) até userProfile.role resolver pra 'cliente' e redirecionar.
+        setLoading(true);
+
         // --- SUPER ADMIN OVERRIDE (Blindagem) ---
         // Garante acesso total imediato para o e-mail mestre, independente do banco de dados.
         if (user.email?.toLowerCase() === import.meta.env.VITE_MASTER_EMAIL?.toLowerCase()) {

@@ -518,6 +518,32 @@ const Clients: React.FC = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos' | 'contrato' | 'portal' | 'modulos'>>({});
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'todos'>('todos');
+  const [modulosAtivos, setModulosAtivos] = useState<Record<string, Set<string>>>({});
+
+  // Carrega client_modules de todos os clientes de uma vez (coleção pequena) pra
+  // mostrar um resumo de módulos ativos direto no card colapsado — sem isso, o
+  // Miguel não achava onde estava a ativação de Frota (só aparecia dentro da aba).
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, CollectionName.CLIENT_MODULES), snap => {
+      const map: Record<string, Set<string>> = {};
+      snap.docs.forEach(d => {
+        const m = d.data() as { clientId: string; moduleId: string; ativo: boolean };
+        if (!m.ativo) return;
+        if (!map[m.clientId]) map[m.clientId] = new Set();
+        map[m.clientId].add(m.moduleId);
+      });
+      setModulosAtivos(map);
+    });
+    return () => unsub();
+  }, []);
+
+  // camaras_frias sem doc = tratado como ativo (comportamento atual preservado) — mesma
+  // regra usada em ClientModules.tsx, replicada aqui só pro resumo do card colapsado.
+  const clienteTemModulo = (clientId: string, moduleId: 'camaras_frias' | 'frota') => {
+    if (modulosAtivos[clientId]?.has(moduleId)) return true;
+    if (moduleId === 'camaras_frias' && !modulosAtivos[clientId]) return true;
+    return false;
+  };
 
   const getTab = (id: string) => expandedTab[id] || 'ativos';
   const setTab = (id: string, tab: 'ativos' | 'projetos' | 'contrato' | 'portal' | 'modulos') =>
@@ -658,6 +684,25 @@ const Clients: React.FC = () => {
                           <span className="truncate">{client.address}</span>
                         </span>
                       )}
+                    </div>
+
+                    {/* Resumo de módulos ativos — visível sem precisar expandir o card */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      {clienteTemModulo(client.id, 'camaras_frias') && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
+                          🌡 Câmaras Frias
+                        </span>
+                      )}
+                      {clienteTemModulo(client.id, 'frota') && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+                          🚚 Frota
+                        </span>
+                      )}
+                      <button
+                        onClick={() => { setExpandedId(client.id); setTab(client.id, 'modulos'); }}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100">
+                        🧩 Gerenciar módulos
+                      </button>
                     </div>
                   </div>
                 </div>
