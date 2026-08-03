@@ -7,7 +7,7 @@
  * visual claro em vez de dark.
  */
 import React, { useState } from 'react';
-import { Bell, X, Check, UtensilsCrossed, HelpCircle, Car, ClipboardList, Info, Download } from 'lucide-react';
+import { Bell, X, Check, UtensilsCrossed, HelpCircle, Car, ClipboardList, Info, Download, PhoneCall, Truck } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { useNotificacoes } from '../src/hooks/useNotificacoes';
@@ -18,6 +18,8 @@ const CANAL_ICON: Record<NotificacaoCanal, React.ReactNode> = {
   duvida:  <HelpCircle size={15} className="text-amber-500" />,
   veiculo: <Car size={15} className="text-sky-500" />,
   os:      <ClipboardList size={15} className="text-blue-500" />,
+  chamado: <PhoneCall size={15} className="text-blue-500" />,
+  frota:   <Truck size={15} className="text-teal-500" />,
   geral:   <Info size={15} className="text-gray-400" />,
 };
 

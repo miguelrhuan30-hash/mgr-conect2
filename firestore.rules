@@ -23,6 +23,26 @@ service cloud.firestore {
     function isCliente() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cliente';
     }
+    // ── Subsistema multi-tenant do cliente ──────────────────────────────────
+    // Todo sub-usuário de cliente (Admin Mestre/Secundário, motorista, equipe de
+    // produção) continua role == 'cliente' — diferenciado só por clientRole,
+    // pra nunca escapar do catch-all "!isCliente()" no fim deste arquivo.
+    // Ver plano: vault Obsidian, 04-erp-mgrconnect/2026-08-03_doc-tecnica_subsistema-manutencao-multitenant-frota.md
+    function myClientId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientId', null);
+    }
+    function myClientRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientRole', 'equipe_producao');
+    }
+    function isAdminMestre() {
+      return isCliente() && myClientRole() == 'admin_mestre';
+    }
+    function isMotorista() {
+      return isCliente() && myClientRole() == 'motorista';
+    }
+    function sameClient(cid) {
+      return isCliente() && myClientId() == cid;
+    }
     function clientCannotElevateBiometric() {
       let d = request.resource.data;
       return d.biometricVerified == false
@@ -310,6 +330,94 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (!isCliente() ||
         resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId);
       allow write: if isAuthenticated() && isManager();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // SUBSISTEMA MULTI-TENANT — Módulo habilitável por cliente + Frota
+    // Fase 0 do plano (vault: 04-erp-mgrconnect/2026-08-03_doc-tecnica_subsistema-manutencao-multitenant-frota.md)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Módulo habilitável por cliente (toggle camaras_frias/frota) ──
+    // Cliente só lê os módulos do próprio clientId (precisa saber se Frota está
+    // ativa pra mostrar a aba). Escrita exclusiva de staff MGR — cliente NUNCA
+    // se autoconcede módulo, nem o próprio Admin Mestre.
+    match /client_modules/{moduleDocId} {
+      allow read: if isAuthenticated() && (!isCliente() || sameClient(resource.data.clientId));
+      allow write: if isAuthenticated() && isChamadoAdmin();
+    }
+
+    // ── Frota — Veículos ──
+    match /fleet_vehicles/{vehicleId} {
+      allow read: if isAuthenticated() && (!isCliente() || sameClient(resource.data.clientId));
+      allow create: if isAuthenticated() && (!isCliente() ||
+        (sameClient(request.resource.data.clientId) && (isAdminMestre() ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true)));
+      // kmAtual nunca muda por escrita direta — só a Cloud Function fleetCloseTrip
+      // (Admin SDK, ignora regras) pode atualizá-lo, evitando corrida entre viagens.
+      allow update: if isAuthenticated() && (!isCliente() ||
+        (sameClient(resource.data.clientId) && (isAdminMestre() ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true)))
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['kmAtual']);
+      allow delete: if isAuthenticated() && !isCliente();
+    }
+
+    // ── Frota — Prestadores de serviço ──
+    match /fleet_providers/{providerId} {
+      allow read: if isAuthenticated() && (!isCliente() || sameClient(resource.data.clientId));
+      allow create, update: if isAuthenticated() && (!isCliente() ||
+        (sameClient(request.resource.data.clientId) && (isAdminMestre() ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarPrestadores', false) == true)));
+      allow delete: if isAuthenticated() && !isCliente();
+    }
+
+    // ── Frota — Solicitações de manutenção (relato inicial, fluxo avulso) ──
+    // Leitura de motorista filtrada pelos próprios vehicleIds; qualquer sub-usuário
+    // do cliente autorizado pode abrir (motorista sempre, staff sempre, resto configurável
+    // fica só como checagem fina do lado UI/Cloud Function nesta fase).
+    match /fleet_maintenance_requests/{requestId} {
+      allow read: if isAuthenticated() && (!isCliente() ||
+        (sameClient(resource.data.clientId) &&
+          (!isMotorista() || resource.data.vehicleId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('vehicleIds', []))));
+      allow create: if isAuthenticated() && (!isCliente() ||
+        (sameClient(request.resource.data.clientId) && request.resource.data.abertoPorUid == request.auth.uid));
+      allow update: if isAuthenticated() && (!isCliente() ||
+        (sameClient(resource.data.clientId) && isAdminMestre()));
+      allow delete: if isAuthenticated() && !isCliente();
+    }
+
+    // ── Frota — Manutenções (O.S. formal, fluxo avulso) ──
+    match /fleet_maintenances/{maintenanceId} {
+      allow read: if isAuthenticated() && (!isCliente() ||
+        (sameClient(resource.data.clientId) &&
+          (!isMotorista() || resource.data.vehicleId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('vehicleIds', []))));
+      allow create: if isAuthenticated() && (!isCliente() ||
+        (sameClient(request.resource.data.clientId) && (isAdminMestre() ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetAbrirManutencaoFormal', false) == true)));
+      // Trava de finalização por autoria é regra AUXILIAR — a Cloud Function
+      // fleetFinalizarManutencao (Fase 1) é a fonte da verdade (valida providerId obrigatório etc).
+      allow update: if isAuthenticated() && (!isCliente() ||
+        (sameClient(resource.data.clientId) && (isAdminMestre() || resource.data.abertoPorUid == request.auth.uid)));
+      allow delete: if isAuthenticated() && !isCliente();
+    }
+
+    // ── Frota — Viagens do motorista ──
+    match /fleet_trips/{tripId} {
+      allow read: if isAuthenticated() && (!isCliente() || sameClient(resource.data.clientId));
+      allow create: if isAuthenticated() && isMotorista()
+        && sameClient(request.resource.data.clientId) && request.resource.data.motoristaUid == request.auth.uid;
+      allow update: if isAuthenticated() && isMotorista()
+        && sameClient(resource.data.clientId) && resource.data.motoristaUid == request.auth.uid;
+      allow delete: if isAuthenticated() && !isCliente();
+    }
+
+    // ── Frota — Abastecimentos ──
+    match /fleet_fuelings/{fuelingId} {
+      allow read: if isAuthenticated() && (!isCliente() || sameClient(resource.data.clientId));
+      allow create: if isAuthenticated() && isMotorista()
+        && sameClient(request.resource.data.clientId) && request.resource.data.motoristaUid == request.auth.uid;
+      allow update: if isAuthenticated() && isMotorista()
+        && sameClient(resource.data.clientId) && resource.data.motoristaUid == request.auth.uid;
+      allow delete: if isAuthenticated() && !isCliente();
     }
 
     // ══════════════════════════════════════════════════════════════════════

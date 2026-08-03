@@ -5,7 +5,7 @@
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, X, Check, UtensilsCrossed, HelpCircle, Car, ClipboardList, Info } from 'lucide-react';
+import { Bell, X, Check, UtensilsCrossed, HelpCircle, Car, ClipboardList, Info, PhoneCall, Truck } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
 import { useNotificacoes } from '../../src/hooks/useNotificacoes';
 import type { NotificacaoCanal } from '../../types';
@@ -15,6 +15,8 @@ const CANAL_ICON: Record<NotificacaoCanal, React.ReactNode> = {
   duvida:  <HelpCircle size={15} className="text-amber-400" />,
   veiculo: <Car size={15} className="text-sky-400" />,
   os:      <ClipboardList size={15} className="text-blue-400" />,
+  chamado: <PhoneCall size={15} className="text-blue-400" />,
+  frota:   <Truck size={15} className="text-teal-400" />,
   geral:   <Info size={15} className="text-gray-400" />,
 };
 

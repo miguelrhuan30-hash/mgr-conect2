@@ -5,6 +5,49 @@ const admin = require('firebase-admin');
 
 admin.initializeApp();
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SUBSISTEMA MULTI-TENANT — helpers de autorização por Admin Mestre de cliente
+// Nenhuma das funções de gestão de usuário de cliente cruzava clientId do
+// chamador com o do alvo — só checavam permission flag de staff MGR. Esses
+// helpers fecham esse gap ao abrir as functions pra um Admin Mestre operar
+// sobre os próprios sub-usuários, sem depender da equipe MGR pra cada ação.
+// Ver plano: vault Obsidian, 04-erp-mgrconnect/2026-08-03_doc-tecnica_subsistema-manutencao-multitenant-frota.md
+// ═══════════════════════════════════════════════════════════════════════════
+function isAdminMestreAtivo(callerData) {
+  return callerData?.role === 'cliente'
+    && callerData?.clientRole === 'admin_mestre'
+    && callerData?.ativo !== false
+    && !!callerData?.clientId;
+}
+
+function isAdminMestreDoAlvo(callerData, targetData) {
+  return isAdminMestreAtivo(callerData)
+    && targetData?.role === 'cliente'                    // admin_mestre nunca opera fora de 'cliente'
+    && targetData?.clientId === callerData.clientId;      // nunca fora do próprio clientId
+}
+
+const CLIENT_ROLES_VALIDOS = ['admin_mestre', 'admin_secundario', 'motorista', 'equipe_producao'];
+
+// Fan-out de 1 notificação — mesmo padrão de campos usado por notificarGestoresNovoChamadoSla,
+// só que pra um único destinatário (uso: notificações emitidas de dentro de callable functions).
+async function notificarUsuario(destinatarioId, params) {
+  if (!destinatarioId) return;
+  const { tipo, canal, titulo, corpo, rota, prioridade, som, ...extra } = params;
+  await admin.firestore().collection('notifications').add({
+    destinatarioId,
+    tipo,
+    canal,
+    titulo,
+    corpo,
+    lida: false,
+    criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+    som: som !== false,
+    prioridade: prioridade || 'normal',
+    rota: rota || null,
+    ...extra,
+  });
+}
+
 /**
  * adminResetUserPassword
  * Callable Cloud Function — Redefine a senha de um colaborador OU de um
@@ -39,8 +82,9 @@ exports.adminResetUserPassword = onCall(
     const hasPermission = isTargetCliente
       ? callerData?.permissions?.canManageClients === true
       : callerData?.permissions?.canResetUserPasswords === true;
+    const isAdminMestre = isTargetCliente && isAdminMestreDoAlvo(callerData, targetDoc.data());
 
-    if (!isAdmin && !hasPermission) {
+    if (!isAdmin && !hasPermission && !isAdminMestre) {
       throw new HttpsError('permission-denied', 'Sem permissão para redefinir senhas.');
     }
 
@@ -135,7 +179,10 @@ exports.adminCreateUser = onCall(
  * adminCreateClientUser
  * Callable Cloud Function — Cria um usuário de acesso ao Portal do Cliente
  * (Auth + perfil Firestore com role 'cliente', vinculado a um clientId).
- * Requer: canManageClients no perfil do chamador, OU role === 'admin'.
+ * Requer: canManageClients no perfil do chamador, OU role === 'admin',
+ * OU o próprio Admin Mestre do cliente (que só pode criar sub-usuários DO
+ * PRÓPRIO clientId, e nunca com clientRole 'admin_mestre' — só a MGR designa
+ * quem é Admin Mestre).
  */
 exports.adminCreateClientUser = onCall(
   { region: 'southamerica-east1', enforceAppCheck: false },
@@ -145,7 +192,7 @@ exports.adminCreateClientUser = onCall(
     }
 
     const callerId = request.auth.uid;
-    const { email, password, nomeCompleto, clientId, clientName } = request.data;
+    const { email, password, nomeCompleto, clientId, clientName, clientRole, vehicleIds } = request.data;
 
     if (!email || typeof email !== 'string') {
       throw new HttpsError('invalid-argument', 'E-mail inválido.');
@@ -156,8 +203,8 @@ exports.adminCreateClientUser = onCall(
     if (!nomeCompleto || typeof nomeCompleto !== 'string') {
       throw new HttpsError('invalid-argument', 'Nome completo é obrigatório.');
     }
-    if (!clientId || typeof clientId !== 'string') {
-      throw new HttpsError('invalid-argument', 'clientId é obrigatório.');
+    if (clientRole !== undefined && !CLIENT_ROLES_VALIDOS.includes(clientRole)) {
+      throw new HttpsError('invalid-argument', 'clientRole inválido.');
     }
 
     const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
@@ -165,9 +212,21 @@ exports.adminCreateClientUser = onCall(
 
     const isAdmin = callerData?.role === 'admin';
     const hasPermission = callerData?.permissions?.canManageClients === true;
+    const isStaff = isAdmin || hasPermission;
+    const callerIsAdminMestre = isAdminMestreAtivo(callerData);
 
-    if (!isAdmin && !hasPermission) {
+    if (!isStaff && !callerIsAdminMestre) {
       throw new HttpsError('permission-denied', 'Sem permissão para criar acesso de cliente.');
+    }
+    if (clientRole === 'admin_mestre' && !isStaff) {
+      throw new HttpsError('permission-denied', 'Só a equipe MGR pode designar um Admin Mestre.');
+    }
+
+    // Admin Mestre nunca escolhe o clientId — sempre o próprio, nunca confiar no payload.
+    const effectiveClientId = callerIsAdminMestre && !isStaff ? callerData.clientId : clientId;
+    const effectiveClientName = callerIsAdminMestre && !isStaff ? callerData.clientName : clientName;
+    if (!effectiveClientId || typeof effectiveClientId !== 'string') {
+      throw new HttpsError('invalid-argument', 'clientId é obrigatório.');
     }
 
     let userRecord;
@@ -184,14 +243,14 @@ exports.adminCreateClientUser = onCall(
       throw new HttpsError('internal', err.message || 'Erro ao criar usuário.');
     }
 
-    await admin.firestore().doc(`users/${userRecord.uid}`).set({
+    const novoUsuario = {
       uid: userRecord.uid,
       email,
       displayName: nomeCompleto,
       nomeCompleto,
       role: 'cliente',
-      clientId,
-      clientName: clientName || null,
+      clientId: effectiveClientId,
+      clientName: effectiveClientName || null,
       ativo: true,
       xp: 0,
       level: 1,
@@ -199,7 +258,19 @@ exports.adminCreateClientUser = onCall(
       requiresPasswordChange: true,
       tempPasswordSetAt: admin.firestore.FieldValue.serverTimestamp(),
       tempPasswordSetBy: callerId,
-    });
+    };
+    if (clientRole) novoUsuario.clientRole = clientRole;
+    if (Array.isArray(vehicleIds)) novoUsuario.vehicleIds = vehicleIds;
+
+    await admin.firestore().doc(`users/${userRecord.uid}`).set(novoUsuario);
+
+    await notificarUsuario(userRecord.uid, {
+      tipo: 'client_usuario_criado',
+      canal: 'geral',
+      titulo: '👋 Bem-vindo(a) ao MGR Connect',
+      corpo: `Seu acesso foi criado por ${callerData?.nomeCompleto || callerData?.displayName || 'a equipe'}. Use seu e-mail e a senha temporária pra entrar.`,
+      rota: '/portal',
+    }).catch(() => {});
 
     return { success: true, uid: userRecord.uid };
   }
@@ -243,8 +314,9 @@ exports.adminSetUserActive = onCall(
     const hasPermission = isTargetCliente
       ? callerData?.permissions?.canManageClients === true
       : callerData?.permissions?.canManageUsers === true;
+    const isAdminMestre = isTargetCliente && isAdminMestreDoAlvo(callerData, targetDoc.data());
 
-    if (!isAdmin && !hasPermission) {
+    if (!isAdmin && !hasPermission && !isAdminMestre) {
       throw new HttpsError('permission-denied', 'Sem permissão para ativar/desativar este usuário.');
     }
 
@@ -278,10 +350,13 @@ exports.adminSetUserActive = onCall(
 
 /**
  * adminUpdateClientAuthorizations
- * Callable Cloud Function — Atualiza as autorizações de um usuário do Portal
- * do Cliente (role 'cliente'): pode abrir chamado, pode ver contrato SLA,
- * pode ver ativos. Requer: canManageClients no perfil do chamador, OU
- * role === 'admin'.
+ * Callable Cloud Function — Atualiza as autorizações e a hierarquia de um
+ * usuário do Portal do Cliente (role 'cliente'): flags de Câmaras Frias
+ * (podeAbrirChamado/podeVerContrato/podeVerAtivos), clientRole, clientPermissions
+ * (matriz de Frota do admin_secundario) e vehicleIds (veículos do motorista).
+ * Requer: canManageClients no perfil do chamador, OU role === 'admin', OU o
+ * próprio Admin Mestre do cliente-alvo. clientRole 'admin_mestre' só pode ser
+ * atribuído (ou removido) por staff MGR — nunca por outro Admin Mestre.
  */
 exports.adminUpdateClientAuthorizations = onCall(
   { region: 'southamerica-east1', enforceAppCheck: false },
@@ -291,7 +366,7 @@ exports.adminUpdateClientAuthorizations = onCall(
     }
 
     const callerId = request.auth.uid;
-    const { targetUid, podeAbrirChamado, podeVerContrato, podeVerAtivos } = request.data;
+    const { targetUid, podeAbrirChamado, podeVerContrato, podeVerAtivos, clientRole, clientPermissions, vehicleIds } = request.data;
 
     if (!targetUid || typeof targetUid !== 'string') {
       throw new HttpsError('invalid-argument', 'targetUid inválido.');
@@ -300,28 +375,141 @@ exports.adminUpdateClientAuthorizations = onCall(
     const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
     const callerData = callerDoc.data();
     const targetDoc = await admin.firestore().doc(`users/${targetUid}`).get();
+    const targetData = targetDoc.data();
 
-    if (targetDoc.data()?.role !== 'cliente') {
+    if (targetData?.role !== 'cliente') {
       throw new HttpsError('failed-precondition', 'Esta função só atualiza autorizações de usuários do Portal do Cliente.');
     }
 
     const isAdmin = callerData?.role === 'admin';
     const hasPermission = callerData?.permissions?.canManageClients === true;
+    const isStaff = isAdmin || hasPermission;
+    const isAdminMestre = isAdminMestreDoAlvo(callerData, targetData);
 
-    if (!isAdmin && !hasPermission) {
+    if (!isStaff && !isAdminMestre) {
       throw new HttpsError('permission-denied', 'Sem permissão para gerenciar autorizações de usuários de cliente.');
+    }
+
+    if (clientRole !== undefined) {
+      if (!CLIENT_ROLES_VALIDOS.includes(clientRole)) {
+        throw new HttpsError('invalid-argument', 'clientRole inválido.');
+      }
+      // Só staff MGR promove/remove um Admin Mestre — nunca outro Admin Mestre do mesmo cliente.
+      const tocaAdminMestre = clientRole === 'admin_mestre' || targetData?.clientRole === 'admin_mestre';
+      if (tocaAdminMestre && !isStaff) {
+        throw new HttpsError('permission-denied', 'Só a equipe MGR pode designar ou remover um Admin Mestre.');
+      }
     }
 
     const updateData = {};
     if (typeof podeAbrirChamado === 'boolean') updateData.podeAbrirChamado = podeAbrirChamado;
     if (typeof podeVerContrato === 'boolean') updateData.podeVerContrato = podeVerContrato;
     if (typeof podeVerAtivos === 'boolean') updateData.podeVerAtivos = podeVerAtivos;
+    if (clientRole !== undefined) updateData.clientRole = clientRole;
+    if (clientPermissions && typeof clientPermissions === 'object') updateData.clientPermissions = clientPermissions;
+    if (Array.isArray(vehicleIds)) updateData.vehicleIds = vehicleIds;
 
     if (Object.keys(updateData).length === 0) {
       throw new HttpsError('invalid-argument', 'Nenhuma autorização informada.');
     }
 
     await admin.firestore().doc(`users/${targetUid}`).update(updateData);
+
+    if (clientRole === 'admin_mestre' && targetData?.clientRole !== 'admin_mestre') {
+      await notificarUsuario(targetUid, {
+        tipo: 'client_admin_mestre_designado',
+        canal: 'geral',
+        titulo: '⭐ Você agora é Admin Mestre',
+        corpo: 'A equipe MGR te promoveu a Admin Mestre — você já pode gerenciar os usuários do seu time.',
+        rota: '/portal',
+      }).catch(() => {});
+    }
+    if (Array.isArray(vehicleIds)) {
+      await notificarUsuario(targetUid, {
+        tipo: 'frota_veiculo_atribuido',
+        canal: 'frota',
+        titulo: '🚚 Seus veículos foram atualizados',
+        corpo: vehicleIds.length > 0
+          ? `Você está vinculado a ${vehicleIds.length} veículo(s) agora.`
+          : 'Você não está mais vinculado a nenhum veículo.',
+        rota: '/portal',
+      }).catch(() => {});
+    }
+
+    return { success: true };
+  }
+);
+
+/**
+ * adminSetClientModule
+ * Callable Cloud Function — Ativa/desativa um módulo de manutenção
+ * (camaras_frias/frota) pro cliente. Exclusivo de staff MGR — o cliente
+ * NUNCA se autoconcede um módulo, nem mesmo o Admin Mestre.
+ */
+exports.adminSetClientModule = onCall(
+  { region: 'southamerica-east1', enforceAppCheck: false },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Você precisa estar autenticado.');
+    }
+
+    const callerId = request.auth.uid;
+    const { clientId, clientName, moduleId, ativo } = request.data;
+
+    if (!clientId || typeof clientId !== 'string') {
+      throw new HttpsError('invalid-argument', 'clientId é obrigatório.');
+    }
+    if (!['camaras_frias', 'frota'].includes(moduleId)) {
+      throw new HttpsError('invalid-argument', 'moduleId inválido.');
+    }
+    if (typeof ativo !== 'boolean') {
+      throw new HttpsError('invalid-argument', 'Parâmetro ativo inválido.');
+    }
+
+    const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
+    const callerData = callerDoc.data();
+    const isAdmin = callerData?.role === 'admin';
+    const hasPermission = callerData?.permissions?.canManageClients === true;
+
+    if (!isAdmin && !hasPermission) {
+      throw new HttpsError('permission-denied', 'Sem permissão para ativar/desativar módulos de cliente.');
+    }
+
+    const docId = `${clientId}_${moduleId}`;
+    const docRef = admin.firestore().doc(`client_modules/${docId}`);
+    const dados = {
+      id: docId,
+      clientId,
+      clientName: clientName || null,
+      moduleId,
+      ativo,
+    };
+    if (ativo) {
+      dados.ativadoEm = admin.firestore.FieldValue.serverTimestamp();
+      dados.ativadoPor = callerId;
+      dados.ativadoPorNome = callerData?.nomeCompleto || callerData?.displayName || null;
+    } else {
+      dados.desativadoEm = admin.firestore.FieldValue.serverTimestamp();
+      dados.desativadoPor = callerId;
+    }
+    await docRef.set(dados, { merge: true });
+
+    if (ativo) {
+      // Notifica o(s) Admin Mestre(s) do cliente que um módulo novo foi liberado.
+      const admMestresSnap = await admin.firestore().collection('users')
+        .where('clientId', '==', clientId)
+        .where('role', '==', 'cliente')
+        .where('clientRole', '==', 'admin_mestre')
+        .get();
+      const MODULE_LABEL = { camaras_frias: 'Câmaras Frias', frota: 'Frota de Veículos' };
+      await Promise.all(admMestresSnap.docs.map(d => notificarUsuario(d.id, {
+        tipo: 'client_modulo_ativado',
+        canal: 'geral',
+        titulo: '🆕 Novo módulo disponível',
+        corpo: `O módulo "${MODULE_LABEL[moduleId] || moduleId}" foi liberado pra sua empresa no MGR Connect.`,
+        rota: '/portal',
+      }).catch(() => {})));
+    }
 
     return { success: true };
   }

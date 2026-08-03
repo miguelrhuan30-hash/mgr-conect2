@@ -313,6 +313,49 @@ export interface UserProfile {
   podeAbrirChamado?: boolean; // ausente/undefined = true (permitido por padrão)
   podeVerContrato?: boolean;  // ausente/undefined = true — controla só a aba "Meu Contrato" no Portal
   podeVerAtivos?: boolean;    // ausente/undefined = true — controla a aba "Meus Ativos" e a leitura de client_assets
+
+  // Subsistema multi-tenant do cliente — hierarquia dentro do Portal (presente só quando role === 'cliente')
+  clientRole?: ClientRole;                          // ausente = tratar como 'equipe_producao' (compat retroativa dos usuários de portal legados)
+  clientPermissions?: Partial<ClientPermissionSet>;  // só relevante quando clientRole === 'admin_secundario'
+  vehicleIds?: string[];                             // motorista — veículo(s) de frota vinculado(s) a este usuário
+}
+
+// ── Subsistema multi-tenant de manutenção — hierarquia do cliente ──────────
+// Todo sub-usuário de cliente continua com role: 'cliente' (nunca um UserRole novo) — ver plano no vault,
+// 04-erp-mgrconnect/2026-08-03_doc-tecnica_subsistema-manutencao-multitenant-frota.md
+export type ClientRole = 'admin_mestre' | 'admin_secundario' | 'motorista' | 'equipe_producao';
+
+export interface ClientPermissionSet {
+  // ── Câmaras Frias (espelha os campos já existentes em UserProfile) ──
+  podeAbrirChamado?: boolean;
+  podeVerContrato?: boolean;
+  podeVerAtivos?: boolean;
+  // ── Frota — Cadastros ──
+  fleetCadastrarVeiculos?: boolean;
+  fleetCadastrarPrestadores?: boolean;
+  // ── Frota — Manutenção ──
+  fleetRelatarNecessidade?: boolean;     // admin_secundario configurável (admin_mestre/motorista: sempre true, hardcoded)
+  fleetAbrirManutencaoFormal?: boolean;
+  fleetVerHistoricoFrota?: boolean;      // motorista NUNCA — sempre filtrado por vehicleIds, hardcoded
+  // ── Frota — Relatórios ──
+  fleetGerarRelatorios?: boolean;
+}
+
+// ── Módulo habilitável por cliente ──────────────────────────────────────────
+export type ClientModuleId = 'camaras_frias' | 'frota';
+
+export interface ClientModule {
+  id: string;   // `${clientId}_${moduleId}` — doc id previsível, leitura direta sem query
+  clientId: string;
+  clientName: string;
+  moduleId: ClientModuleId;
+  ativo: boolean;
+  ativadoEm: Timestamp;
+  ativadoPor: string;
+  ativadoPorNome: string;
+  desativadoEm?: Timestamp;
+  desativadoPor?: string;
+  config?: Record<string, any>; // reservado, não usado na Fase 1
 }
 
 // ── Pedido de Redefinição de Senha (enviado da tela de login) ─────────────────
@@ -935,6 +978,9 @@ export interface ChamadoSLA {
   fotos?: string[];
   ativoId?: string;   // qual ClientAsset (mesmo campo/conceito de Task.ativoId) o cliente aponta como o com problema
   ativoNome?: string;
+  veiculoId?: string;   // NOVO — mutuamente exclusivo com ativoId: chamado unificado também serve Frota (veículo com contrato ativo)
+  veiculoPlaca?: string;
+  origemAtivoTipo?: 'camara_fria' | 'frota'; // discriminador — ausente = 'camara_fria' (compat retroativa)
   status: 'aberto' | 'em_triagem' | 'convertido' | 'cancelado';
   taskId?: string; // preenchido quando convertido em O.S.
   dataAtendimentoPrevista?: Timestamp; // espelha scheduling.dataPrevista da Task, sincronizado via Cloud Function
@@ -949,6 +995,139 @@ export const TIPO_CHAMADO_LABEL: Record<TipoChamadoSLA, string> = {
   solicitacao_visita: 'Solicitação de visita',
   outro: 'Outro',
 };
+
+// ── Módulo Frota — subsistema de manutenção do cliente ─────────────────────
+// Coleções fleet_* (prefixo evita colisão com vehicles/vehicle_fuelings/vehicle_checks,
+// que são do controle interno de ponto/deslocamento da MGR — módulo à parte).
+export type FleetVehicleTipo = 'toco' | 'truck' | 'camionete' | 'carreta' | 'utilitario' | 'outro';
+export type FleetCarroceriaTipo = 'bau' | 'refrigerado' | 'aberta' | 'sider' | 'tanque' | 'outro';
+
+export interface FleetVehicle {
+  id: string;
+  clientId: string;
+  clientName: string;
+  placa: string;                 // único por clientId (não globalmente) — validado em Cloud Function
+  modelo: string;
+  marca: string;
+  tipo: FleetVehicleTipo;
+  tipoCarroceria: FleetCarroceriaTipo;
+  equipamentoRefrigeracao?: { marca?: string; modelo?: string }; // só quando tipoCarroceria === 'refrigerado'
+  ano?: number;
+  kmAtual: number;                // só escrito por fleetCloseTrip (Cloud Function) — nunca editável direto na tela
+  status: 'ativo' | 'manutencao' | 'inativo';
+  contratoId?: string;             // vínculo com contrato de manutenção de frota, se houver. Ausente = veículo "avulso"
+  fotoUrl?: string;
+  observacoes?: string;
+  createdAt: Timestamp;
+  createdBy: string;
+  createdByName: string;
+  updatedAt?: Timestamp;
+}
+// mesmo campo `contratoId?` deve ser adicionado (futuro) a ClientAsset/Maquinario, pra generalizar
+// a mesma lógica de cobertura de contrato pro módulo Câmaras Frias.
+
+export type FleetEspecialidade = 'eletrica' | 'refrigeracao' | 'mecanica' | 'funilaria' | 'borracharia';
+
+export interface FleetProvider {
+  id: string;
+  clientId: string;
+  clientName: string;
+  nome: string;
+  cpfCnpj: string;
+  especialidades: FleetEspecialidade[];
+  telefone?: string;
+  email?: string;
+  endereco?: string;
+  contatoResponsavel?: string;
+  status: 'ativo' | 'inativo';
+  observacoes?: string;
+  createdAt: Timestamp;
+  createdBy: string;
+  createdByName: string;
+  // histórico de atendimentos é DERIVADO (query fleet_maintenances where providerId==id) — não é campo
+}
+
+export interface FleetMaintenanceRequest {
+  id: string;
+  clientId: string;
+  clientName: string;
+  vehicleId: string;
+  vehiclePlaca: string;
+  problemaRelatado: string;
+  fotos?: string[];
+  abertoPorUid: string;
+  abertoPorNome: string;
+  abertoPorClientRole: ClientRole;
+  kmNoMomento: number;
+  status: 'pendente' | 'convertida' | 'descartada';
+  maintenanceId?: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface FleetMaintenance {
+  id: string;
+  clientId: string;
+  clientName: string;
+  vehicleId: string;
+  vehiclePlaca: string;
+  requestId?: string;
+  providerId?: string;
+  providerNome?: string;         // obrigatório na FINALIZAÇÃO, não na abertura
+  problemaRelatado: string;      // herdado da solicitação, editável
+  tipo: 'corretiva' | 'preventiva';
+  fotosAbertura?: string[];
+  servicosRealizados: { id: string; descricao: string }[];   // múltiplos itens por manutenção
+  pecasUtilizadas: { id: string; descricao: string; quantidade?: number }[];
+  abertoPorUid: string;           // TRAVA de finalização
+  abertoPorNome: string;
+  createdAt: Timestamp;
+  dataEncaminhamentoPrestador?: Timestamp;
+  status: 'aberta' | 'em_andamento' | 'concluida';
+  finalizadoEm?: Timestamp;
+  finalizadoPorUid?: string;
+  finalizadoPorNome?: string;
+  fotosFinalizacao?: string[];
+  observacoesFinais?: string;
+  custo?: number;                 // só preenchido no fluxo avulso (sem contrato)
+  updatedAt?: Timestamp;
+}
+
+export interface FleetTrip {
+  id: string;
+  clientId: string;
+  clientName: string;
+  vehicleId: string;
+  vehiclePlaca: string;
+  motoristaUid: string;
+  motoristaNome: string;
+  dataAbertura: Timestamp;
+  kmInicial: number;
+  dataFechamento?: Timestamp;
+  kmFinal?: number;
+  distanciaPercorrida?: number;   // calculado no fechamento, via Cloud Function
+  destino?: string;
+  status: 'em_andamento' | 'fechada';
+}
+
+export interface FleetFueling {
+  id: string;
+  clientId: string;
+  clientName: string;
+  vehicleId: string;
+  vehiclePlaca: string;
+  motoristaUid: string;
+  motoristaNome: string;
+  tripId?: string;
+  timestamp: Timestamp;
+  km: number;
+  litros: number;
+  valorTotal: number;
+  valorPorLitro?: number;
+  tipoCombustivel: TipoCombustivel;   // reaproveita union já existente
+  posto?: string;
+  comprovanteUrl?: string;
+}
 
 export interface ClientContact {
   id: string;
@@ -1712,6 +1891,15 @@ const _BASE_COLLECTIONS = {
   PROJECT_FATURAMENTOS: 'project_faturamentos',
   CONTRATOS_SLA: 'contratos_sla',
   CHAMADOS_SLA: 'chamados_sla',
+  // Subsistema multi-tenant — módulo habilitável por cliente
+  CLIENT_MODULES: 'client_modules',
+  // Módulo Frota — subsistema de manutenção do cliente
+  FLEET_VEHICLES: 'fleet_vehicles',
+  FLEET_PROVIDERS: 'fleet_providers',
+  FLEET_MAINTENANCE_REQUESTS: 'fleet_maintenance_requests',
+  FLEET_MAINTENANCES: 'fleet_maintenances',
+  FLEET_TRIPS: 'fleet_trips',
+  FLEET_FUELINGS: 'fleet_fuelings',
   // Sprint Gantt Completo — WBS, Baselines, Adversidades
   GANTT_TASKS: 'gantt_tasks',
   GANTT_BASELINES: 'gantt_baselines',
@@ -1832,11 +2020,26 @@ export type NotificacaoTipo =
   | 'os_observacao_gestor'         // gestor adicionou observação numa evidência
   | 'os_tarefa_nao_concluida'      // tarefa marcada como não concluída
   | 'veiculo_check_pendente'       // responsável não registrou o veículo após o ponto
-  | 'chamado_sla_novo'             // cliente abriu chamado de contrato SLA pelo Portal
+  | 'chamado_sla_novo'             // cliente abriu chamado (câmara fria ou frota com contrato) pelo Portal
+  | 'chamado_agendado'             // MGR converteu chamado em O.S. agendada
+  | 'chamado_os_iniciada'          // equipe iniciou a O.S. em campo
+  | 'chamado_os_concluida'         // O.S. do chamado foi finalizada
+  | 'chamado_cancelado'            // chamado foi cancelado/descartado
+  | 'chamado_relatorio_disponivel' // relatório de O.S. marcado como "Enviado", disponível pro cliente
+  | 'contrato_sla_vencendo'        // Contrato SLA (câmara fria ou frota) perto de vencer/vencido
+  | 'frota_solicitacao_nova'       // motorista abriu solicitação de manutenção (fluxo avulso)
+  | 'frota_manutencao_iniciada'    // admin do cliente converteu solicitação em manutenção formal
+  | 'frota_manutencao_concluida'   // admin do cliente finalizou a manutenção
+  | 'frota_solicitacao_cancelada'  // solicitação de manutenção foi descartada
+  | 'frota_veiculo_contrato_vinculado' // veículo passou a ter contrato — auto-registro desativado
+  | 'frota_veiculo_atribuido'      // veículo vinculado/desvinculado de um motorista
+  | 'client_modulo_ativado'        // MGR ativou um módulo (frota/câmaras frias) pro cliente
+  | 'client_admin_mestre_designado' // MGR designou um usuário como Admin Mestre do cliente
+  | 'client_usuario_criado'        // Admin Mestre criou um sub-usuário novo (boas-vindas)
   | 'sistema_atualizado'           // nova versão do sistema/app disponível
   | 'geral';                       // notificação genérica
 
-export type NotificacaoCanal = 'almoco' | 'duvida' | 'os' | 'veiculo' | 'geral';
+export type NotificacaoCanal = 'almoco' | 'duvida' | 'os' | 'veiculo' | 'chamado' | 'frota' | 'geral';
 
 export interface Notificacao {
   id: string;
@@ -1854,6 +2057,8 @@ export interface Notificacao {
   // Contexto opcional
   osId?: string;
   projetoId?: string;
+  chamadoId?: string;              // ChamadoSLA de origem, quando aplicável
+  veiculoId?: string;              // FleetVehicle de origem, quando aplicável
   autorId?: string;
   autorNome?: string;
   data?: Record<string, any>;      // payload extra livre

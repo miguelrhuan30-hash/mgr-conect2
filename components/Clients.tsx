@@ -10,12 +10,13 @@ import { Analytics } from '../utils/mgr-analytics';
 import {
   Building, Plus, Trash2, Search, Phone, MapPin, User,
   Loader2, Save, X, Pencil, ChevronDown, ChevronUp,
-  Globe, Mail, Tag, Users, Thermometer, Map as MapIcon, Briefcase, FileSignature,
+  Globe, Mail, Tag, Users, Thermometer, Map as MapIcon, Briefcase, FileSignature, Blocks,
 } from 'lucide-react';
 import ClientAssets from './ClientAssets';
 import ClientProjectHistory from './ClientProjectHistory';
 import ClientContratoSLA from './ClientContratoSLA';
 import ClientPortalUsers from './ClientPortalUsers';
+import ClientModules from './ClientModules';
 import GoogleMapPicker, { MapPickerResult } from './GoogleMapPicker';
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -515,11 +516,11 @@ const Clients: React.FC = () => {
   const [modal, setModal] = useState<{ open: boolean; client: Client | null }>({ open: false, client: null });
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos' | 'contrato' | 'portal'>>({});
+  const [expandedTab, setExpandedTab] = useState<Record<string, 'ativos' | 'projetos' | 'contrato' | 'portal' | 'modulos'>>({});
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'todos'>('todos');
 
   const getTab = (id: string) => expandedTab[id] || 'ativos';
-  const setTab = (id: string, tab: 'ativos' | 'projetos' | 'contrato' | 'portal') =>
+  const setTab = (id: string, tab: 'ativos' | 'projetos' | 'contrato' | 'portal' | 'modulos') =>
     setExpandedTab(prev => ({ ...prev, [id]: tab }));
 
   useEffect(() => {
@@ -668,6 +669,7 @@ const Clients: React.FC = () => {
                     { key: 'projetos', label: '📂 Projetos', icon: Briefcase },
                     { key: 'contrato', label: '📄 Contrato SLA', icon: FileSignature },
                     { key: 'portal',   label: '👤 Usuários', icon: Users },
+                    { key: 'modulos',  label: '🧩 Módulos', icon: Blocks },
                   ] as const).map(tab => (
                     <button key={tab.key}
                       onClick={() => {
@@ -699,6 +701,8 @@ const Clients: React.FC = () => {
                       ? <ClientProjectHistory clientId={client.id} clientName={client.name} />
                       : getTab(client.id) === 'contrato'
                       ? <ClientContratoSLA clientId={client.id} clientName={client.name} />
+                      : getTab(client.id) === 'modulos'
+                      ? <ClientModules clientId={client.id} clientName={client.name} />
                       : <ClientPortalUsers clientId={client.id} clientName={client.name} />}
                   </div>
                 )}
