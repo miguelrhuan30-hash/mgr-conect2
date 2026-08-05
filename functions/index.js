@@ -515,6 +515,160 @@ exports.adminSetClientModule = onCall(
   }
 );
 
+/**
+ * fleetFinalizarManutencao
+ * Callable — finaliza uma manutenção de frota (fleet_maintenances). Fonte da
+ * verdade da trava de autoria (quem abriu a manutenção, ou o Admin Mestre do
+ * cliente, ou staff MGR) e da regra "custo só no fluxo avulso" — decide isso
+ * consultando o FleetVehicle (contratoId presente = não aceita custo, segue
+ * faturamento interno da MGR). Regra do Firestore trava a autoria como
+ * defesa auxiliar (ver firestore.rules, fleet_maintenances) — esta function
+ * é a fonte real, e faz os efeitos colaterais atômicos (status do veículo
+ * volta pra 'ativo', notificação pro autor da manutenção).
+ */
+exports.fleetFinalizarManutencao = onCall(
+  { region: 'southamerica-east1', enforceAppCheck: false },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Você precisa estar autenticado.');
+    }
+    const callerId = request.auth.uid;
+    const { maintenanceId, providerId, providerNome, servicosRealizados, pecasUtilizadas, fotosFinalizacao, observacoesFinais, custo } = request.data;
+
+    if (!maintenanceId || typeof maintenanceId !== 'string') {
+      throw new HttpsError('invalid-argument', 'maintenanceId é obrigatório.');
+    }
+    if (!providerId || !providerNome) {
+      throw new HttpsError('invalid-argument', 'Prestador é obrigatório pra finalizar a manutenção.');
+    }
+
+    const callerDoc = await admin.firestore().doc(`users/${callerId}`).get();
+    const callerData = callerDoc.data();
+
+    const maintRef = admin.firestore().doc(`fleet_maintenances/${maintenanceId}`);
+    const maintSnap = await maintRef.get();
+    if (!maintSnap.exists) {
+      throw new HttpsError('not-found', 'Manutenção não encontrada.');
+    }
+    const maint = maintSnap.data();
+    if (maint.status === 'concluida') {
+      throw new HttpsError('failed-precondition', 'Esta manutenção já foi finalizada.');
+    }
+
+    const isStaff = callerData?.role === 'admin' || callerData?.permissions?.canManageClients === true;
+    const isAdminMestreDoCliente = isAdminMestreAtivo(callerData) && callerData.clientId === maint.clientId;
+    const isAutor = callerId === maint.abertoPorUid;
+    if (!isStaff && !isAdminMestreDoCliente && !isAutor) {
+      throw new HttpsError('permission-denied', 'Só quem abriu a manutenção ou o Admin Mestre do cliente pode finalizar.');
+    }
+
+    const vehicleRef = admin.firestore().doc(`fleet_vehicles/${maint.vehicleId}`);
+    const vehicleSnap = await vehicleRef.get();
+    const vehicle = vehicleSnap.data() || {};
+    const aceitaCusto = !vehicle.contratoId;
+
+    const updateData = {
+      status: 'concluida',
+      providerId,
+      providerNome,
+      finalizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      finalizadoPorUid: callerId,
+      finalizadoPorNome: callerData?.nomeCompleto || callerData?.displayName || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (Array.isArray(servicosRealizados)) updateData.servicosRealizados = servicosRealizados;
+    if (Array.isArray(pecasUtilizadas)) updateData.pecasUtilizadas = pecasUtilizadas;
+    if (Array.isArray(fotosFinalizacao)) updateData.fotosFinalizacao = fotosFinalizacao;
+    if (typeof observacoesFinais === 'string') updateData.observacoesFinais = observacoesFinais;
+    if (aceitaCusto && typeof custo === 'number') updateData.custo = custo;
+
+    await maintRef.update(updateData);
+    if (vehicleSnap.exists) {
+      await vehicleRef.update({ status: 'ativo', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    }
+
+    await notificarUsuario(maint.abertoPorUid, {
+      tipo: 'frota_manutencao_concluida',
+      canal: 'frota',
+      titulo: '✅ Manutenção concluída',
+      corpo: `A manutenção do veículo ${maint.vehiclePlaca || ''} foi finalizada.`,
+      rota: '/portal/frota/manutencoes',
+    }).catch(() => {});
+
+    return { success: true };
+  }
+);
+
+/**
+ * notificarFrotaSolicitacaoNova
+ * onDocumentCreated em fleet_maintenance_requests — avisa o(s) Admin
+ * Mestre/Secundário do cliente que alguém relatou uma necessidade de
+ * manutenção (fluxo avulso). Admin SDK porque quem abre (role 'cliente')
+ * não tem leitura ampla em `users` pra montar a lista de destinatários.
+ */
+exports.notificarFrotaSolicitacaoNova = onDocumentCreated(
+  { region: 'southamerica-east1', document: 'fleet_maintenance_requests/{requestId}' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const req = snap.data() || {};
+    if (!req.clientId) return;
+
+    const adminsSnap = await admin.firestore().collection('users')
+      .where('clientId', '==', req.clientId)
+      .where('role', '==', 'cliente')
+      .where('clientRole', 'in', ['admin_mestre', 'admin_secundario'])
+      .get();
+
+    const batch = admin.firestore().batch();
+    adminsSnap.docs.forEach(d => {
+      if (d.id === req.abertoPorUid) return; // não notifica quem abriu
+      const ref = admin.firestore().collection('notifications').doc();
+      batch.set(ref, {
+        destinatarioId: d.id,
+        tipo: 'frota_solicitacao_nova',
+        canal: 'frota',
+        titulo: '🔧 Nova solicitação de manutenção',
+        corpo: `${req.abertoPorNome || 'Alguém'} relatou um problema no veículo ${req.vehiclePlaca || ''}.`,
+        lida: false,
+        criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        som: true,
+        prioridade: 'normal',
+        rota: '/portal/frota/manutencoes',
+      });
+    });
+    if (!adminsSnap.empty) await batch.commit();
+  }
+);
+
+/**
+ * notificarFrotaManutencaoIniciada
+ * onDocumentCreated em fleet_maintenances — a criação do registro É a
+ * conversão da solicitação em manutenção formal (feita pelo admin do
+ * cliente). Avisa quem abriu a solicitação original, se houver uma.
+ */
+exports.notificarFrotaManutencaoIniciada = onDocumentCreated(
+  { region: 'southamerica-east1', document: 'fleet_maintenances/{maintenanceId}' },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const maint = snap.data() || {};
+    if (!maint.requestId) return; // manutenção aberta direto, sem solicitação prévia — ninguém pra avisar
+
+    const reqSnap = await admin.firestore().doc(`fleet_maintenance_requests/${maint.requestId}`).get();
+    const req = reqSnap.data();
+    if (!req?.abertoPorUid || req.abertoPorUid === maint.abertoPorUid) return;
+
+    await notificarUsuario(req.abertoPorUid, {
+      tipo: 'frota_manutencao_iniciada',
+      canal: 'frota',
+      titulo: '🔧 Manutenção formalizada',
+      corpo: `Sua solicitação pro veículo ${maint.vehiclePlaca || ''} virou manutenção formal.`,
+      rota: '/portal/frota/manutencoes',
+    }).catch(() => {});
+  }
+);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FUNDAÇÃO F-A — Push FCM ao criar notificação
 // Observa a coleção `notifications`; ao surgir um doc, busca os tokens do

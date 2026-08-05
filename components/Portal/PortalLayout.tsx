@@ -9,8 +9,11 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, ShieldCheck, Download, X, MessageSquareText, FileSignature, Thermometer } from 'lucide-react';
+import { LogOut, ShieldCheck, Download, X, MessageSquareText, FileSignature, Thermometer, Truck } from 'lucide-react';
 import { verificarNovaVersaoSistema, VersaoSistemaInfo } from '../../services/notificationService';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { CollectionName } from '../../types';
 import NotificacoesBell from '../NotificacoesBell';
 
 const TABS = [
@@ -36,6 +39,16 @@ export default function PortalLayout() {
     if (!currentUser?.uid) return;
     verificarNovaVersaoSistema(currentUser.uid).then(v => { if (v) setVersaoNova(v); });
   }, [currentUser?.uid]);
+
+  // Módulo Frota — habilitável por cliente, liberado só por staff MGR
+  // (client_modules/{clientId}_frota). Aba só aparece se estiver ativo.
+  const clientId = (userProfile as any)?.clientId as string | undefined;
+  const [frotaAtiva, setFrotaAtiva] = useState(false);
+  useEffect(() => {
+    if (!clientId) { setFrotaAtiva(false); return; }
+    const ref = doc(db, CollectionName.CLIENT_MODULES, `${clientId}_frota`);
+    return onSnapshot(ref, snap => setFrotaAtiva(snap.exists() && snap.data()?.ativo === true), () => setFrotaAtiva(false));
+  }, [clientId]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -75,6 +88,7 @@ export default function PortalLayout() {
 
       {(() => {
         const visibleTabs = TABS.filter(t => !t.gate || (userProfile as any)?.[t.gate] !== false);
+        if (frotaAtiva) visibleTabs.push({ to: '/portal/frota', label: 'Frota', icon: Truck, end: false, gate: null });
         if (visibleTabs.length < 2) return null;
         return (
           <div className="max-w-2xl w-full mx-auto px-4 pt-3">

@@ -359,9 +359,13 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true)));
       // kmAtual nunca muda por escrita direta — só a Cloud Function fleetCloseTrip
       // (Admin SDK, ignora regras) pode atualizá-lo, evitando corrida entre viagens.
+      // Quem só tem fleetAbrirManutencaoFormal (sem fleetCadastrarVeiculos) só pode
+      // tocar o campo status — é o que acontece ao converter/finalizar manutenção.
       allow update: if isAuthenticated() && (!isCliente() ||
         (sameClient(resource.data.clientId) && (isAdminMestre() ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true)))
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true ||
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetAbrirManutencaoFormal', false) == true &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])))))
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['kmAtual']);
       allow delete: if isAuthenticated() && !isCliente();
     }
@@ -385,8 +389,11 @@ service cloud.firestore {
           (!isMotorista() || resource.data.vehicleId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('vehicleIds', []))));
       allow create: if isAuthenticated() && (!isCliente() ||
         (sameClient(request.resource.data.clientId) && request.resource.data.abertoPorUid == request.auth.uid));
+      // Update (marcar 'convertida'/'descartada' + maintenanceId) — mesma autorização
+      // de quem converte em manutenção formal (create de fleet_maintenances abaixo).
       allow update: if isAuthenticated() && (!isCliente() ||
-        (sameClient(resource.data.clientId) && isAdminMestre()));
+        (sameClient(resource.data.clientId) && (isAdminMestre() ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetAbrirManutencaoFormal', false) == true)));
       allow delete: if isAuthenticated() && !isCliente();
     }
 

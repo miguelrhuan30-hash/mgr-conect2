@@ -80,6 +80,12 @@ const IntelGuard       = lazy(() => import('./components/IntelGuard'));
 // ─────────────────────────────────────────────
 const Assets      = lazy(() => import('./components/Assets'));
 const HistoricoEquipamento = lazy(() => import('./components/HistoricoEquipamento'));
+const FleetVehicles  = lazy(() => import('./components/Fleet/FleetVehicles'));
+const FleetProviders = lazy(() => import('./components/Fleet/FleetProviders'));
+const FleetManutencoes = lazy(() => import('./components/Fleet/FleetManutencoes'));
+const PortalFrota            = lazy(() => import('./components/Portal/PortalFrota'));
+const PortalFrotaVeiculos    = lazy(() => import('./components/Portal/PortalFrotaVeiculos'));
+const PortalFrotaPrestadores = lazy(() => import('./components/Portal/PortalFrotaPrestadores'));
 const Pipeline    = lazy(() => import('./components/Pipeline'));
 const ChamadosSLA = lazy(() => import('./components/ChamadosSLA'));
 const OSExecution = lazy(() => import('./components/OSExecution'));
@@ -465,6 +471,11 @@ const AppContent: React.FC = () => {
           <Route path="historico-equipamento"
             element={(hasPermission('canViewAssetHistory') || hasPermission('canManageClients')) ? <HistoricoEquipamento /> : <Navigate to="/app" />} />
 
+          <Route path="frota-clientes/veiculos"
+            element={hasPermission('canManageClients') ? <FleetVehicles /> : <Navigate to="/app" />} />
+          <Route path="frota-clientes/prestadores"
+            element={hasPermission('canManageClients') ? <FleetProviders /> : <Navigate to="/app" />} />
+
           {/* ════════════════════════════════════════
               SPRINT 31 — Pipeline de O.S.
           ════════════════════════════════════════ */}
@@ -641,6 +652,12 @@ const AppContent: React.FC = () => {
           <Route path="novo" element={<PortalNovoChamado />} />
           <Route path="contrato" element={<PortalContratoSLA />} />
           <Route path="ativos" element={<PortalAtivos />} />
+          <Route path="frota" element={<PortalFrota />}>
+            <Route index element={<Navigate to="veiculos" replace />} />
+            <Route path="veiculos" element={<PortalFrotaVeiculos />} />
+            <Route path="prestadores" element={<PortalFrotaPrestadores />} />
+            <Route path="manutencoes" element={<FleetManutencoes />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<Navigate to="/" />} />

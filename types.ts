@@ -1017,6 +1017,7 @@ export interface FleetVehicle {
   kmAtual: number;                // só escrito por fleetCloseTrip (Cloud Function) — nunca editável direto na tela
   status: 'ativo' | 'manutencao' | 'inativo';
   contratoId?: string;             // vínculo com contrato de manutenção de frota, se houver. Ausente = veículo "avulso"
+  contratoIdentificador?: string;  // denormalizado, pra exibir sem query extra (mesmo padrão de ClientAsset.contratoSlaIdentificador)
   fotoUrl?: string;
   observacoes?: string;
   createdAt: Timestamp;

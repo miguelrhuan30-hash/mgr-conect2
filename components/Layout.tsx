@@ -179,6 +179,8 @@ const Layout: React.FC = () => {
       '/app/inteligencia':     'Inteligência MGR',
       '/app/ativos':           'Ativos de Clientes',
       '/app/historico-equipamento': 'Histórico de Equipamento',
+      '/app/frota-clientes/veiculos':    'Frota de Veículos (Clientes)',
+      '/app/frota-clientes/prestadores': 'Prestadores de Frota (Clientes)',
       '/app/pipeline':         'Pipeline de O.S.',
       '/app/faturamento':      'Faturamento & Recebíveis',
       '/app/orcamentos':       'Orçamentos',
@@ -266,7 +268,7 @@ const Layout: React.FC = () => {
 
   // O.S. submenu routes for auto-expand detection
   const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos', '/app/propostas-pdf', '/app/apresentacoes', '/app/modelos'];
-  const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos', '/app/historico-equipamento'];
+  const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos', '/app/historico-equipamento', '/app/frota-clientes'];
   const VEHICLE_ROUTES  = ['/app/veiculos'];
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
   const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
@@ -393,6 +395,8 @@ const Layout: React.FC = () => {
         { to: '/app/ativos',   icon: Wrench,   label: 'Ativos de Cliente', visible: can('canManageClients') },
         { to: '/app/historico-equipamento', icon: QrCode, label: 'Histórico de Equipamento',
           visible: can('canManageClients') || can('canViewAssetHistory') },
+        { to: '/app/frota-clientes/veiculos', icon: Truck, label: 'Frota (Veículos de Clientes)', visible: can('canManageClients') },
+        { to: '/app/frota-clientes/prestadores', icon: Users2, label: 'Frota (Prestadores)', visible: can('canManageClients') },
       ],
     },
 

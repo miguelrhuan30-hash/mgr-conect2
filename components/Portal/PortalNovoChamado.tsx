@@ -3,13 +3,13 @@
  * Formulário do cliente para abrir um chamado de contrato SLA.
  */
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { collection, query, where, getDocs, getDoc, doc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { CollectionName, ContratoSLA, PrioridadeSLA, TipoChamadoSLA, TIPO_CHAMADO_LABEL } from '../../types';
-import { ArrowLeft, Loader2, Send, AlertTriangle, Camera, X, QrCode } from 'lucide-react';
+import { CollectionName, ContratoSLA, FleetVehicle, PrioridadeSLA, TipoChamadoSLA, TIPO_CHAMADO_LABEL } from '../../types';
+import { ArrowLeft, Loader2, Send, AlertTriangle, Camera, X, QrCode, Truck } from 'lucide-react';
 import EquipamentoScanModal, { EquipamentoResolvido } from '../EquipamentoScanModal';
 
 const PRIORIDADES: { valor: PrioridadeSLA; label: string; desc: string; cor: string }[] = [
@@ -24,11 +24,28 @@ const TIPOS: TipoChamadoSLA[] = ['falha_parada', 'manutencao_preventiva', 'duvid
 export default function PortalNovoChamado() {
   const { userProfile } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const clientId = (userProfile as any)?.clientId as string | undefined;
+
+  // Origem Frota — veio da tela de Manutenção (veículo com contrato ativo,
+  // "Abrir Chamado" é o único caminho pra reportar necessidade). Mutuamente
+  // exclusivo com o seletor de ativo de câmaras frias abaixo.
+  const veiculoIdParam = searchParams.get('veiculoId') || '';
+  const [veiculo, setVeiculo] = useState<FleetVehicle | null>(null);
+  useEffect(() => {
+    if (!veiculoIdParam) { setVeiculo(null); return; }
+    getDoc(doc(db, CollectionName.FLEET_VEHICLES, veiculoIdParam))
+      .then(snap => setVeiculo(snap.exists() ? ({ id: snap.id, ...snap.data() } as FleetVehicle) : null))
+      .catch(() => setVeiculo(null));
+  }, [veiculoIdParam]);
 
   const [contratos, setContratos] = useState<ContratoSLA[]>([]);
   const [contratoSlaId, setContratoSlaId] = useState('');
   const [loadingContratos, setLoadingContratos] = useState(true);
+
+  useEffect(() => {
+    if (veiculo?.contratoId) setContratoSlaId(veiculo.contratoId);
+  }, [veiculo]);
 
   const [ativos, setAtivos] = useState<{ id: string; nome: string }[]>([]);
   const [ativoId, setAtivoId] = useState('');
@@ -118,7 +135,8 @@ export default function PortalNovoChamado() {
         ...(typeof prazoHoras === 'number' ? {
           prazoSlaLimite: Timestamp.fromDate(new Date(Date.now() + prazoHoras * 3600 * 1000)),
         } : {}),
-        ...(ativoId ? { ativoId, ativoNome: ativoSelecionado?.nome || '' } : {}),
+        ...(veiculo ? { veiculoId: veiculo.id, veiculoPlaca: veiculo.placa, origemAtivoTipo: 'frota' } :
+            ativoId ? { ativoId, ativoNome: ativoSelecionado?.nome || '' } : {}),
         ...(fotos.length ? { fotos } : {}),
         status: 'aberto',
         createdAt: serverTimestamp(),
@@ -148,7 +166,14 @@ export default function PortalNovoChamado() {
         </div>
       )}
 
-      {contratos.length > 1 && (
+      {veiculo && (
+        <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-xl p-3 text-xs text-sky-800">
+          <Truck className="w-4 h-4 shrink-0" />
+          Chamado pro veículo <strong>{veiculo.placa}</strong> ({veiculo.marca} {veiculo.modelo}) — coberto por contrato de frota.
+        </div>
+      )}
+
+      {!veiculo && contratos.length > 1 && (
         <div>
           <label className="text-xs font-bold text-gray-500 mb-1 block">Contrato</label>
           <select value={contratoSlaId} onChange={e => setContratoSlaId(e.target.value)}
@@ -169,6 +194,7 @@ export default function PortalNovoChamado() {
         </select>
       </div>
 
+      {!veiculo && (
       <div>
         <label className="text-xs font-bold text-gray-500 mb-1 block">Qual equipamento? (opcional)</label>
         <div className="flex gap-2">
@@ -188,6 +214,7 @@ export default function PortalNovoChamado() {
           </button>
         </div>
       </div>
+      )}
 
       <div>
         <label className="text-xs font-bold text-gray-500 mb-1 block">Título</label>
