@@ -15,16 +15,18 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     collection, query, where, onSnapshot, addDoc, updateDoc,
-    doc, serverTimestamp, getDoc,
+    doc, serverTimestamp, getDoc, Timestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { db, storage, functions } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { CollectionName, FleetVehicle, FleetProvider, FleetMaintenanceRequest, FleetMaintenance } from '../../types';
 import {
     Wrench, Loader2, X, Camera, AlertTriangle, FileSignature, ArrowLeft,
-    CheckCircle2, Clock, ChevronDown, Truck, Send,
+    CheckCircle2, Clock, ChevronDown, ChevronUp, Truck, Send,
 } from 'lucide-react';
 
 const STATUS_MAINT: Record<string, { label: string; color: string }> = {
@@ -264,6 +266,7 @@ export default function FleetManutencoes() {
     const [showRelatar, setShowRelatar] = useState(false);
     const [finalizando, setFinalizando] = useState<FleetMaintenance | null>(null);
     const [convertendo, setConvertendo] = useState<string | null>(null);
+    const [historicoAberto, setHistoricoAberto] = useState<string | null>(null);
 
     useEffect(() => {
         if (!clientId) return;
@@ -400,10 +403,19 @@ export default function FleetManutencoes() {
                     </button>
                 </div>
             ) : (
-                <button onClick={() => setShowRelatar(true)}
-                    className="w-full py-2.5 bg-brand-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2">
-                    <Wrench className="w-4 h-4" /> Relatar Necessidade de Manutenção
-                </button>
+                <div className="space-y-2">
+                    {/* Chamado é sempre permitido, com ou sem contrato — é o alerta rápido pra
+                        MGR/Admin Mestre ver a necessidade. "Relatar Necessidade" é o fluxo mais
+                        longo de auto-registro, só faz sentido pra veículo avulso. */}
+                    <button onClick={() => navigate(`/portal/novo?veiculoId=${vehicle.id}`)}
+                        className="w-full py-2.5 bg-sky-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2">
+                        <Send className="w-4 h-4" /> Abrir Chamado
+                    </button>
+                    <button onClick={() => setShowRelatar(true)}
+                        className="w-full py-2.5 bg-brand-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2">
+                        <Wrench className="w-4 h-4" /> Relatar Necessidade de Manutenção
+                    </button>
+                </div>
             )}
 
             {requestsPendentes.length > 0 && (
@@ -457,21 +469,89 @@ export default function FleetManutencoes() {
             {maintenancesConcluidas.length > 0 && (
                 <div className="space-y-2">
                     <p className="text-[10px] font-bold text-gray-400 uppercase">Histórico</p>
-                    {maintenancesConcluidas.map(m => (
-                        <div key={m.id} className="bg-white rounded-xl border border-gray-200 p-3">
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                                <p className="text-sm font-bold text-gray-800">{m.providerNome || 'Manutenção'}</p>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-700 border-emerald-200">Concluída</span>
+                    {maintenancesConcluidas.map(m => {
+                        const aberto = historicoAberto === m.id;
+                        const dataRef = (m.finalizadoEm || m.createdAt) as Timestamp | undefined;
+                        const fotos = [...(m.fotosAbertura || []), ...(m.fotosFinalizacao || [])];
+                        return (
+                            <div key={m.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                <button onClick={() => setHistoricoAberto(aberto ? null : m.id)}
+                                    className="w-full text-left p-3 hover:bg-gray-50">
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                        <p className="text-sm font-bold text-gray-800">{m.providerNome || 'Manutenção'}</p>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-700 border-emerald-200">Concluída</span>
+                                            {aberto ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+                                        </div>
+                                    </div>
+                                    {dataRef && (
+                                        <p className="text-[10px] text-gray-400 mb-1">{format(dataRef.toDate(), "dd/MM/yyyy", { locale: ptBR })}</p>
+                                    )}
+                                    <p className="text-xs text-gray-500 mb-1">{m.problemaRelatado}</p>
+                                    {!aberto && m.servicosRealizados?.length > 0 && (
+                                        <p className="text-[11px] text-gray-400">Serviços: {m.servicosRealizados.map(s => s.descricao).join(', ')}</p>
+                                    )}
+                                    {!aberto && typeof m.custo === 'number' && (
+                                        <p className="text-[11px] text-gray-500 font-bold mt-1">Custo: R$ {m.custo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    )}
+                                </button>
+                                {aberto && (
+                                    <div className="border-t border-gray-100 p-3 bg-gray-50 space-y-2.5">
+                                        <div>
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Tipo</p>
+                                            <p className="text-xs text-gray-700">{m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva'}</p>
+                                        </div>
+                                        {m.servicosRealizados?.length > 0 && (
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Serviços realizados</p>
+                                                <ul className="text-xs text-gray-700 list-disc list-inside space-y-0.5">
+                                                    {m.servicosRealizados.map(s => <li key={s.id}>{s.descricao}</li>)}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {m.pecasUtilizadas?.length > 0 && (
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Peças utilizadas</p>
+                                                <ul className="text-xs text-gray-700 list-disc list-inside space-y-0.5">
+                                                    {m.pecasUtilizadas.map(p => <li key={p.id}>{p.descricao}{p.quantidade ? ` (${p.quantidade}x)` : ''}</li>)}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {typeof m.custo === 'number' && (
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Custo</p>
+                                                <p className="text-xs text-gray-700 font-bold">R$ {m.custo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                            </div>
+                                        )}
+                                        {m.observacoesFinais && (
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Observações</p>
+                                                <p className="text-xs text-gray-700">{m.observacoesFinais}</p>
+                                            </div>
+                                        )}
+                                        {fotos.length > 0 && (
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Fotos</p>
+                                                <div className="flex gap-1.5 flex-wrap">
+                                                    {fotos.map((url, i) => (
+                                                        <a key={i} href={url} target="_blank" rel="noreferrer">
+                                                            <img src={url} alt="evidência" className="w-14 h-14 object-cover rounded border hover:opacity-80" />
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {(m.abertoPorNome || m.finalizadoPorNome) && (
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Registrado por</p>
+                                                <p className="text-xs text-gray-700">{m.finalizadoPorNome || m.abertoPorNome}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
-                            <p className="text-xs text-gray-500 mb-1">{m.problemaRelatado}</p>
-                            {m.servicosRealizados?.length > 0 && (
-                                <p className="text-[11px] text-gray-400">Serviços: {m.servicosRealizados.map(s => s.descricao).join(', ')}</p>
-                            )}
-                            {typeof m.custo === 'number' && (
-                                <p className="text-[11px] text-gray-500 font-bold mt-1">Custo: R$ {m.custo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                            )}
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
 

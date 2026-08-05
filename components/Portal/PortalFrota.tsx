@@ -11,12 +11,13 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { CollectionName } from '../../types';
-import { Truck, Users, Wrench, AlertTriangle, Loader2 } from 'lucide-react';
+import { Truck, Users, Wrench, AlertTriangle, Loader2, MessageSquareText } from 'lucide-react';
 
 const SUBNAV = [
   { to: '/portal/frota/veiculos',     label: 'Veículos',     icon: Truck },
   { to: '/portal/frota/prestadores',  label: 'Prestadores',  icon: Users },
   { to: '/portal/frota/manutencoes',  label: 'Manutenção',   icon: Wrench },
+  { to: '/portal/frota/chamados',     label: 'Chamados',     icon: MessageSquareText },
 ];
 
 export default function PortalFrota() {

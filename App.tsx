@@ -83,6 +83,7 @@ const HistoricoEquipamento = lazy(() => import('./components/HistoricoEquipament
 const FleetVehicles  = lazy(() => import('./components/Fleet/FleetVehicles'));
 const FleetProviders = lazy(() => import('./components/Fleet/FleetProviders'));
 const FleetManutencoes = lazy(() => import('./components/Fleet/FleetManutencoes'));
+const FleetChamados = lazy(() => import('./components/Fleet/FleetChamados'));
 const PortalFrota            = lazy(() => import('./components/Portal/PortalFrota'));
 const PortalFrotaVeiculos    = lazy(() => import('./components/Portal/PortalFrotaVeiculos'));
 const PortalFrotaPrestadores = lazy(() => import('./components/Portal/PortalFrotaPrestadores'));
@@ -657,6 +658,7 @@ const AppContent: React.FC = () => {
             <Route path="veiculos" element={<PortalFrotaVeiculos />} />
             <Route path="prestadores" element={<PortalFrotaPrestadores />} />
             <Route path="manutencoes" element={<FleetManutencoes />} />
+            <Route path="chamados" element={<FleetChamados />} />
           </Route>
         </Route>
 
