@@ -740,6 +740,11 @@ exports.enviarPushNotificacao = onDocumentCreated(
 // PORTAL DO CLIENTE — notifica gestores quando um chamado de contrato SLA é
 // aberto. Roda com Admin SDK porque o cliente (role 'cliente') não tem
 // permissão de leitura ampla sobre `users` para montar a lista de destinatários.
+//
+// Roteamento por origem/cobertura (chamado de Frota): veículo AVULSO (sem
+// contrato) não vira O.S. da MGR — o chamado é só um alerta pro Admin Mestre
+// do próprio cliente decidir o que fazer. Veículo COBERTO por contrato segue
+// o fluxo normal (MGR triagem → O.S.), igual chamado de câmaras frias.
 // ═══════════════════════════════════════════════════════════════════════════
 exports.notificarGestoresNovoChamadoSla = onDocumentCreated(
   { region: 'southamerica-east1', document: 'chamados_sla/{chamadoId}' },
@@ -747,6 +752,49 @@ exports.notificarGestoresNovoChamadoSla = onDocumentCreated(
     const snap = event.data;
     if (!snap) return;
     const chamado = snap.data() || {};
+
+    const prioridade = chamado.prioridade || 'P3';
+    const TIPO_LABEL = {
+      falha_parada: 'Falha / Parada de equipamento',
+      manutencao_preventiva: 'Manutenção preventiva',
+      duvida_tecnica: 'Dúvida técnica',
+      solicitacao_visita: 'Solicitação de visita',
+      outro: 'Outro',
+    };
+    const tipoLabel = TIPO_LABEL[chamado.tipo] || null;
+
+    // Chamado de frota num veículo avulso (sem contrato) — vai pro Admin
+    // Mestre do próprio cliente, não pra MGR.
+    if (chamado.origemAtivoTipo === 'frota' && chamado.veiculoId) {
+      const veiculoSnap = await admin.firestore().doc(`fleet_vehicles/${chamado.veiculoId}`).get();
+      const veiculo = veiculoSnap.exists ? veiculoSnap.data() : null;
+      if (veiculo && !veiculo.contratoId) {
+        const admMestresSnap = await admin.firestore().collection('users')
+          .where('clientId', '==', chamado.clientId)
+          .where('role', '==', 'cliente')
+          .where('clientRole', '==', 'admin_mestre')
+          .get();
+        const batchCliente = admin.firestore().batch();
+        admMestresSnap.docs.forEach(d => {
+          if (d.id === chamado.criadoPorUid) return; // não notifica quem abriu
+          const ref = admin.firestore().collection('notifications').doc();
+          batchCliente.set(ref, {
+            destinatarioId: d.id,
+            tipo: 'chamado_sla_novo',
+            canal: 'frota',
+            titulo: `🚚 Novo chamado — ${prioridade}`,
+            corpo: `${chamado.criadoPorNome || 'Alguém'} abriu um chamado pro veículo ${chamado.veiculoPlaca || ''} (avulso, sem contrato): ${chamado.titulo || ''}`,
+            lida: false,
+            criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+            som: true,
+            prioridade: (prioridade === 'P1' || prioridade === 'P2') ? 'alta' : 'normal',
+            rota: '/portal/frota/chamados',
+          });
+        });
+        if (!admMestresSnap.empty) await batchCliente.commit();
+        return; // avulso não notifica MGR — não vira O.S. por esse caminho
+      }
+    }
 
     const usersSnap = await admin.firestore().collection('users').get();
     const destinatarios = usersSnap.docs
@@ -760,15 +808,6 @@ exports.notificarGestoresNovoChamadoSla = onDocumentCreated(
 
     if (destinatarios.length === 0) return;
 
-    const prioridade = chamado.prioridade || 'P3';
-    const TIPO_LABEL = {
-      falha_parada: 'Falha / Parada de equipamento',
-      manutencao_preventiva: 'Manutenção preventiva',
-      duvida_tecnica: 'Dúvida técnica',
-      solicitacao_visita: 'Solicitação de visita',
-      outro: 'Outro',
-    };
-    const tipoLabel = TIPO_LABEL[chamado.tipo] || null;
     const batch = admin.firestore().batch();
     destinatarios.forEach(uid => {
       const ref = admin.firestore().collection('notifications').doc();
