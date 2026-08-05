@@ -32,7 +32,7 @@ import {
 } from '../types';
 import {
     Wrench, Plus, Loader2, X, Save, Camera, ChevronDown,
-    ChevronUp, Calendar, Search, Cog, Thermometer, FileText, Building2,
+    ChevronUp, Calendar, Search, Cog, Thermometer, FileText, Building2, AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -57,17 +57,20 @@ const FICHA_TECNICA_FIELDS: [string, string, string, string][] = [
 // ── Ativo Final Form Modal ───────────────────────────────────────────────────
 interface AssetFormProps {
     clientId: string;
+    clientes: Client[];
+    clienteTravado?: boolean; // true quando aberto de dentro do card de um cliente — some com o seletor
     initial?: ClientAsset | null;
     onClose: () => void;
 }
 
-const AssetForm: React.FC<AssetFormProps> = ({ clientId, initial, onClose }) => {
+const AssetForm: React.FC<AssetFormProps> = ({ clientId, clientes, clienteTravado, initial, onClose }) => {
     const isEdit = !!initial;
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
     const [form, setForm] = useState({
+        clientId:         initial?.clientId    || clientId,
         nome:             initial?.nome        || '',
         tipo:             initial?.tipo        || TIPOS_ATIVO_FINAL[0],
         localizacao:      (initial as any)?.localizacao  || '',
@@ -81,10 +84,10 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, initial, onClose }) => 
 
     const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !clientId) return;
+        if (!file || !form.clientId) return;
         setUploading(true);
         try {
-            const path = `assets/${clientId}/${initial?.id || 'new'}/${Date.now()}_${file.name}`;
+            const path = `assets/${form.clientId}/${initial?.id || 'new'}/${Date.now()}_${file.name}`;
             const snap = await uploadBytes(ref(storage, path), file);
             const url  = await getDownloadURL(snap.ref);
             setForm(p => ({ ...p, fotos: [...p.fotos, url] }));
@@ -96,10 +99,11 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, initial, onClose }) => 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!form.clientId) { alert('Selecione o cliente deste ativo.'); return; }
         setSaving(true);
         try {
             const payload: Record<string, any> = {
-                clientId,
+                clientId: form.clientId,
                 nome:          form.nome,
                 tipo:          form.tipo,
                 status:        form.status,
@@ -129,6 +133,20 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, initial, onClose }) => 
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+                    {clienteTravado ? (
+                        <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-xs font-bold text-sky-700 flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5" /> Cliente: {clientes.find(c => c.id === form.clientId)?.name || '—'}
+                        </div>
+                    ) : (
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Cliente *</label>
+                            <select required value={form.clientId} onChange={set('clientId')}
+                                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+                                <option value="">Selecione...</option>
+                                {clientes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="col-span-2">
                             <label className="block text-xs font-bold text-gray-600 mb-1">Nome *</label>
@@ -205,18 +223,21 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, initial, onClose }) => 
 // ── Maquinário Form Modal ────────────────────────────────────────────────────
 interface MaquinarioFormProps {
     clientId: string;
+    clientes: Client[];
+    clienteTravado?: boolean;
     initial?: Maquinario | null;
-    ativosDoCliente: ClientAsset[];
+    todosAtivos: ClientAsset[]; // todos os Ativos Finais (não só do cliente inicial) — o cliente pode ser trocado no form
     onClose: () => void;
 }
 
-const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, initial, ativosDoCliente, onClose }) => {
+const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, clientes, clienteTravado, initial, todosAtivos, onClose }) => {
     const isEdit = !!initial;
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
     const [form, setForm] = useState({
+        clientId: initial?.clientId || clientId,
         nome:  initial?.nome || '',
         tipo:  initial?.tipo || TIPOS_MAQUINARIO[0],
         status: initial?.status || 'ativo' as Maquinario['status'],
@@ -231,16 +252,22 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, initial, ativ
         fotos: initial?.fotos || [] as string[],
     });
     const [ativosSelecionados, setAtivosSelecionados] = useState<string[]>(initial?.ativosFinaisAtendidos || []);
+    const ativosDoCliente = todosAtivos.filter(a => a.clientId === form.clientId);
 
     const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
         setForm(p => ({ ...p, [k]: e.target.value }));
 
+    const handleTrocaCliente = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setForm(p => ({ ...p, clientId: e.target.value }));
+        setAtivosSelecionados([]); // ativos marcados eram do cliente anterior — não fazem mais sentido
+    };
+
     const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !clientId) return;
+        if (!file || !form.clientId) return;
         setUploading(true);
         try {
-            const path = `maquinarios/${clientId}/${initial?.id || 'new'}/${Date.now()}_${file.name}`;
+            const path = `maquinarios/${form.clientId}/${initial?.id || 'new'}/${Date.now()}_${file.name}`;
             const snap = await uploadBytes(ref(storage, path), file);
             const url  = await getDownloadURL(snap.ref);
             setForm(p => ({ ...p, fotos: [...p.fotos, url] }));
@@ -249,10 +276,11 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, initial, ativ
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!form.clientId) { alert('Selecione o cliente deste maquinário.'); return; }
         setSaving(true);
         try {
             const payload: Record<string, any> = {
-                clientId,
+                clientId: form.clientId,
                 nome: form.nome,
                 tipo: form.tipo,
                 status: form.status,
@@ -290,6 +318,20 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, initial, ativ
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+                    {clienteTravado ? (
+                        <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-xs font-bold text-sky-700 flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5" /> Cliente: {clientes.find(c => c.id === form.clientId)?.name || '—'}
+                        </div>
+                    ) : (
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Cliente *</label>
+                            <select required value={form.clientId} onChange={handleTrocaCliente}
+                                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+                                <option value="">Selecione...</option>
+                                {clientes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    )}
                     <section>
                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Identificação</p>
                         <div className="grid grid-cols-2 gap-3">
@@ -479,7 +521,7 @@ const RelatoriosDoAtivo: React.FC<{ ativoId: string }> = ({ ativoId }) => {
 };
 
 // ── Asset (Ativo Final) Card ─────────────────────────────────────────────────
-const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; onEdit?: () => void; readOnly?: boolean }> = ({ asset, clientNome, onEdit, readOnly }) => {
+const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?: boolean; onEdit?: () => void; readOnly?: boolean }> = ({ asset, clientNome, semCliente, onEdit, readOnly }) => {
     const [expandido, setExpandido] = useState<'maquinarios' | 'relatorios' | null>(null);
     const [maquinarios, setMaquinarios] = useState<Maquinario[] | null>(null);
     const [maquinarioAberto, setMaquinarioAberto] = useState<string | null>(null);
@@ -513,6 +555,9 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; onEdit?: ()
                         <h3 className="font-bold text-gray-900">{asset.nome}</h3>
                         {clientNome && (
                             <p className="text-[10px] text-sky-600 flex items-center gap-1 mt-0.5"><Building2 className="w-3 h-3" /> {clientNome}</p>
+                        )}
+                        {semCliente && (
+                            <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1 mt-0.5"><AlertTriangle className="w-3 h-3" /> Sem cliente vinculado — abra "Editar" pra corrigir</p>
                         )}
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${sc.color}`}>
@@ -593,7 +638,7 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; onEdit?: ()
 };
 
 // ── Maquinário Card (visão direta, sem passar pelo ativo final) ─────────────
-const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNome?: string; onEdit: () => void }> = ({ m, ativos, clientNome, onEdit }) => {
+const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNome?: string; semCliente?: boolean; onEdit: () => void }> = ({ m, ativos, clientNome, semCliente, onEdit }) => {
     const [open, setOpen] = useState(false);
     const nomesAtivos = m.ativosFinaisAtendidos
         .map(id => ativos.find(a => a.id === id)?.nome)
@@ -610,6 +655,9 @@ const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNom
                         <h3 className="font-bold text-gray-900">{m.nome}</h3>
                         {clientNome && (
                             <p className="text-[10px] text-sky-600 flex items-center gap-1 mt-0.5"><Building2 className="w-3 h-3" /> {clientNome}</p>
+                        )}
+                        {semCliente && (
+                            <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1 mt-0.5"><AlertTriangle className="w-3 h-3" /> Sem cliente vinculado — abra "Editar" pra corrigir</p>
                         )}
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${sc.color}`}>{sc.label}</span>
@@ -677,11 +725,17 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
     const effectiveClientName = clientNameProp || (selectedClientId ? clientesPorId.get(selectedClientId) : undefined);
 
     useEffect(() => {
-        if (embutido) return;
+        // Buscado sempre que não for readOnly (mesmo embutido no card de um
+        // cliente) — os formulários de Ativo/Maquinário usam a lista pra
+        // exibir/corrigir o vínculo com o cliente, inclusive de registros
+        // órfãos antigos. Cliente do Portal (readOnly) nunca abre esses
+        // formulários, então nem tenta — coleção `clients` não é liberada
+        // pras regras do Firestore pra role 'cliente'.
+        if (readOnly) return;
         getDocs(query(collection(db, CollectionName.CLIENTS), orderBy('name', 'asc')))
             .then(snap => setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client))))
             .catch(() => setClientes([]));
-    }, [embutido]);
+    }, [readOnly]);
 
     useEffect(() => {
         const q = effectiveClientId
@@ -711,8 +765,6 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
     const filteredMaquinarios = maquinarios.filter(m =>
         m.nome.toLowerCase().includes(search.toLowerCase()) || m.tipo?.toLowerCase().includes(search.toLowerCase())
     );
-    // Ativos do cliente relevante ao formulário de maquinário aberto no momento
-    const ativosDoClienteDoModal = assets.filter(a => a.clientId === modalMaquinario.clientId);
 
     return (
         <div className={embutido ? 'space-y-4' : 'max-w-6xl mx-auto space-y-6 pb-12'}>
@@ -791,7 +843,8 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
                     )}
                     {filteredAssets.map(asset => (
                         <AssetCard key={asset.id} asset={asset} readOnly={readOnly}
-                            clientNome={!effectiveClientId ? clientesPorId.get(asset.clientId) : undefined}
+                            clientNome={!embutido ? clientesPorId.get(asset.clientId) : undefined}
+                            semCliente={!embutido && !asset.clientId}
                             onEdit={() => setModal({ open: true, asset, clientId: asset.clientId })} />
                     ))}
                 </div>
@@ -805,21 +858,24 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
                     )}
                     {filteredMaquinarios.map(m => (
                         <MaquinarioCard key={m.id} m={m} ativos={assets}
-                            clientNome={!effectiveClientId ? clientesPorId.get(m.clientId) : undefined}
+                            clientNome={!embutido ? clientesPorId.get(m.clientId) : undefined}
+                            semCliente={!embutido && !m.clientId}
                             onEdit={() => setModalMaquinario({ open: true, maquinario: m, clientId: m.clientId })} />
                     ))}
                 </div>
             )}
 
             {!readOnly && modal.open && (
-                <AssetForm clientId={modal.clientId} initial={modal.asset}
+                <AssetForm clientId={modal.clientId} clientes={clientes} clienteTravado={embutido} initial={modal.asset}
                     onClose={() => setModal({ open: false, asset: null, clientId: '' })} />
             )}
             {!readOnly && modalMaquinario.open && (
                 <MaquinarioForm
                     clientId={modalMaquinario.clientId}
+                    clientes={clientes}
+                    clienteTravado={embutido}
                     initial={modalMaquinario.maquinario}
-                    ativosDoCliente={ativosDoClienteDoModal}
+                    todosAtivos={assets}
                     onClose={() => setModalMaquinario({ open: false, maquinario: null, clientId: '' })}
                 />
             )}
