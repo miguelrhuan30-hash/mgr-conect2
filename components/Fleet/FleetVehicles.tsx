@@ -23,6 +23,7 @@ import {
 import {
     Truck, Plus, Loader2, X, Save, Camera, Building2, AlertTriangle, FileSignature, Search, Wrench,
 } from 'lucide-react';
+import RegistrarManutencaoHistorica from './RegistrarManutencaoHistorica';
 
 const TIPOS_VEICULO: { value: FleetVehicleTipo; label: string }[] = [
     { value: 'toco', label: 'Toco' },
@@ -290,6 +291,7 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ clientId, clientName, cliente
 const VehicleCard: React.FC<{ v: FleetVehicle; clientNome?: string; podeEditar: boolean; modoPortal: boolean; onEdit: () => void }> =
     ({ v, clientNome, podeEditar, modoPortal, onEdit }) => {
     const navigate = useNavigate();
+    const [mostrarHistorico, setMostrarHistorico] = useState(false);
     const sc = STATUS_CONFIG[v.status] || STATUS_CONFIG.ativo;
 
     return (
@@ -338,8 +340,18 @@ const VehicleCard: React.FC<{ v: FleetVehicle; clientNome?: string; podeEditar: 
                             <Wrench className="w-3 h-3" /> Manutenção
                         </button>
                     )}
+                    {!modoPortal && (
+                        <button onClick={() => setMostrarHistorico(true)}
+                            title="Registrar manutenção já realizada (histórico/backfill)"
+                            className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
+                            <Wrench className="w-3 h-3" /> Histórico
+                        </button>
+                    )}
                 </div>
             </div>
+            {mostrarHistorico && (
+                <RegistrarManutencaoHistorica vehicle={v} onClose={() => setMostrarHistorico(false)} />
+            )}
         </div>
     );
 };

@@ -48,7 +48,8 @@ export default function PortalNovoChamado() {
   }, [veiculo]);
 
   const [ativos, setAtivos] = useState<{ id: string; nome: string }[]>([]);
-  const [ativoId, setAtivoId] = useState('');
+  const [maquinarios, setMaquinarios] = useState<{ id: string; nome: string; ativosFinaisAtendidos: string[] }[]>([]);
+  const [ativoId, setAtivoId] = useState(''); // guarda o id escolhido, seja de um Ativo Final ou de um Maquinário
   const [mostrarScan, setMostrarScan] = useState(false);
 
   const [tipo, setTipo] = useState<TipoChamadoSLA>('falha_parada');
@@ -85,6 +86,11 @@ export default function PortalNovoChamado() {
     getDocs(query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientId)))
       .then(snap => setAtivos(snap.docs.map(d => ({ id: d.id, nome: (d.data() as any).nome || d.id }))))
       .catch(() => setAtivos([]));
+    getDocs(query(collection(db, CollectionName.MAQUINARIOS), where('clientId', '==', clientId)))
+      .then(snap => setMaquinarios(snap.docs.map(d => ({
+        id: d.id, nome: (d.data() as any).nome || d.id, ativosFinaisAtendidos: (d.data() as any).ativosFinaisAtendidos || [],
+      }))))
+      .catch(() => setMaquinarios([]));
   }, [clientId]);
 
   const handleFotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,7 +111,13 @@ export default function PortalNovoChamado() {
   const handleEquipamentoResolvido = (equip: EquipamentoResolvido) => {
     setMostrarScan(false);
     setAtivoId(equip.id);
-    setAtivos(prev => prev.some(a => a.id === equip.id) ? prev : [...prev, { id: equip.id, nome: equip.nome }]);
+    if (equip.tipo === 'ativo') {
+      setAtivos(prev => prev.some(a => a.id === equip.id) ? prev : [...prev, { id: equip.id, nome: equip.nome }]);
+    } else {
+      setMaquinarios(prev => prev.some(m => m.id === equip.id) ? prev : [...prev, {
+        id: equip.id, nome: equip.nome, ativosFinaisAtendidos: (equip.ativosVinculados || []).map(v => v.id),
+      }]);
+    }
   };
 
   const contratoSelecionado = contratos.find(c => c.id === contratoSlaId);
@@ -122,6 +134,10 @@ export default function PortalNovoChamado() {
     try {
       const nomeCliente = userProfile!.nomeCompleto || userProfile!.displayName || 'Cliente';
       const ativoSelecionado = ativos.find(a => a.id === ativoId);
+      const maquinarioSelecionado = maquinarios.find(m => m.id === ativoId);
+      const ativoPaiDoMaquinario = maquinarioSelecionado
+        ? ativos.find(a => a.id === maquinarioSelecionado.ativosFinaisAtendidos[0])
+        : undefined;
       await addDoc(collection(db, CollectionName.CHAMADOS_SLA), {
         clientId,
         clientName: (userProfile as any)?.clientName || '',
@@ -136,6 +152,11 @@ export default function PortalNovoChamado() {
           prazoSlaLimite: Timestamp.fromDate(new Date(Date.now() + prazoHoras * 3600 * 1000)),
         } : {}),
         ...(veiculo ? { veiculoId: veiculo.id, veiculoPlaca: veiculo.placa, origemAtivoTipo: 'frota' } :
+            maquinarioSelecionado ? {
+              maquinarioId: maquinarioSelecionado.id,
+              maquinarioNome: maquinarioSelecionado.nome,
+              ...(ativoPaiDoMaquinario ? { ativoId: ativoPaiDoMaquinario.id, ativoNome: ativoPaiDoMaquinario.nome } : {}),
+            } :
             ativoId ? { ativoId, ativoNome: ativoSelecionado?.nome || '' } : {}),
         ...(fotos.length ? { fotos } : {}),
         status: 'aberto',
@@ -198,11 +219,20 @@ export default function PortalNovoChamado() {
       <div>
         <label className="text-xs font-bold text-gray-500 mb-1 block">Qual equipamento? (opcional)</label>
         <div className="flex gap-2">
-          {ativos.length > 0 ? (
+          {(ativos.length > 0 || maquinarios.length > 0) ? (
             <select value={ativoId} onChange={e => setAtivoId(e.target.value)}
               className="flex-1 px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white">
               <option value="">Não sei / não se aplica</option>
-              {ativos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+              {ativos.length > 0 && (
+                <optgroup label="Ativos Finais">
+                  {ativos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                </optgroup>
+              )}
+              {maquinarios.length > 0 && (
+                <optgroup label="Equipamentos / Peças">
+                  {maquinarios.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                </optgroup>
+              )}
             </select>
           ) : (
             <p className="flex-1 text-xs text-gray-400 self-center">Nenhum equipamento cadastrado ainda.</p>
@@ -275,7 +305,6 @@ export default function PortalNovoChamado() {
       {mostrarScan && (
         <EquipamentoScanModal
           escopoClientId={clientId}
-          apenasAtivoFinal
           titulo="Qual equipamento?"
           onResolve={handleEquipamentoResolvido}
           onClose={() => setMostrarScan(false)}

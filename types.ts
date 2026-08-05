@@ -979,6 +979,8 @@ export interface ChamadoSLA {
   fotos?: string[];
   ativoId?: string;   // qual ClientAsset (mesmo campo/conceito de Task.ativoId) o cliente aponta como o com problema
   ativoNome?: string;
+  maquinarioId?: string;   // peça específica (Maquinario) dentro do ativoId acima, quando o problema é nela — não no ativo inteiro
+  maquinarioNome?: string;
   veiculoId?: string;   // NOVO — mutuamente exclusivo com ativoId: chamado unificado também serve Frota (veículo com contrato ativo)
   veiculoPlaca?: string;
   origemAtivoTipo?: 'camara_fria' | 'frota'; // discriminador — ausente = 'camara_fria' (compat retroativa)
