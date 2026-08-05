@@ -52,10 +52,13 @@ interface VehicleFormProps {
     clientName?: string;
     clientes: Client[];
     clienteTravado?: boolean;
+    /** Vínculo com contrato é decisão exclusiva da MGR — nunca do cliente, nem
+     *  mesmo Admin Mestre (ver firestore.rules). false no Portal, sempre true no staff. */
+    podeDefinirContrato: boolean;
     initial?: FleetVehicle | null;
     onClose: () => void;
 }
-const VehicleForm: React.FC<VehicleFormProps> = ({ clientId, clientName, clientes, clienteTravado, initial, onClose }) => {
+const VehicleForm: React.FC<VehicleFormProps> = ({ clientId, clientName, clientes, clienteTravado, podeDefinirContrato, initial, onClose }) => {
     const { userProfile } = useAuth();
     const isEdit = !!initial;
     const [saving, setSaving] = useState(false);
@@ -80,11 +83,11 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ clientId, clientName, cliente
     const [contratos, setContratos] = useState<ContratoSLA[]>([]);
 
     useEffect(() => {
-        if (!form.clientId) { setContratos([]); return; }
+        if (!form.clientId || !podeDefinirContrato) { setContratos([]); return; }
         getDocs(query(collection(db, CollectionName.CONTRATOS_SLA), where('clientId', '==', form.clientId), where('status', '==', 'ativo')))
             .then(snap => setContratos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContratoSLA))))
             .catch(() => setContratos([]));
-    }, [form.clientId]);
+    }, [form.clientId, podeDefinirContrato]);
 
     const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
         setForm(p => ({ ...p, [k]: e.target.value }));
@@ -108,7 +111,6 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ clientId, clientName, cliente
         setSaving(true);
         try {
             const nomeCliente = (clienteTravado && clientName) || clientes.find(c => c.id === form.clientId)?.name || '';
-            const contratoEscolhido = contratos.find(c => c.id === form.contratoId);
             const payload: any = {
                 clientId: form.clientId,
                 clientName: nomeCliente,
@@ -118,12 +120,17 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ clientId, clientName, cliente
                 tipo: form.tipo,
                 tipoCarroceria: form.tipoCarroceria,
                 status: form.status,
-                contratoId: form.contratoId || null,
-                contratoIdentificador: contratoEscolhido?.identificador || null,
                 observacoes: form.observacoes.trim() || null,
                 fotoUrl: form.fotoUrl || null,
                 updatedAt: serverTimestamp(),
             };
+            // Vínculo com contrato é exclusivo da MGR — o Portal nem envia esses
+            // campos (regra do Firestore rejeita a escrita se vierem do cliente).
+            if (podeDefinirContrato) {
+                const contratoEscolhido = contratos.find(c => c.id === form.contratoId);
+                payload.contratoId = form.contratoId || null;
+                payload.contratoIdentificador = contratoEscolhido?.identificador || null;
+            }
             payload.equipamentoRefrigeracao = form.tipoCarroceria === 'refrigerado'
                 ? { marca: form.equipRefMarca.trim() || null, modelo: form.equipRefModelo.trim() || null }
                 : null;
@@ -225,18 +232,26 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ clientId, clientName, cliente
                                 <option value="inativo">Inativo</option>
                             </select>
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-600 mb-1">Contrato de Manutenção</label>
-                            <select value={form.contratoId} onChange={set('contratoId')} disabled={!form.clientId || contratos.length === 0}
-                                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white disabled:opacity-50">
-                                <option value="">Sem contrato (avulso)</option>
-                                {contratos.map(c => <option key={c.id} value={c.id}>{c.identificador || `Contrato ${c.id.slice(0, 6)}`}</option>)}
-                            </select>
-                        </div>
+                        {podeDefinirContrato && (
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 mb-1">Contrato de Manutenção</label>
+                                <select value={form.contratoId} onChange={set('contratoId')} disabled={!form.clientId || contratos.length === 0}
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white disabled:opacity-50">
+                                    <option value="">Sem contrato (avulso)</option>
+                                    {contratos.map(c => <option key={c.id} value={c.id}>{c.identificador || `Contrato ${c.id.slice(0, 6)}`}</option>)}
+                                </select>
+                            </div>
+                        )}
                     </div>
-                    <p className="text-[10px] text-gray-400 -mt-2">
-                        Sem contrato, o cliente pode registrar a própria manutenção (avulsa). Com contrato, só pode abrir chamado — a manutenção vira O.S. da MGR.
-                    </p>
+                    {podeDefinirContrato ? (
+                        <p className="text-[10px] text-gray-400 -mt-2">
+                            Sem contrato, o cliente pode registrar a própria manutenção (avulsa). Com contrato, só pode abrir chamado — a manutenção vira O.S. da MGR.
+                        </p>
+                    ) : (
+                        <p className="text-[10px] text-gray-400 -mt-2">
+                            O vínculo com contrato de manutenção é definido pela MGR — até lá, o veículo é tratado como avulso.
+                        </p>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1">Observações</label>
@@ -447,6 +462,7 @@ const FleetVehicles: React.FC<FleetVehiclesProps> = ({ clientId: clientIdProp, c
             {modal.open && (
                 <VehicleForm clientId={effectiveClientId} clientName={effectiveClientName} clientes={clientes}
                     clienteTravado={embutido || modoPortal}
+                    podeDefinirContrato={!modoPortal}
                     initial={modal.vehicle}
                     onClose={() => setModal({ open: false, vehicle: null })} />
             )}

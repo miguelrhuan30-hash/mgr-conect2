@@ -352,20 +352,25 @@ service cloud.firestore {
     }
 
     // ── Frota — Veículos ──
+    // contratoId/contratoIdentificador NUNCA são escolhidos pelo cliente — nem
+    // mesmo Admin Mestre. É a MGR quem vincula um veículo a um contrato de
+    // manutenção; até lá, o veículo é sempre tratado como avulso (sem contrato).
     match /fleet_vehicles/{vehicleId} {
       allow read: if isAuthenticated() && (!isCliente() || sameClient(resource.data.clientId));
       allow create: if isAuthenticated() && (!isCliente() ||
-        (sameClient(request.resource.data.clientId) && (isAdminMestre() ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true)));
+        ((sameClient(request.resource.data.clientId) && (isAdminMestre() ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true))
+         && !request.resource.data.keys().hasAny(['contratoId', 'contratoIdentificador'])));
       // kmAtual nunca muda por escrita direta — só a Cloud Function fleetCloseTrip
       // (Admin SDK, ignora regras) pode atualizá-lo, evitando corrida entre viagens.
       // Quem só tem fleetAbrirManutencaoFormal (sem fleetCadastrarVeiculos) só pode
       // tocar o campo status — é o que acontece ao converter/finalizar manutenção.
       allow update: if isAuthenticated() && (!isCliente() ||
-        (sameClient(resource.data.clientId) && (isAdminMestre() ||
+        ((sameClient(resource.data.clientId) && (isAdminMestre() ||
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetCadastrarVeiculos', false) == true ||
           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientPermissions', {}).get('fleetAbrirManutencaoFormal', false) == true &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])))))
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))))
+         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['contratoId', 'contratoIdentificador'])))
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['kmAtual']);
       allow delete: if isAuthenticated() && !isCliente();
     }

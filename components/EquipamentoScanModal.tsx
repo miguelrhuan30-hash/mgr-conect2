@@ -48,6 +48,11 @@ export default function EquipamentoScanModal({ escopoClientId, apenasAtivoFinal,
   const [cameraErro, setCameraErro] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const travaRef = useRef(false); // evita processar o mesmo frame/lote de vezes enquanto resolve
+  // A câmera decodifica o mesmo QR várias vezes por segundo enquanto ele
+  // estiver em quadro — sem isso, um QR que falha (sem permissão, não
+  // encontrado etc) fica entrando e saindo de erro a cada novo frame,
+  // piscando a mensagem na tela em vez de manter o erro visível.
+  const ultimoTextoFalhoRef = useRef<string | null>(null);
 
   const buscarVinculados = async (tipo: 'ativo' | 'maquinario', id: string, data: any) => {
     try {
@@ -93,10 +98,15 @@ export default function EquipamentoScanModal({ escopoClientId, apenasAtivoFinal,
 
   const handleScan = async (decodedText: string) => {
     if (travaRef.current) return;
+    // Mesmo QR que já falhou nesta sessão de leitura — a câmera vai continuar
+    // decodificando ele a cada frame enquanto estiver em quadro; ignora em
+    // vez de piscar a mensagem de erro entrando e saindo de tela.
+    if (decodedText === ultimoTextoFalhoRef.current) return;
     travaRef.current = true;
     setErro('');
     const parsed = parseQrPayload(decodedText);
     if (!parsed) {
+      ultimoTextoFalhoRef.current = decodedText;
       setErro('QR code não reconhecido — não parece ser um equipamento MGR.');
       travaRef.current = false;
       return;
@@ -105,14 +115,21 @@ export default function EquipamentoScanModal({ escopoClientId, apenasAtivoFinal,
     try {
       const snap = await getDoc(doc(db, colName, parsed.id));
       if (!snap.exists()) {
+        ultimoTextoFalhoRef.current = decodedText;
         setErro('Equipamento não encontrado (pode ter sido excluído).');
         travaRef.current = false;
         return;
       }
       const ok = await resolverDoc(parsed.tipo, parsed.id, snap.data());
-      if (!ok) travaRef.current = false;
-    } catch {
-      setErro('Erro ao consultar o equipamento.');
+      if (!ok) { ultimoTextoFalhoRef.current = decodedText; travaRef.current = false; }
+    } catch (e: any) {
+      console.error('EquipamentoScanModal — erro ao consultar equipamento:', e);
+      ultimoTextoFalhoRef.current = decodedText;
+      setErro(
+        e?.code === 'permission-denied'
+          ? 'Esse equipamento não está vinculado ao seu cadastro (ou o cadastro dele está incompleto). Fale com a MGR.'
+          : 'Erro ao consultar o equipamento. Tente de novo.'
+      );
       travaRef.current = false;
     }
   };
@@ -139,8 +156,13 @@ export default function EquipamentoScanModal({ escopoClientId, apenasAtivoFinal,
         }
       }
       setErro('Código não encontrado.');
-    } catch {
-      setErro('Erro ao buscar o código.');
+    } catch (e: any) {
+      console.error('EquipamentoScanModal — erro ao buscar código:', e);
+      setErro(
+        e?.code === 'permission-denied'
+          ? 'Esse equipamento não está vinculado ao seu cadastro (ou o cadastro dele está incompleto). Fale com a MGR.'
+          : 'Erro ao buscar o código.'
+      );
     } finally {
       setResolvendo(false);
     }
