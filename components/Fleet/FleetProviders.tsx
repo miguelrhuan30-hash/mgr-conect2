@@ -14,7 +14,7 @@ import {
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { CollectionName, FleetProvider, FleetEspecialidade, Client } from '../../types';
-import { Users, Plus, Loader2, X, Save, Building2, Search, Phone, Mail, MapPin } from 'lucide-react';
+import { Users, Plus, Loader2, X, Save, Building2, Search, Phone, Mail, MapPin, AlertTriangle } from 'lucide-react';
 
 const ESPECIALIDADES: { value: FleetEspecialidade; label: string }[] = [
     { value: 'eletrica', label: 'Elétrica' },
@@ -299,6 +299,13 @@ const FleetProviders: React.FC<FleetProvidersProps> = ({ clientId: clientIdProp,
                     </button>
                 )}
             </div>
+
+            {!modoPortal && !embutido && !effectiveClientId && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    "Novo Prestador" fica desabilitado até você escolher um cliente específico no filtro abaixo — todo prestador precisa nascer vinculado a um cliente.
+                </p>
+            )}
 
             {!embutido && !modoPortal && (
                 <div className="relative">

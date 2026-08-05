@@ -989,6 +989,13 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
                 )}
             </div>
 
+            {!readOnly && !embutido && !effectiveClientId && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    "Novo Ativo Final" e "Novo Maquinário" ficam desabilitados até você escolher um cliente específico no filtro abaixo — todo ativo precisa nascer vinculado a um cliente.
+                </p>
+            )}
+
             {!embutido && (
                 <div className="relative">
                     <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
