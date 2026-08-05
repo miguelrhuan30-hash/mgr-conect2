@@ -87,9 +87,14 @@ export default function PortalLayout() {
       )}
 
       {(() => {
-        const visibleTabs = TABS.filter(t => !t.gate || (userProfile as any)?.[t.gate] !== false);
+        // Motorista só lida com veículos/chamados de frota — as demais abas
+        // (Meus Chamados de câmara fria, Contrato, Ativos) não fazem sentido
+        // pra esse papel e ficam escondidas, sobrando só Frota.
+        const isMotorista = (userProfile as any)?.clientRole === 'motorista';
+        const visibleTabs = isMotorista ? [] : TABS.filter(t => !t.gate || (userProfile as any)?.[t.gate] !== false);
         if (frotaAtiva) visibleTabs.push({ to: '/portal/frota', label: 'Frota', icon: Truck, end: false, gate: null });
-        if (visibleTabs.length < 2) return null;
+        if (visibleTabs.length < 2 && !isMotorista) return null;
+        if (visibleTabs.length === 0) return null;
         return (
           <div className="max-w-2xl w-full mx-auto px-4 pt-3">
             <nav className="flex bg-gray-100 rounded-xl p-1 gap-1">

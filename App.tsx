@@ -207,6 +207,16 @@ const PortalContratoSLA = lazy(() => import('./components/Portal/PortalContratoS
 const PortalAtivos      = lazy(() => import('./components/Portal/PortalAtivos'));
 
 // ─────────────────────────────────────────────
+// COMPONENTE: PortalIndex
+// Motorista não lida com chamados de câmara fria — manda direto pra Frota.
+// ─────────────────────────────────────────────
+const PortalIndex = () => {
+  const { userProfile } = useAuth();
+  if ((userProfile as any)?.clientRole === 'motorista') return <Navigate to="/portal/frota" replace />;
+  return <PortalChamados />;
+};
+
+// ─────────────────────────────────────────────
 // COMPONENTE: EnforceShiftLock
 // ─────────────────────────────────────────────
 const EnforceShiftLock = ({ isShiftLocked, children }: { isShiftLocked: boolean; children?: React.ReactNode }) => {
@@ -649,7 +659,7 @@ const AppContent: React.FC = () => {
               : <Navigate to="/login" />
           }
         >
-          <Route index element={<PortalChamados />} />
+          <Route index element={<PortalIndex />} />
           <Route path="novo" element={<PortalNovoChamado />} />
           <Route path="contrato" element={<PortalContratoSLA />} />
           <Route path="ativos" element={<PortalAtivos />} />

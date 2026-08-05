@@ -405,16 +405,22 @@ export default function FleetManutencoes() {
             ) : (
                 <div className="space-y-2">
                     {/* Chamado é sempre permitido, com ou sem contrato — é o alerta rápido pra
-                        MGR/Admin Mestre ver a necessidade. "Relatar Necessidade" é o fluxo mais
-                        longo de auto-registro, só faz sentido pra veículo avulso. */}
+                        MGR/Admin Mestre ver a necessidade. Pro motorista, "Relatar Necessidade"
+                        é a mesma coisa que Abrir Chamado na prática (mesmo resultado: fica
+                        visível pro gestor levar o veículo pra manutenção) — então some o botão
+                        duplicado e sobra só Abrir Chamado. Outros papéis do Portal mantêm as
+                        duas opções, já que "Relatar Necessidade" tem o fluxo mais longo de
+                        auto-registro (km, fotos) que fica com quem gerencia a frota. */}
                     <button onClick={() => navigate(`/portal/novo?veiculoId=${vehicle.id}`)}
                         className="w-full py-2.5 bg-sky-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2">
                         <Send className="w-4 h-4" /> Abrir Chamado
                     </button>
-                    <button onClick={() => setShowRelatar(true)}
-                        className="w-full py-2.5 bg-brand-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2">
-                        <Wrench className="w-4 h-4" /> Relatar Necessidade de Manutenção
-                    </button>
+                    {clientRole !== 'motorista' && (
+                        <button onClick={() => setShowRelatar(true)}
+                            className="w-full py-2.5 bg-brand-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2">
+                            <Wrench className="w-4 h-4" /> Relatar Necessidade de Manutenção
+                        </button>
+                    )}
                 </div>
             )}
 
