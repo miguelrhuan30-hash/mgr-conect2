@@ -35,6 +35,7 @@ export interface PermissionSet {
   canDeleteTasks: boolean;        // Excluir O.S.
   canManageProjects: boolean;     // Pipeline + Projetos
   canManageChamados?: boolean;    // Ver/gerenciar chamados de contrato SLA abertos por clientes
+  canViewAssetHistory?: boolean;  // Consultar histórico de equipamento in loco (QR/código), sem precisar do módulo Clientes
   canViewSchedule: boolean;       // Agenda/Gantt (acesso geral)
   canViewFullSchedule: boolean;   // Agenda completa (gerencial)
   canViewMySchedule: boolean;     // Minha agenda (pessoal)
@@ -1198,6 +1199,9 @@ export interface ClientAsset {
   status?: 'ativo' | 'inativo' | 'manutencao';
   localizacao?: string;         // ex: "Sala B2, 2º andar"
   createdAt: Timestamp;
+  codigoInterno?: string;              // curto, único, digitável — impresso junto do QR como fallback (gerado sob demanda)
+  contratoSlaId?: string;              // vínculo por ativo específico (um cliente pode ter >1 contrato)
+  contratoSlaIdentificador?: string;   // denormalizado, evita query extra pra exibir o selo de cobertura
 }
 
 // Maquinário — a peça específica (evaporador, condensadora, compressor,
@@ -1224,6 +1228,9 @@ export interface Maquinario {
   dataInstalacao?: Timestamp;
   status?: 'ativo' | 'inativo' | 'manutencao';
   createdAt: Timestamp;
+  codigoInterno?: string;
+  contratoSlaId?: string;
+  contratoSlaIdentificador?: string;
 }
 
 export const TIPOS_ATIVO_FINAL = ['Câmara Fria', 'Câmara de Congelamento', 'Câmara Walk-in', 'Outro'] as const;
@@ -1240,6 +1247,8 @@ export interface RelatorioOS {
   clientName?: string;
   ativoId?: string | null;
   ativoNome?: string | null;
+  maquinarioId?: string | null;
+  maquinarioNome?: string | null;
   numeroOS: string;
   titulo?: string;
   tipoServico?: string;

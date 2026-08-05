@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { ClipboardList, MapPin, User, Radio, UtensilsCrossed, Car, Shield, Download, X, AlertTriangle, Clock, CheckCircle2, XCircle, Activity, Headphones } from 'lucide-react';
+import { ClipboardList, MapPin, User, Radio, UtensilsCrossed, Car, Shield, Download, X, AlertTriangle, Clock, CheckCircle2, XCircle, Activity, Headphones, QrCode } from 'lucide-react';
 import { db } from '../../firebase';
 import { CollectionName } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -28,6 +28,7 @@ export default function FieldLayout() {
                   || !!(userProfile?.permissions?.canManageProjects)
                   || !!(userProfile?.permissions?.canEditTasks && userProfile?.permissions?.canDeleteTasks);
   const canSeeFeed = isAdmin || !!(userProfile?.permissions?.canViewFeed);
+  const canViewHistorico = isAdmin || !!(userProfile?.permissions?.canViewAssetHistory);
 
   const [suporteAberto, setSuporteAberto] = useState(0);
 
@@ -118,6 +119,7 @@ export default function FieldLayout() {
     { to: '/campo/ponto',   icon: MapPin,          label: 'Ponto'   },
     { to: '/campo/almoco',  icon: UtensilsCrossed, label: 'Almoço'  },
     { to: '/campo/veiculo', icon: Car,             label: 'Veículo' },
+    ...(canViewHistorico ? [{ to: '/campo/historico-equipamento', icon: QrCode, label: 'Equip.' }] : []),
   ];
 
   const NAV = isAdmin

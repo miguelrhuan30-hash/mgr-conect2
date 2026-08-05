@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   doc, getDoc, updateDoc, serverTimestamp, arrayUnion, Timestamp,
-  collection, getDocs, addDoc, query, where, onSnapshot,
+  collection, getDocs, addDoc, query, where, onSnapshot, limit,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -20,6 +20,7 @@ import {
 } from '../types';
 import { TASK_PHOTO_DEFAULT } from './TaskPhotoConfig';
 import OSSuporteChat from './OSSuporteChat';
+import EquipamentoScanModal, { EquipamentoResolvido } from './EquipamentoScanModal';
 import {
   MapPin, CheckCircle2, AlertCircle, Camera, Loader2, X, ArrowLeft,
   CheckSquare, Square, ClipboardList, Upload, Lock, Unlock, Navigation,
@@ -89,6 +90,48 @@ const OSExecution: React.FC = () => {
   const [photoSlots, setPhotoSlots] = useState<OSFotoSlot[]>(TASK_PHOTO_DEFAULT);
   const [tarefasOS,  setTarefasOS]  = useState<OSItemTarefa[]>([]);
   const [uploadingFoto, setUploadingFoto] = useState<string | null>(null);
+
+  // QR/código do equipamento — pergunta qual ativo recebeu a evidência, só
+  // quando o cliente já tem ativos cadastrados e a O.S. ainda não tem um vinculado.
+  const [clienteTemAtivos, setClienteTemAtivos] = useState(false);
+  const [equipamentoOk, setEquipamentoOk] = useState(false);
+  const [mostrarScanEquipamento, setMostrarScanEquipamento] = useState(false);
+  const acaoPendenteEquipamentoRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const clientId = (task as any)?.clientId;
+    if (!clientId) { setClienteTemAtivos(false); return; }
+    getDocs(query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientId), limit(1)))
+      .then(snap => setClienteTemAtivos(!snap.empty))
+      .catch(() => setClienteTemAtivos(false));
+  }, [(task as any)?.clientId]);
+  const precisaPerguntarEquipamento = clienteTemAtivos && !equipamentoOk && !(task as any)?.ativoId;
+
+  const handleEquipamentoResolvido = async (equip: EquipamentoResolvido) => {
+    setMostrarScanEquipamento(false);
+    setEquipamentoOk(true);
+    if (taskId) {
+      try {
+        await updateDoc(doc(db, 'tasks', taskId), {
+          ativoId: equip.tipo === 'ativo' ? equip.id : (equip.ativosVinculados?.[0]?.id || null),
+          ativoNome: equip.tipo === 'ativo' ? equip.nome : (equip.ativosVinculados?.[0]?.nome || null),
+          maquinarioId: equip.tipo === 'maquinario' ? equip.id : null,
+          maquinarioNome: equip.tipo === 'maquinario' ? equip.nome : null,
+        });
+        setTask(prev => prev ? { ...prev, ativoId: equip.id } as any : prev);
+      } catch { /* segue mesmo se falhar salvar */ }
+    }
+    acaoPendenteEquipamentoRef.current?.();
+    acaoPendenteEquipamentoRef.current = null;
+  };
+
+  const comEquipamentoResolvido = (acao: () => void) => {
+    if (precisaPerguntarEquipamento) {
+      acaoPendenteEquipamentoRef.current = acao;
+      setMostrarScanEquipamento(true);
+      return;
+    }
+    acao();
+  };
 
   // Sprint 40 — Check-in geoloc
   const [geoStatus,  setGeoStatus]  = useState<'idle'|'checking'|'ok'|'blocked'>('idle');
@@ -258,8 +301,10 @@ const OSExecution: React.FC = () => {
   const [pendingFotoKey, setPendingFotoKey] = useState<{ tarefaId: string; slotKey: string } | null>(null);
 
   const abrirCamera = (tarefaId: string, slotKey: string) => {
-    setPendingFotoKey({ tarefaId, slotKey });
-    fotoFileRef.current?.click();
+    comEquipamentoResolvido(() => {
+      setPendingFotoKey({ tarefaId, slotKey });
+      fotoFileRef.current?.click();
+    });
   };
 
   const handleFotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1173,6 +1218,18 @@ const OSExecution: React.FC = () => {
       {/* Sprint 46A — Suporte Primário Chat Modal */}
       {showSuporteChat && task && (
         <OSSuporteChat task={task} onClose={() => setShowSuporteChat(false)} />
+      )}
+
+      {mostrarScanEquipamento && (
+        <EquipamentoScanModal
+          escopoClientId={(task as any)?.clientId}
+          titulo="Qual equipamento recebeu a manutenção?"
+          onResolve={handleEquipamentoResolvido}
+          onClose={() => {
+            setMostrarScanEquipamento(false);
+            acaoPendenteEquipamentoRef.current = null;
+          }}
+        />
       )}
     </div>
   );

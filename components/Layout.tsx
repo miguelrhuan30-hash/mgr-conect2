@@ -57,6 +57,7 @@ import {
   KeyRound,
   GraduationCap,
   MessageSquareText,
+  QrCode,
 } from 'lucide-react';
 import AlertasCentral from './AlertasCentral';
 
@@ -177,6 +178,7 @@ const Layout: React.FC = () => {
       '/app/perfil':           'Meu Perfil',
       '/app/inteligencia':     'Inteligência MGR',
       '/app/ativos':           'Ativos de Clientes',
+      '/app/historico-equipamento': 'Histórico de Equipamento',
       '/app/pipeline':         'Pipeline de O.S.',
       '/app/faturamento':      'Faturamento & Recebíveis',
       '/app/orcamentos':       'Orçamentos',
@@ -264,7 +266,7 @@ const Layout: React.FC = () => {
 
   // O.S. submenu routes for auto-expand detection
   const OS_ROUTES       = ['/app/pipeline', '/app/agenda', '/app/tarefas', '/app/faturamento', '/app/orcamentos', '/app/propostas-pdf', '/app/apresentacoes', '/app/modelos'];
-  const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos'];
+  const CLIENT_ROUTES   = ['/app/clientes', '/app/ativos', '/app/historico-equipamento'];
   const VEHICLE_ROUTES  = ['/app/veiculos'];
   const INTEL_ROUTES    = ['/app/inteligencia', '/app/bi'];
   const LUNCH_ROUTES    = ['/app/meu-almoco', '/app/gestao-almoco'];
@@ -385,10 +387,12 @@ const Layout: React.FC = () => {
       to: '/app/clientes',
       icon: Building,
       label: 'Gestão de Clientes',
-      visible: can('canManageClients'),
+      visible: can('canManageClients') || can('canViewAssetHistory'),
       children: [
         { to: '/app/clientes', icon: Building, label: 'Clientes',         visible: can('canManageClients') },
         { to: '/app/ativos',   icon: Wrench,   label: 'Ativos de Cliente', visible: can('canManageClients') },
+        { to: '/app/historico-equipamento', icon: QrCode, label: 'Histórico de Equipamento',
+          visible: can('canManageClients') || can('canViewAssetHistory') },
       ],
     },
 

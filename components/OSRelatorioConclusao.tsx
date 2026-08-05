@@ -331,6 +331,8 @@ const OSRelatorioConclusao: React.FC<Props> = ({ task, onClose, onSave }) => {
       clientName: task.clientName || null,
       ativoId: (task as any).ativoId || null,
       ativoNome: (task as any).ativoNome || null,
+      maquinarioId: (task as any).maquinarioId || null,
+      maquinarioNome: (task as any).maquinarioNome || null,
       numeroOS,
       titulo: task.title || null,
       tipoServico: (task as any).tipoServico || null,

@@ -9,7 +9,8 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { CollectionName, ContratoSLA, PrioridadeSLA, TipoChamadoSLA, TIPO_CHAMADO_LABEL } from '../../types';
-import { ArrowLeft, Loader2, Send, AlertTriangle, Camera, X } from 'lucide-react';
+import { ArrowLeft, Loader2, Send, AlertTriangle, Camera, X, QrCode } from 'lucide-react';
+import EquipamentoScanModal, { EquipamentoResolvido } from '../EquipamentoScanModal';
 
 const PRIORIDADES: { valor: PrioridadeSLA; label: string; desc: string; cor: string }[] = [
   { valor: 'P1', label: 'P1 — Crítico', desc: 'Parada total, risco imediato', cor: 'border-red-300 bg-red-50 text-red-700' },
@@ -31,6 +32,7 @@ export default function PortalNovoChamado() {
 
   const [ativos, setAtivos] = useState<{ id: string; nome: string }[]>([]);
   const [ativoId, setAtivoId] = useState('');
+  const [mostrarScan, setMostrarScan] = useState(false);
 
   const [tipo, setTipo] = useState<TipoChamadoSLA>('falha_parada');
   const [titulo, setTitulo] = useState('');
@@ -81,6 +83,12 @@ export default function PortalNovoChamado() {
       setUploadingFoto(false);
       e.target.value = '';
     }
+  };
+
+  const handleEquipamentoResolvido = (equip: EquipamentoResolvido) => {
+    setMostrarScan(false);
+    setAtivoId(equip.id);
+    setAtivos(prev => prev.some(a => a.id === equip.id) ? prev : [...prev, { id: equip.id, nome: equip.nome }]);
   };
 
   const contratoSelecionado = contratos.find(c => c.id === contratoSlaId);
@@ -161,16 +169,25 @@ export default function PortalNovoChamado() {
         </select>
       </div>
 
-      {ativos.length > 0 && (
-        <div>
-          <label className="text-xs font-bold text-gray-500 mb-1 block">Qual equipamento? (opcional)</label>
-          <select value={ativoId} onChange={e => setAtivoId(e.target.value)}
-            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white">
-            <option value="">Não sei / não se aplica</option>
-            {ativos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
-          </select>
+      <div>
+        <label className="text-xs font-bold text-gray-500 mb-1 block">Qual equipamento? (opcional)</label>
+        <div className="flex gap-2">
+          {ativos.length > 0 ? (
+            <select value={ativoId} onChange={e => setAtivoId(e.target.value)}
+              className="flex-1 px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white">
+              <option value="">Não sei / não se aplica</option>
+              {ativos.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+            </select>
+          ) : (
+            <p className="flex-1 text-xs text-gray-400 self-center">Nenhum equipamento cadastrado ainda.</p>
+          )}
+          <button type="button" onClick={() => setMostrarScan(true)}
+            title="Ler QR Code ou digitar código do equipamento"
+            className="shrink-0 w-10 h-10 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:text-brand-600 hover:border-brand-300">
+            <QrCode className="w-4 h-4" />
+          </button>
         </div>
-      )}
+      </div>
 
       <div>
         <label className="text-xs font-bold text-gray-500 mb-1 block">Título</label>
@@ -227,6 +244,16 @@ export default function PortalNovoChamado() {
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
         Enviar Chamado
       </button>
+
+      {mostrarScan && (
+        <EquipamentoScanModal
+          escopoClientId={clientId}
+          apenasAtivoFinal
+          titulo="Qual equipamento?"
+          onResolve={handleEquipamentoResolvido}
+          onClose={() => setMostrarScan(false)}
+        />
+      )}
     </div>
   );
 }

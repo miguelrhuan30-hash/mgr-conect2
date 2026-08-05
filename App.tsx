@@ -79,6 +79,7 @@ const IntelGuard       = lazy(() => import('./components/IntelGuard'));
 // LAZY LOAD — SPRINT 30-34: Novos módulos MGR Ops 2.0
 // ─────────────────────────────────────────────
 const Assets      = lazy(() => import('./components/Assets'));
+const HistoricoEquipamento = lazy(() => import('./components/HistoricoEquipamento'));
 const Pipeline    = lazy(() => import('./components/Pipeline'));
 const ChamadosSLA = lazy(() => import('./components/ChamadosSLA'));
 const OSExecution = lazy(() => import('./components/OSExecution'));
@@ -190,6 +191,7 @@ const FieldPerfil        = lazy(() => import('./components/FieldApp/FieldPerfil'
 const FieldConfiguracoes = lazy(() => import('./components/FieldApp/FieldConfiguracoes'));
 const FieldVeiculo    = lazy(() => import('./components/FieldApp/FieldVeiculo'));
 const FieldAlmoco     = lazy(() => import('./components/FieldApp/FieldAlmoco'));
+const FieldHistoricoEquipamento = lazy(() => import('./components/FieldApp/FieldHistoricoEquipamento'));
 
 const PortalLayout      = lazy(() => import('./components/Portal/PortalLayout'));
 const PortalChamados     = lazy(() => import('./components/Portal/PortalChamados'));
@@ -460,6 +462,9 @@ const AppContent: React.FC = () => {
           <Route path="ativos"
             element={hasPermission('canManageClients') ? <Assets /> : <Navigate to="/app" />} />
 
+          <Route path="historico-equipamento"
+            element={(hasPermission('canViewAssetHistory') || hasPermission('canManageClients')) ? <HistoricoEquipamento /> : <Navigate to="/app" />} />
+
           {/* ════════════════════════════════════════
               SPRINT 31 — Pipeline de O.S.
           ════════════════════════════════════════ */}
@@ -615,6 +620,7 @@ const AppContent: React.FC = () => {
           <Route path="ponto"     element={<FieldPonto />} />
           <Route path="almoco"    element={<FieldAlmoco />} />
           <Route path="veiculo"   element={<FieldVeiculo />} />
+          <Route path="historico-equipamento" element={<FieldHistoricoEquipamento />} />
           <Route path="perfil"         element={<FieldPerfil />} />
           <Route path="configuracoes"  element={<FieldConfiguracoes />} />
         </Route>

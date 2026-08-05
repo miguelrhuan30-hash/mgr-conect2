@@ -27,16 +27,19 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import {
-    CollectionName, ClientAsset, Maquinario, Task, Client, RelatorioOS,
+    CollectionName, ClientAsset, Maquinario, Task, Client, RelatorioOS, ContratoSLA,
     TIPOS_ATIVO_FINAL, TIPOS_MAQUINARIO
 } from '../types';
 import {
     Wrench, Plus, Loader2, X, Save, Camera, ChevronDown,
     ChevronUp, Calendar, Search, Cog, Thermometer, FileText, Building2, AlertTriangle,
+    QrCode, Printer, FileSignature,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ConteudoSomenteLeitura, ConteudoEditavel } from './OSRelatorioConclusao';
+import { gerarCodigoInterno, qrPayload } from '../services/equipamentoCodigo';
+import QRCode from 'qrcode';
 
 const STATUS_CONFIG = {
     ativo:      { label: 'Ativo',      color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -53,6 +56,48 @@ const FICHA_TECNICA_FIELDS: [string, string, string, string][] = [
     ['anoFabricacao', 'Ano Fabricação',   'number', '2020'],
     ['numeroSerie',   'Número de Série',  'text', 'SN-000000'],
 ];
+
+// ── Etiqueta com QR — gera o código se ainda não existir, monta o QR e abre
+//    o popup de impressão (mesmo padrão window.open+document.write+print já
+//    usado em OSRelatorioConclusao.tsx, só que em tamanho de adesivo). ──
+async function imprimirEtiquetaEquipamento(
+    tipo: 'ativo' | 'maquinario',
+    item: { id: string; nome: string; codigoInterno?: string },
+) {
+    const colName = tipo === 'ativo' ? CollectionName.ASSETS : CollectionName.MAQUINARIOS;
+    let codigo = item.codigoInterno;
+    if (!codigo) {
+        codigo = await gerarCodigoInterno(tipo);
+        await updateDoc(doc(db, colName, item.id), { codigoInterno: codigo });
+    }
+    const qrDataUrl = await QRCode.toDataURL(qrPayload(tipo, item.id), { width: 260, margin: 1 });
+    const html = `<!DOCTYPE html>
+    <html lang="pt-BR"><head><meta charset="UTF-8"/>
+    <title>Etiqueta — ${item.nome}</title>
+    <style>
+      @page { size: 70mm 50mm; margin: 3mm; }
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, Arial, sans-serif; margin: 0; text-align: center; }
+      .etiqueta { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; }
+      img { width: 130px; height: 130px; }
+      .codigo { font-size: 13px; font-weight: 900; letter-spacing: 1px; color: #111827; }
+      .nome { font-size: 11px; font-weight: 800; color: #111827; max-width: 170px; }
+      .marca { font-size: 8px; color: #6b7280; }
+      @media print { button { display: none !important; } }
+    </style></head>
+    <body>
+      <div class="etiqueta">
+        <img src="${qrDataUrl}" alt="QR" />
+        <div class="codigo">${codigo}</div>
+        <div class="nome">${item.nome}</div>
+        <div class="marca">MGR Refrigeração</div>
+      </div>
+      <button onclick="window.print()" style="margin-top:10px;padding:6px 14px;">Imprimir</button>
+      <script>window.onload=()=>window.print();<\/script>
+    </body></html>`;
+    const win = window.open('', '_blank', 'width=420,height=560');
+    if (win) { win.document.write(html); win.document.close(); }
+}
 
 // ── Ativo Final Form Modal ───────────────────────────────────────────────────
 interface AssetFormProps {
@@ -77,7 +122,16 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, clientes, clienteTravad
         status:           initial?.status      || 'ativo' as ClientAsset['status'],
         dataInstalacao:   initial?.dataInstalacao ? format((initial.dataInstalacao as Timestamp).toDate(), 'yyyy-MM-dd') : '',
         fotos:            initial?.fotos || [] as string[],
+        contratoSlaId:    initial?.contratoSlaId || '',
     });
+    const [contratos, setContratos] = useState<ContratoSLA[]>([]);
+
+    useEffect(() => {
+        if (!form.clientId) { setContratos([]); return; }
+        getDocs(query(collection(db, CollectionName.CONTRATOS_SLA), where('clientId', '==', form.clientId), where('status', '==', 'ativo')))
+            .then(snap => setContratos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContratoSLA))))
+            .catch(() => setContratos([]));
+    }, [form.clientId]);
 
     const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
         setForm(p => ({ ...p, [k]: e.target.value }));
@@ -102,6 +156,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, clientes, clienteTravad
         if (!form.clientId) { alert('Selecione o cliente deste ativo.'); return; }
         setSaving(true);
         try {
+            const contratoEscolhido = contratos.find(c => c.id === form.contratoSlaId);
             const payload: Record<string, any> = {
                 clientId: form.clientId,
                 nome:          form.nome,
@@ -110,6 +165,8 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, clientes, clienteTravad
                 localizacao:   form.localizacao || null,
                 fotos:         form.fotos,
                 dataInstalacao: form.dataInstalacao ? Timestamp.fromDate(new Date(form.dataInstalacao)) : null,
+                contratoSlaId: form.contratoSlaId || null,
+                contratoSlaIdentificador: form.contratoSlaId ? (contratoEscolhido?.identificador || 'Contrato SLA') : null,
             };
 
             if (isEdit && initial) {
@@ -181,6 +238,17 @@ const AssetForm: React.FC<AssetFormProps> = ({ clientId, clientes, clienteTravad
                             <input type="date" value={form.dataInstalacao} onChange={set('dataInstalacao')}
                                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white" />
                         </div>
+                        <div className="col-span-2">
+                            <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1"><FileSignature className="w-3 h-3" /> Contrato SLA</label>
+                            <select value={form.contratoSlaId} onChange={set('contratoSlaId')}
+                                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+                                <option value="">Sem contrato vinculado</option>
+                                {contratos.map(c => <option key={c.id} value={c.id}>{c.identificador || `Contrato ${c.id.slice(0, 6)}`}</option>)}
+                            </select>
+                            {form.clientId && contratos.length === 0 && (
+                                <p className="text-[10px] text-gray-400 mt-1">Esse cliente não tem contrato SLA ativo.</p>
+                            )}
+                        </div>
                     </div>
 
                     <section>
@@ -250,9 +318,18 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, clientes, cli
         anoFabricacao:    initial?.especificacoes?.anoFabricacao    || '',
         numeroSerie:      initial?.especificacoes?.numeroSerie      || '',
         fotos: initial?.fotos || [] as string[],
+        contratoSlaId: initial?.contratoSlaId || '',
     });
     const [ativosSelecionados, setAtivosSelecionados] = useState<string[]>(initial?.ativosFinaisAtendidos || []);
     const ativosDoCliente = todosAtivos.filter(a => a.clientId === form.clientId);
+    const [contratos, setContratos] = useState<ContratoSLA[]>([]);
+
+    useEffect(() => {
+        if (!form.clientId) { setContratos([]); return; }
+        getDocs(query(collection(db, CollectionName.CONTRATOS_SLA), where('clientId', '==', form.clientId), where('status', '==', 'ativo')))
+            .then(snap => setContratos(snap.docs.map(d => ({ id: d.id, ...d.data() } as ContratoSLA))))
+            .catch(() => setContratos([]));
+    }, [form.clientId]);
 
     const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
         setForm(p => ({ ...p, [k]: e.target.value }));
@@ -279,6 +356,7 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, clientes, cli
         if (!form.clientId) { alert('Selecione o cliente deste maquinário.'); return; }
         setSaving(true);
         try {
+            const contratoEscolhido = contratos.find(c => c.id === form.contratoSlaId);
             const payload: Record<string, any> = {
                 clientId: form.clientId,
                 nome: form.nome,
@@ -296,6 +374,8 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, clientes, cli
                     numeroSerie:   form.numeroSerie   || null,
                 },
                 ativosFinaisAtendidos: ativosSelecionados,
+                contratoSlaId: form.contratoSlaId || null,
+                contratoSlaIdentificador: form.contratoSlaId ? (contratoEscolhido?.identificador || 'Contrato SLA') : null,
             };
             if (isEdit && initial) {
                 await updateDoc(doc(db, CollectionName.MAQUINARIOS, initial.id), payload);
@@ -361,6 +441,14 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, clientes, cli
                                 <label className="block text-xs font-bold text-gray-600 mb-1">Data de Instalação</label>
                                 <input type="date" value={form.dataInstalacao} onChange={set('dataInstalacao')}
                                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white" />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1"><FileSignature className="w-3 h-3" /> Contrato SLA</label>
+                                <select value={form.contratoSlaId} onChange={set('contratoSlaId')}
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+                                    <option value="">Sem contrato vinculado</option>
+                                    {contratos.map(c => <option key={c.id} value={c.id}>{c.identificador || `Contrato ${c.id.slice(0, 6)}`}</option>)}
+                                </select>
                             </div>
                         </div>
                     </section>
@@ -439,14 +527,19 @@ const MaquinarioForm: React.FC<MaquinarioFormProps> = ({ clientId, clientes, cli
     );
 };
 
-// ── Histórico de manutenção de um maquinário (equipe interna) ───────────────
-const HistoricoMaquinario: React.FC<{ maquinarioId: string }> = ({ maquinarioId }) => {
+// ── Histórico de manutenção de um ativo/maquinário (equipe interna) ─────────
+// Aceita ativoId (O.S. lançadas direto no Ativo Final) ou maquinarioId — nunca os dois.
+export const HistoricoMaquinario: React.FC<{ maquinarioId?: string; ativoId?: string }> = ({ maquinarioId, ativoId }) => {
     const [history, setHistory] = useState<Task[] | null>(null);
+    const filtroCampo = maquinarioId ? 'maquinarioId' : 'ativoId';
+    const filtroValor = maquinarioId || ativoId || '';
     useEffect(() => {
-        getDocs(query(collection(db, CollectionName.TASKS), where('maquinarioId', '==', maquinarioId), orderBy('createdAt', 'desc')))
+        if (!filtroValor) { setHistory([]); return; }
+        setHistory(null);
+        getDocs(query(collection(db, CollectionName.TASKS), where(filtroCampo, '==', filtroValor), orderBy('createdAt', 'desc')))
             .then(snap => setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task))))
             .catch(() => setHistory([]));
-    }, [maquinarioId]);
+    }, [filtroCampo, filtroValor]);
 
     if (history === null) return <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>;
     if (history.length === 0) return <p className="text-xs text-gray-400 text-center py-3">Nenhuma O.S. registrada para este maquinário ainda.</p>;
@@ -482,15 +575,20 @@ const HistoricoMaquinario: React.FC<{ maquinarioId: string }> = ({ maquinarioId 
 // Lê a coleção espelho `relatorios_os` (só campos seguros — ver
 // OSRelatorioConclusao.tsx) — é o que o Portal do Cliente consegue ler.
 // Reaproveitado também no lado interno, pra staff conferir o que foi enviado.
-const RelatoriosDoAtivo: React.FC<{ ativoId: string }> = ({ ativoId }) => {
+const RelatoriosDoAtivo: React.FC<{ ativoId?: string; maquinarioId?: string }> = ({ ativoId, maquinarioId }) => {
     const [relatorios, setRelatorios] = useState<RelatorioOS[] | null>(null);
     const [aberto, setAberto] = useState<string | null>(null);
+    const filtroCampo = maquinarioId ? 'maquinarioId' : 'ativoId';
+    const filtroValor = maquinarioId || ativoId || '';
 
     useEffect(() => {
-        getDocs(query(collection(db, CollectionName.RELATORIOS_OS), where('ativoId', '==', ativoId), orderBy('enviadoEm', 'desc')))
+        if (!filtroValor) { setRelatorios([]); return; }
+        setRelatorios(null);
+        getDocs(query(collection(db, CollectionName.RELATORIOS_OS), where(filtroCampo, '==', filtroValor), orderBy('enviadoEm', 'desc')))
             .then(snap => setRelatorios(snap.docs.map(d => ({ id: d.id, ...d.data() } as RelatorioOS))))
             .catch(() => setRelatorios([]));
-    }, [ativoId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filtroCampo, filtroValor]);
 
     if (relatorios === null) return <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>;
     if (relatorios.length === 0) return <p className="text-xs text-gray-400 text-center py-3">Nenhum relatório de O.S. enviado para este equipamento ainda.</p>;
@@ -525,12 +623,29 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?
     const [expandido, setExpandido] = useState<'maquinarios' | 'relatorios' | null>(null);
     const [maquinarios, setMaquinarios] = useState<Maquinario[] | null>(null);
     const [maquinarioAberto, setMaquinarioAberto] = useState<string | null>(null);
+    const [imprimindo, setImprimindo] = useState(false);
+
+    const handleImprimirEtiqueta = async () => {
+        setImprimindo(true);
+        try {
+            await imprimirEtiquetaEquipamento('ativo', asset);
+        } catch {
+            alert('Erro ao gerar a etiqueta.');
+        } finally {
+            setImprimindo(false);
+        }
+    };
 
     const toggleMaquinarios = () => {
         if (expandido === 'maquinarios') { setExpandido(null); return; }
         setExpandido('maquinarios');
         if (maquinarios === null) {
-            getDocs(query(collection(db, CollectionName.MAQUINARIOS), where('ativosFinaisAtendidos', 'array-contains', asset.id)))
+            // Inclui where('clientId'==...) mesmo já tendo array-contains — necessário
+            // pra regra do Firestore aceitar a query com segurança quando quem lê é
+            // um usuário de cliente (Meus Ativos > Ativos Secundários).
+            getDocs(query(collection(db, CollectionName.MAQUINARIOS),
+                where('clientId', '==', asset.clientId),
+                where('ativosFinaisAtendidos', 'array-contains', asset.id)))
                 .then(snap => setMaquinarios(snap.docs.map(d => ({ id: d.id, ...d.data() } as Maquinario))))
                 .catch(() => setMaquinarios([]));
         }
@@ -565,6 +680,18 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?
                     </span>
                 </div>
 
+                <div className="mb-2">
+                    {asset.contratoSlaId ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                            <FileSignature className="w-3 h-3" /> Coberto — {asset.contratoSlaIdentificador || 'Contrato SLA'}
+                        </span>
+                    ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                            <FileSignature className="w-3 h-3" /> Sem contrato vinculado
+                        </span>
+                    )}
+                </div>
+
                 <div className="space-y-1 text-[11px] text-gray-500 mb-3">
                     {asset.dataInstalacao && (
                         <p className="flex items-center gap-1">
@@ -582,12 +709,17 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?
                         </button>
                     )}
                     {!readOnly && (
-                        <button onClick={toggleMaquinarios}
-                            className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
-                            {expandido === 'maquinarios' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            Maquinários
+                        <button onClick={handleImprimirEtiqueta} disabled={imprimindo}
+                            title="Gerar/imprimir etiqueta com QR code"
+                            className="text-xs py-1.5 px-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1 disabled:opacity-50">
+                            {imprimindo ? <Loader2 className="w-3 h-3 animate-spin" /> : <QrCode className="w-3 h-3" />}
                         </button>
                     )}
+                    <button onClick={toggleMaquinarios}
+                        className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
+                        {expandido === 'maquinarios' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        {readOnly ? 'Ativos Secundários' : 'Maquinários'}
+                    </button>
                     <button onClick={toggleRelatorios}
                         className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
                         {expandido === 'relatorios' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -598,11 +730,15 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?
 
             {expandido === 'maquinarios' && (
                 <div className="border-t border-gray-100 p-4 bg-gray-50">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-3">Maquinários que atendem este ativo</p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-3">
+                        {readOnly ? 'Ativos Secundários deste equipamento' : 'Maquinários que atendem este ativo'}
+                    </p>
                     {maquinarios === null ? (
                         <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
                     ) : maquinarios.length === 0 ? (
-                        <p className="text-xs text-gray-400 text-center py-3">Nenhum maquinário vinculado a este ativo ainda. Cadastre um maquinário e marque este ativo na lista de "Atende quais ativos?".</p>
+                        <p className="text-xs text-gray-400 text-center py-3">
+                            {readOnly ? 'Nenhum ativo secundário vinculado.' : 'Nenhum maquinário vinculado a este ativo ainda. Cadastre um maquinário e marque este ativo na lista de "Atende quais ativos?".'}
+                        </p>
                     ) : (
                         <div className="space-y-2">
                             {maquinarios.map(m => (
@@ -612,12 +748,19 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?
                                         <div>
                                             <p className="text-xs font-bold text-gray-800">{m.nome}</p>
                                             <p className="text-[10px] text-gray-400">{m.tipo}</p>
+                                            {readOnly && (m.contratoSlaId ? (
+                                                <p className="text-[9px] text-emerald-600 font-bold mt-0.5">Coberto — {m.contratoSlaIdentificador || 'Contrato SLA'}</p>
+                                            ) : (
+                                                <p className="text-[9px] text-amber-600 font-bold mt-0.5">Sem contrato vinculado</p>
+                                            ))}
                                         </div>
                                         {maquinarioAberto === m.id ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
                                     </button>
                                     {maquinarioAberto === m.id && (
                                         <div className="px-3 pb-3 border-t border-gray-100 pt-2">
-                                            <HistoricoMaquinario maquinarioId={m.id} />
+                                            {readOnly
+                                                ? <RelatoriosDoAtivo maquinarioId={m.id} />
+                                                : <HistoricoMaquinario maquinarioId={m.id} />}
                                         </div>
                                     )}
                                 </div>
@@ -640,11 +783,23 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?
 // ── Maquinário Card (visão direta, sem passar pelo ativo final) ─────────────
 const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNome?: string; semCliente?: boolean; onEdit: () => void }> = ({ m, ativos, clientNome, semCliente, onEdit }) => {
     const [open, setOpen] = useState(false);
+    const [imprimindo, setImprimindo] = useState(false);
     const nomesAtivos = m.ativosFinaisAtendidos
         .map(id => ativos.find(a => a.id === id)?.nome)
         .filter(Boolean);
     const status = m.status || 'ativo';
     const sc = STATUS_CONFIG[status];
+
+    const handleImprimirEtiqueta = async () => {
+        setImprimindo(true);
+        try {
+            await imprimirEtiquetaEquipamento('maquinario', m);
+        } catch {
+            alert('Erro ao gerar a etiqueta.');
+        } finally {
+            setImprimindo(false);
+        }
+    };
 
     return (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
@@ -662,6 +817,17 @@ const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNom
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${sc.color}`}>{sc.label}</span>
                 </div>
+                <div className="mb-2">
+                    {m.contratoSlaId ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                            <FileSignature className="w-3 h-3" /> Coberto — {m.contratoSlaIdentificador || 'Contrato SLA'}
+                        </span>
+                    ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                            <FileSignature className="w-3 h-3" /> Sem contrato vinculado
+                        </span>
+                    )}
+                </div>
                 {nomesAtivos.length > 0 ? (
                     <p className="text-[11px] text-sky-600 flex items-center gap-1 mb-3">
                         <Thermometer className="w-3 h-3" /> Atende: {nomesAtivos.join(', ')}
@@ -673,6 +839,11 @@ const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNom
                     <button onClick={onEdit}
                         className="flex-1 text-xs py-1.5 rounded-lg border border-brand-200 text-brand-700 font-bold hover:bg-brand-50">
                         Editar
+                    </button>
+                    <button onClick={handleImprimirEtiqueta} disabled={imprimindo}
+                        title="Gerar/imprimir etiqueta com QR code"
+                        className="text-xs py-1.5 px-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1 disabled:opacity-50">
+                        {imprimindo ? <Loader2 className="w-3 h-3 animate-spin" /> : <QrCode className="w-3 h-3" />}
                     </button>
                     <button onClick={() => setOpen(v => !v)}
                         className="flex-1 text-xs py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">

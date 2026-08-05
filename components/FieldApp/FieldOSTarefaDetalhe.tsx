@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Image, X, CheckCircle2, XCircle, Loader2, ArrowLeft, Video } from 'lucide-react';
+import { Camera, Image, X, CheckCircle2, XCircle, Loader2, ArrowLeft, Video, Wrench } from 'lucide-react';
 import { uploadMedia, isVideoFile, isVideoUrl } from './photoUtils';
+import EquipamentoScanModal, { EquipamentoResolvido } from '../EquipamentoScanModal';
 
 export interface TarefaComEvidencia {
   id: string;
@@ -22,18 +23,51 @@ interface Props {
   uid: string;
   onSalvar: (tarefaAtualizada: TarefaComEvidencia, fotosApagadas: string[]) => Promise<void>;
   onCancelar: () => void;
+  /** Cliente da O.S. — necessário pra travar a leitura/digitação do código a ele. */
+  clientId?: string;
+  /** true quando o cliente já tem ativos cadastrados e a O.S. ainda não tem um vinculado. */
+  pedirEquipamento?: boolean;
+  /** Persiste o equipamento identificado na O.S. (ativoId/maquinarioId). */
+  onEquipamentoResolvido?: (equip: EquipamentoResolvido) => Promise<void>;
 }
 
-export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, onCancelar }: Props) {
+export default function FieldOSTarefaDetalhe({
+  tarefa, taskId, uid, onSalvar, onCancelar, clientId, pedirEquipamento, onEquipamentoResolvido,
+}: Props) {
   const [items, setItems]           = useState<MediaItem[]>([]);
   const [observacao, setObservacao] = useState(tarefa.observacao ?? '');
   const [uploading, setUploading]   = useState(false);
   const [progresso, setProgresso]   = useState('');
   const [erro, setErro]             = useState('');
   const [fotosParaApagar, setFotosParaApagar] = useState<Set<string>>(new Set());
+  const [equipamentoOk, setEquipamentoOk] = useState(false); // resolvido nesta sessão — não pergunta de novo
+  const [mostrarScan, setMostrarScan] = useState(false);
   const cameraRef  = useRef<HTMLInputElement>(null);
   const galeriaRef = useRef<HTMLInputElement>(null);
   const videoRef   = useRef<HTMLInputElement>(null);
+  const acaoPendenteRef = useRef<(() => void) | null>(null);
+
+  const precisaPerguntarEquipamento = !!pedirEquipamento && !equipamentoOk;
+
+  /** Câmera/Galeria/Vídeo passam por aqui primeiro — se ainda falta identificar
+   *  o equipamento, abre o scan antes e só dispara a ação (abrir a câmera etc.)
+   *  depois de resolvido. */
+  const comEquipamentoResolvido = (acao: () => void) => {
+    if (precisaPerguntarEquipamento) {
+      acaoPendenteRef.current = acao;
+      setMostrarScan(true);
+      return;
+    }
+    acao();
+  };
+
+  const handleEquipamentoResolvido = async (equip: EquipamentoResolvido) => {
+    setMostrarScan(false);
+    setEquipamentoOk(true);
+    try { await onEquipamentoResolvido?.(equip); } catch { /* segue mesmo se falhar salvar — não trava a evidência */ }
+    acaoPendenteRef.current?.();
+    acaoPendenteRef.current = null;
+  };
 
   const addFiles = (fileList: FileList | null) => {
     if (!fileList?.length) return;
@@ -184,9 +218,16 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
             </div>
           )}
 
+          {precisaPerguntarEquipamento && (
+            <button onClick={() => comEquipamentoResolvido(() => {})}
+              className="w-full flex items-center gap-2 py-2.5 px-3 mb-2 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold">
+              <Wrench size={14} /> Toque pra identificar o equipamento (QR ou código)
+            </button>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => cameraRef.current?.click()}
+              onClick={() => comEquipamentoResolvido(() => cameraRef.current?.click())}
               disabled={uploading}
               className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-700 bg-gray-800/50 active:bg-gray-800 disabled:opacity-50"
             >
@@ -194,7 +235,7 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
               <span className="text-xs text-gray-400">Câmera</span>
             </button>
             <button
-              onClick={() => galeriaRef.current?.click()}
+              onClick={() => comEquipamentoResolvido(() => galeriaRef.current?.click())}
               disabled={uploading}
               className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-700 bg-gray-800/50 active:bg-gray-800 disabled:opacity-50"
             >
@@ -202,7 +243,7 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
               <span className="text-xs text-gray-400">Galeria / Vídeo</span>
             </button>
             <button
-              onClick={() => videoRef.current?.click()}
+              onClick={() => comEquipamentoResolvido(() => videoRef.current?.click())}
               disabled={uploading}
               className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-700 bg-gray-800/50 active:bg-gray-800 disabled:opacity-50 col-span-2"
             >
@@ -272,6 +313,15 @@ export default function FieldOSTarefaDetalhe({ tarefa, taskId, uid, onSalvar, on
           </div>
         )}
       </div>
+
+      {mostrarScan && (
+        <EquipamentoScanModal
+          escopoClientId={clientId}
+          titulo="Qual equipamento recebeu a manutenção?"
+          onResolve={handleEquipamentoResolvido}
+          onClose={() => { setMostrarScan(false); acaoPendenteRef.current = null; }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, updateDoc, addDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
+import { doc, updateDoc, addDoc, collection, query, where, onSnapshot, Timestamp, getDocs, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { WorkflowStatus, CollectionName, Task } from '../../types';
@@ -56,6 +56,18 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
   const [showSuporte, setShowSuporte] = useState(false);
   const [naoLidasSuporte, setNaoLidasSuporte] = useState(0);
   const [salvandoEquipamento, setSalvandoEquipamento] = useState(false);
+
+  // Cliente já tem ativos cadastrados? Só então faz sentido perguntar "qual
+  // equipamento" ao bater evidência — sem isso o técnico ficaria travado
+  // num prompt sem nenhuma opção pra escolher.
+  const [clienteTemAtivos, setClienteTemAtivos] = useState(false);
+  useEffect(() => {
+    const clientId = (os as any).clientId;
+    if (!clientId) { setClienteTemAtivos(false); return; }
+    getDocs(query(collection(db, CollectionName.ASSETS), where('clientId', '==', clientId), limit(1)))
+      .then(snap => setClienteTemAtivos(!snap.empty))
+      .catch(() => setClienteTemAtivos(false));
+  }, [(os as any).clientId]);
 
   // Contagem de mensagens de suporte não lidas pelo técnico nesta O.S.
   useEffect(() => {
@@ -706,6 +718,22 @@ export default function FieldOSDetail({ os, onClose, onUpdate }: Props) {
           uid={currentUser?.uid ?? ''}
           onSalvar={handleTarefaSalva}
           onCancelar={() => { setFlow('idle'); setTarefaSel(null); }}
+          clientId={(os as any).clientId}
+          pedirEquipamento={clienteTemAtivos && !(os as any).ativoId}
+          onEquipamentoResolvido={async (equip) => {
+            await updateDoc(doc(db, 'tasks', os.id), {
+              ativoId: equip.tipo === 'ativo' ? equip.id : (equip.ativosVinculados?.[0]?.id || null),
+              ativoNome: equip.tipo === 'ativo' ? equip.nome : (equip.ativosVinculados?.[0]?.nome || null),
+              maquinarioId: equip.tipo === 'maquinario' ? equip.id : null,
+              maquinarioNome: equip.tipo === 'maquinario' ? equip.nome : null,
+            });
+            onUpdate({
+              ...os,
+              ativoId: equip.tipo === 'ativo' ? equip.id : (equip.ativosVinculados?.[0]?.id || ''),
+              ativoNome: equip.tipo === 'ativo' ? equip.nome : (equip.ativosVinculados?.[0]?.nome || ''),
+              maquinarioId: equip.tipo === 'maquinario' ? equip.id : '',
+            } as any);
+          }}
         />
       )}
 
