@@ -40,6 +40,7 @@ import { ptBR } from 'date-fns/locale';
 import { ConteudoSomenteLeitura, ConteudoEditavel } from './OSRelatorioConclusao';
 import { gerarCodigoInterno, qrPayload } from '../services/equipamentoCodigo';
 import QRCode from 'qrcode';
+import EquipamentoScanModal, { EquipamentoResolvido } from './EquipamentoScanModal';
 
 const STATUS_CONFIG = {
     ativo:      { label: 'Ativo',      color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -699,6 +700,11 @@ const AssetCard: React.FC<{ asset: ClientAsset; clientNome?: string; semCliente?
                             Inst.: {format((asset.dataInstalacao as Timestamp).toDate(), 'dd/MM/yyyy', { locale: ptBR })}
                         </p>
                     )}
+                    {asset.codigoInterno && (
+                        <p className="flex items-center gap-1 font-mono">
+                            <QrCode className="w-3 h-3" /> Código: <span className="font-bold">{asset.codigoInterno}</span>
+                        </p>
+                    )}
                 </div>
 
                 <div className="flex gap-2 flex-wrap">
@@ -829,11 +835,16 @@ const MaquinarioCard: React.FC<{ m: Maquinario; ativos: ClientAsset[]; clientNom
                     )}
                 </div>
                 {nomesAtivos.length > 0 ? (
-                    <p className="text-[11px] text-sky-600 flex items-center gap-1 mb-3">
+                    <p className="text-[11px] text-sky-600 flex items-center gap-1 mb-1">
                         <Thermometer className="w-3 h-3" /> Atende: {nomesAtivos.join(', ')}
                     </p>
                 ) : (
-                    <p className="text-[11px] text-amber-600 mb-3">Ainda não vinculado a nenhum ativo final.</p>
+                    <p className="text-[11px] text-amber-600 mb-1">Ainda não vinculado a nenhum ativo final.</p>
+                )}
+                {m.codigoInterno && (
+                    <p className="text-[11px] text-gray-500 font-mono flex items-center gap-1 mb-3">
+                        <QrCode className="w-3 h-3" /> Código: <span className="font-bold">{m.codigoInterno}</span>
+                    </p>
                 )}
                 <div className="flex gap-2">
                     <button onClick={onEdit}
@@ -881,6 +892,15 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
         open: false, maquinario: null, clientId: ''
     });
     const [search, setSearch] = useState('');
+    const [mostrarScanBusca, setMostrarScanBusca] = useState(false);
+
+    const handleScanBusca = (equip: EquipamentoResolvido) => {
+        setMostrarScanBusca(false);
+        // Maquinário não tem card próprio na lista (só aparece dentro de "Ativos
+        // Secundários" do Ativo Final) — busca pelo ativo pai que ele atende.
+        const nomeParaBuscar = equip.tipo === 'ativo' ? equip.nome : (equip.ativosVinculados?.[0]?.nome || equip.nome);
+        setSearch(nomeParaBuscar);
+    };
 
     // Seletor de cliente — só existe no módulo global (não embutido). Aceita
     // deep-link via ?clientId= (ex: link vindo de outro módulo) como valor inicial.
@@ -994,12 +1014,21 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
                 </div>
             )}
 
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input value={search} onChange={e => setSearch(e.target.value)}
-                    type="text" name="busca-ativos" autoComplete="off"
-                    placeholder="Buscar por nome ou tipo..."
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+            <div className="flex gap-2">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                        type="text" name="busca-ativos" autoComplete="off"
+                        placeholder="Buscar por nome ou tipo..."
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+                </div>
+                {readOnly && (
+                    <button type="button" onClick={() => setMostrarScanBusca(true)}
+                        title="Ler QR Code ou digitar código do equipamento"
+                        className="shrink-0 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-500 hover:text-brand-600 hover:border-brand-300 flex items-center gap-1.5 text-sm font-bold">
+                        <QrCode className="w-4 h-4" /> <span className="hidden sm:inline">Buscar equipamento</span>
+                    </button>
+                )}
             </div>
 
             {loading ? (
@@ -1048,6 +1077,14 @@ const Assets: React.FC<AssetsProps> = ({ clientId: clientIdProp, clientName: cli
                     initial={modalMaquinario.maquinario}
                     todosAtivos={assets}
                     onClose={() => setModalMaquinario({ open: false, maquinario: null, clientId: '' })}
+                />
+            )}
+            {readOnly && mostrarScanBusca && (
+                <EquipamentoScanModal
+                    escopoClientId={effectiveClientId}
+                    titulo="Buscar equipamento"
+                    onResolve={handleScanBusca}
+                    onClose={() => setMostrarScanBusca(false)}
                 />
             )}
         </div>
