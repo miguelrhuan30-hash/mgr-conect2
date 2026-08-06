@@ -300,10 +300,14 @@ service cloud.firestore {
     match /chamados_sla/{chamadoId} {
       allow read: if isAuthenticated() && (isChamadoAdmin() ||
         (isCliente() && resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId));
+      // podeAbrirChamado é autorização escopada a chamados de Câmaras Frias
+      // (rótulo em GerenciarUsuarioPortal.tsx) — chamado de frota
+      // (origemAtivoTipo == 'frota') é sempre permitido, não passa por essa checagem.
       allow create: if isAuthenticated() && isCliente()
         && request.resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId
         && request.resource.data.criadoPorUid == request.auth.uid
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('podeAbrirChamado', true) != false;
+        && (request.resource.data.origemAtivoTipo == 'frota'
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('podeAbrirChamado', true) != false);
       allow update: if isAuthenticated() && isChamadoAdmin();
       allow delete: if isAdmin();
     }

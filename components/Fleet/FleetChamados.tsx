@@ -66,12 +66,12 @@ export default function FleetChamados() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-extrabold text-gray-900">Meus Chamados — Frota</h1>
-        {(userProfile as any)?.podeAbrirChamado !== false && (
-          <button onClick={() => navigate('/portal/frota/manutencoes')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700">
-            <Plus className="w-3.5 h-3.5" /> Novo Chamado
-          </button>
-        )}
+        {/* podeAbrirChamado é escopo de Câmaras Frias — chamado de frota é
+            sempre permitido, não depende dessa flag. */}
+        <button onClick={() => navigate('/portal/frota/manutencoes')}
+          className="flex items-center gap-1.5 px-3 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700">
+          <Plus className="w-3.5 h-3.5" /> Novo Chamado
+        </button>
       </div>
 
       {chamadosVisiveis.length === 0 ? (

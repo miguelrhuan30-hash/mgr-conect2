@@ -62,8 +62,12 @@ export default function PortalNovoChamado() {
   const [erro, setErro] = useState('');
 
   useEffect(() => {
-    if ((userProfile as any)?.podeAbrirChamado === false) navigate('/portal', { replace: true });
-  }, [userProfile, navigate]);
+    // podeAbrirChamado é uma autorização escopada a chamados de Câmaras
+    // Frias (rótulo em GerenciarUsuarioPortal.tsx) — chamado de frota é
+    // sempre permitido independente dessa flag, então o guard não vale
+    // quando a origem é um veículo (veiculoIdParam presente).
+    if (!veiculoIdParam && (userProfile as any)?.podeAbrirChamado === false) navigate('/portal', { replace: true });
+  }, [userProfile, navigate, veiculoIdParam]);
 
   useEffect(() => {
     if (!clientId) { setLoadingContratos(false); return; }
